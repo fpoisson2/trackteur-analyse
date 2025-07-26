@@ -1,4 +1,8 @@
 Flask
+Flask-Login
+Flask-SQLAlchemy
+Werkzeug
+APScheduler
 requests
 pandas
 numpy
@@ -8,4 +12,3 @@ geopandas
 folium
 alphashape
 pyproj
-Flask-Login

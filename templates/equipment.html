@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>{{ equipment.name }} - Détails</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="p-4">
+  <div class="container">
+    <div class="d-flex justify-content-between mb-3">
+      <h1>{{ equipment.name }}</h1>
+      <div>
+        <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-secondary">Retour</a>
+        <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-secondary">Déconnexion</a>
+      </div>
+    </div>
+    <h2>Zones journalières</h2>
+    {% if zones %}
+    <table class="table table-striped">
+      <thead>
+        <tr><th>Date</th><th>Surface (ha)</th></tr>
+      </thead>
+      <tbody>
+        {% for z in zones %}
+        <tr>
+          <td>{{ z.date }}</td>
+          <td>{{ z.surface_ha|round(2) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <h2>Carte des zones</h2>
+    <div>
+      {{ map_html|safe }}
+    </div>
+    {% else %}
+    <p>Aucune donnée disponible pour cet équipement.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

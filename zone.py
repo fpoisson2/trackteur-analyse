@@ -18,16 +18,17 @@ import alphashape
 # Ignore les avertissements de Shapely sur les polygones non valides qui peuvent apparaître lors des opérations de différence
 warnings.filterwarnings("ignore", "GEOS messages", UserWarning)
 
+from models import db, Equipment, Position, DailyZone
 
-# 🔐 Paramètres de connexion au serveur Traccar (à fournir via variables d'environnement)
-AUTH_TOKEN = os.environ.get("TRACCAR_AUTH_TOKEN")
+
+# 🔐 Paramètres de connexion au serveur Traccar (via variables d'environnement)
+AUTH_TOKEN = os.environ.get("TRACCAR_TOKEN")
 BASE_URL = os.environ.get("TRACCAR_BASE_URL")
-DEVICE_NAME = os.environ.get("TRACCAR_DEVICE_NAME", "Tracteur 4")
 
 # Vérification des variables d'environnement
 if not AUTH_TOKEN or not BASE_URL:
     raise EnvironmentError(
-        "Les variables d'environnement TRACCAR_AUTH_TOKEN et TRACCAR_BASE_URL doivent être définies"
+        "Les variables d'environnement TRACCAR_TOKEN et TRACCAR_BASE_URL doivent être définies"
     )
 
 # Auth HTTP Bearer
@@ -48,14 +49,6 @@ def fetch_devices():
     r.raise_for_status()
     return r.json()
 
-def fetch_device_id():
-    """Récupère l'ID du dispositif Traccar."""
-    r = requests.get(f"{BASE_URL}/api/devices", headers=AUTH_HEADER)
-    r.raise_for_status()
-    for device in r.json():
-        if device["name"].strip().lower() == DEVICE_NAME.strip().lower():
-            return device["id"]
-    raise Exception("Dispositif non trouvé")
 
 def fetch_positions(device_id, from_dt, to_dt):
     """Récupère les positions pour une plage de dates donnée."""
@@ -244,35 +237,37 @@ def print_summary(zones):
     print(f"🟩 Surface unique totale travaillée : {total_unique_area_ha:.2f} ha")
     print(f"🔳 Nombre de zones distinctes (par nbre de passages) : {len(zones)}")
 
-if __name__ == "__main__":
-    try:
-        print("1. Récupération de l'ID du dispositif...")
-        device_id = fetch_device_id()
-        print(f"   ID trouvé : {device_id}")
+def analyser_equipement(equipment):
+    """Analyse des positions d'un équipement sur les dernières 24h et enregistre en base."""
+    to_dt = datetime.now(timezone.utc)
+    from_dt = to_dt - timedelta(days=DAYS)
+    positions_json = fetch_positions(equipment.id_traccar, from_dt, to_dt)
+    # Enregistrement des positions
+    for p in positions_json:
+        ts = datetime.fromisoformat(p["deviceTime"].replace("Z", "+00:00"))
+        pos = Position(equipment_id=equipment.id, latitude=p["latitude"], longitude=p["longitude"], timestamp=ts)
+        db.session.add(pos)
+    db.session.commit()
+    # Clustering des positions
+    zones = cluster_positions(positions_json)
+    centroids = []
+    # Enregistrement des zones journalières
+    for z in zones:
+        surface_ha = z["geometry"].area / 1e4
+        centroids.append(z["geometry"].centroid)
+        dz = DailyZone(equipment_id=equipment.id, date=from_dt.date(), surface_ha=surface_ha, polygon_wkt=z["geometry"].wkt)
+        db.session.add(dz)
+    # Calcul de la distance entre centroïdes successifs
+    distance = 0.0
+    if len(centroids) > 1:
+        for i in range(1, len(centroids)):
+            distance += centroids[i].distance(centroids[i - 1])
+    equipment.total_hectares += sum(d.surface_ha for d in DailyZone.query.filter_by(equipment_id=equipment.id, date=from_dt.date()))
+    equipment.distance_between_zones = distance
+    db.session.commit()
 
-        print("2. Récupération des positions GPS...")
-        # Par défaut, récupère les %d derniers jours
-        to_dt = datetime.now(timezone.utc)
-        from_dt = to_dt - timedelta(days=DAYS)
-        positions = fetch_positions(device_id, from_dt, to_dt)
-        print(f"   {len(positions)} positions récupérées.")
-
-        print("3. Détection des zones de travail journalières...")
-        daily_zones = cluster_positions(positions)
-        print(f"   {len(daily_zones)} zones journalières détectées.")
-        total_absolute_area_ha = sum(z["geometry"].area for z in daily_zones) / 1e4
-        print(f"   🔹 Surface totale brute (avant découpe) : {total_absolute_area_ha:.2f} ha")
-
-        print("4. Agrégation des zones superposées...")
-        aggregated_zones = aggregate_overlapping_zones(daily_zones)
-        print(f"   {len(aggregated_zones)} zones distinctes après agrégation.")
-
-        print("5. Génération de la carte...")
-        raw_points = extract_raw_points(positions)
-        generate_map(aggregated_zones, raw_points)
-
-        print("\n📊 Résumé de l'analyse :")
-        print_summary(aggregated_zones)
-
-    except Exception as e:
-        print(f"❌ Une erreur est survenue : {e}")
+def analyse_quotidienne():
+    """Tâche planifiée : lance l'analyse pour tous les équipements activés."""
+    equipments = Equipment.query.all()
+    for eq in equipments:
+        analyser_equipement(eq)
