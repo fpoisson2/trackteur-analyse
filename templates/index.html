@@ -7,6 +7,11 @@
 </head>
 <body class="p-4">
   <div class="container">
+    {% if current_user.is_authenticated %}
+    <div class="text-end mb-2">
+      <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-secondary">Déconnexion</a>
+    </div>
+    {% endif %}
     <h1 class="mb-4">Visualisation des données GPS</h1>
     {% if error %}
     <div class="alert alert-danger">{{ error }}</div>

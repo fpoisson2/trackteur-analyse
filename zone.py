@@ -184,7 +184,7 @@ def generate_map(zones, raw_points=None, output_file="static/carte_passages.html
     multi = MultiPolygon(all_polygons)
     ctr_m = multi.centroid
     ctr = transform(proj, ctr_m)
-    m = folium.Map(location=[ctr.y, ctr.x], zoom_start=15)
+    m = folium.Map(location=[ctr.y, ctr.x], zoom_start=11)
 
     if raw_points:
         for pt in raw_points:

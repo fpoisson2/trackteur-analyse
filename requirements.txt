@@ -8,3 +8,4 @@ geopandas
 folium
 alphashape
 pyproj
+Flask-Login
