@@ -1,273 +1,222 @@
+import os
 import requests
 import pandas as pd
 import numpy as np
-import os
+import base64
+import warnings
 from datetime import datetime, timedelta, timezone
-# Ajout de union_all pour corriger le DeprecationWarning
 from shapely.geometry import Point, Polygon, MultiPolygon, GeometryCollection
-from shapely import union_all
-from shapely.ops import transform
+from shapely.ops import transform as shp_transform
+import pyproj
+import alphashape
 from sklearn.cluster import DBSCAN
 import folium
-import base64
 from geopandas import GeoDataFrame
-import pyproj
-import warnings
-import alphashape
-
-# Ignore les avertissements de Shapely sur les polygones non valides qui peuvent apparaître lors des opérations de différence
-warnings.filterwarnings("ignore", "GEOS messages", UserWarning)
 
 from models import db, Equipment, Position, DailyZone
 
+# Ignorer avertissements GEOS
+warnings.filterwarnings("ignore", "GEOS messages", UserWarning)
 
-# 🔐 Paramètres de connexion au serveur Traccar (via variables d'environnement)
+# 🔐 Paramètres de connexion au serveur Traccar
 AUTH_TOKEN = os.environ.get("TRACCAR_TOKEN")
 BASE_URL = os.environ.get("TRACCAR_BASE_URL")
-
-# Vérification des variables d'environnement
 if not AUTH_TOKEN or not BASE_URL:
     raise EnvironmentError(
         "Les variables d'environnement TRACCAR_TOKEN et TRACCAR_BASE_URL doivent être définies"
     )
-
-# Auth HTTP Bearer
 AUTH_HEADER = {"Authorization": f"Bearer {AUTH_TOKEN}"}
 
 # 📥 Paramètres d’analyse
 DAYS = 60
 EPS_METERS = 25
-MIN_SURFACE_HA = 0.1
+MIN_SURFACE_HA = 0.1  # ha
 ALPHA = 0.02
 
+# Préparer transformer Web Mercator → WGS84
+_transformer = pyproj.Transformer.from_crs(3857, 4326, always_xy=True).transform
 
-# Période à analyser (pour usage direct, passer des plages personnalisées à fetch_positions)
-# Fonctions d'accès à l'API Traccar
+
 def fetch_devices():
     """Récupère la liste des dispositifs Traccar."""
-    r = requests.get(f"{BASE_URL}/api/devices", headers=AUTH_HEADER)
-    r.raise_for_status()
-    return r.json()
+    base = BASE_URL.rstrip('/')
+    resp = requests.get(f"{base}/api/devices", headers=AUTH_HEADER)
+    resp.raise_for_status()
+    devices = resp.json()
+    device_name = os.environ.get('TRACCAR_DEVICE_NAME')
+    if device_name:
+        devices = [d for d in devices if d.get('name') == device_name]
+    return devices
 
 
 def fetch_positions(device_id, from_dt, to_dt):
-    """Récupère les positions pour une plage de dates donnée."""
+    """Récupère les positions JSON pour une plage donnée."""
     def fmt(dt):
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    params = {
-        "deviceId": device_id,
-        "from": fmt(from_dt),
-        "to": fmt(to_dt),
-    }
-    r = requests.get(f"{BASE_URL}/api/positions", headers=AUTH_HEADER, params=params)
-    r.raise_for_status()
-    return r.json()
-
-def add_joggle(points, noise_scale=1e-6):
-    """Ajoute un léger bruit aux coordonnées pour éviter les erreurs de coplanarité."""
-    noise = np.random.uniform(-noise_scale, noise_scale, size=(len(points), 2))
-    return [(p[0] + noise[i, 0], p[1] + noise[i, 1]) for i, p in enumerate(points)]
-
-def cluster_positions(positions):
-    """Regroupe les points GPS en zones de travail pour chaque jour."""
-    coords = [(p["latitude"], p["longitude"], p["deviceTime"][:10]) for p in positions]
-    df = pd.DataFrame(coords, columns=["lat", "lon", "date"])
-    df["geometry"] = df.apply(lambda r: Point(r["lon"], r["lat"]), axis=1)
-    gdf = GeoDataFrame(df, geometry="geometry", crs="EPSG:4326").to_crs(epsg=3857)
-
-    daily_zones = []
-    for date, group in gdf.groupby("date"):
-        if len(group) < 3: continue
-        X = np.vstack([group.geometry.x, group.geometry.y]).T
-        labels = DBSCAN(eps=EPS_METERS, min_samples=3).fit_predict(X)
-        group = group.assign(cluster=labels)
-        for lbl in set(labels):
-            if lbl == -1: continue
-            cl = group[group.cluster == lbl]
-            # Utilisation d'alpha shape pour générer un polygone concave
-            points = [(geom.x, geom.y) for geom in cl.geometry]
-            points = add_joggle(points, noise_scale=1e-6)  # Ajout d'un léger bruit
-            poly = alphashape.alphashape(points, ALPHA)
-            if isinstance(poly, Polygon) and poly.area / 1e4 >= MIN_SURFACE_HA:
-                daily_zones.append({
-                    "geometry": poly,
-                    "dates": [date],
-                })
-            elif isinstance(poly, MultiPolygon):
-                # Si l'alpha shape produit un MultiPolygon, on garde seulement les polygones assez grands
-                for sub_poly in poly.geoms:
-                    if sub_poly.area / 1e4 >= MIN_SURFACE_HA:
-                        daily_zones.append({
-                            "geometry": sub_poly,
-                            "dates": [date],
-                        })
-    return daily_zones
-
-def aggregate_overlapping_zones(daily_zones):
-    """
-    Agrège les zones qui se superposent.
-    Découpe les polygones pour créer des zones distinctes avec un comptage des passages.
-    """
-    if not daily_zones:
+    params = {"deviceId": device_id, "from": fmt(from_dt), "to": fmt(to_dt)}
+    base = BASE_URL.rstrip('/')
+    resp = requests.get(f"{base}/api/positions", headers=AUTH_HEADER, params=params)
+    try:
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError:
+        if resp.status_code == 404:
+            return []
+        raise
+    if resp.status_code == 204 or not resp.content.strip():
+        return []
+    try:
+        return resp.json()
+    except ValueError:
+        print("Réponse inattendue :", resp.status_code, resp.text[:200])
         return []
 
-    final_zones = daily_zones[:1]
-    
-    for zone_to_add in daily_zones[1:]:
-        next_final_zones = []
-        geom_to_add = zone_to_add["geometry"]
-        date_to_add = zone_to_add["dates"]
 
-        for existing_zone in final_zones:
-            existing_geom = existing_zone["geometry"]
-            
-            diff = existing_geom.difference(geom_to_add)
-            intersection = existing_geom.intersection(geom_to_add)
-            
+def add_joggle(points, noise_scale=1e-6):
+    noise = np.random.uniform(-noise_scale, noise_scale, size=(len(points), 2))
+    return [(x + noise[i,0], y + noise[i,1]) for i,(x,y) in enumerate(points)]
+
+
+def cluster_positions(positions):
+    """Regroupe les points par jour et clusterise en zones de travail."""
+    coords = [(p['latitude'], p['longitude'], p['deviceTime'][:10]) for p in positions]
+    df = pd.DataFrame(coords, columns=['lat','lon','date'])
+    df['geometry'] = df.apply(lambda r: Point(r.lon, r.lat), axis=1)
+    gdf = GeoDataFrame(df, geometry='geometry', crs='EPSG:4326').to_crs(epsg=3857)
+    zones = []
+    for date, group in gdf.groupby('date'):
+        if len(group) < 3:
+            continue
+        X = np.vstack([group.geometry.x, group.geometry.y]).T
+        labels = DBSCAN(eps=EPS_METERS, min_samples=3).fit_predict(X)
+        group['cluster'] = labels
+        for lbl in set(labels):
+            if lbl == -1:
+                continue
+            pts = [(pt.x, pt.y) for pt in group[group.cluster == lbl].geometry]
+            pts = add_joggle(pts)
+            poly = alphashape.alphashape(pts, ALPHA)
+            poly = poly.buffer(0)
+            if isinstance(poly, (Polygon, MultiPolygon)):
+                poly_list = poly.geoms if isinstance(poly, MultiPolygon) else [poly]
+                for sub in poly_list:
+                    sub = sub.buffer(0)
+                    if sub.area / 1e4 >= MIN_SURFACE_HA:
+                        zones.append({'geometry': sub, 'dates': [date]})
+    return zones
+
+
+def aggregate_overlapping_zones(daily_zones):
+    """Découpe et comptabilise les passages sur zones chevauchantes."""
+    if not daily_zones:
+        return []
+    final = [daily_zones[0]]
+    for zone in daily_zones[1:]:
+        to_add_geom = zone['geometry']
+        to_add_dates = zone['dates']
+        next_final = []
+        for existing in final:
+            ex_geom = existing['geometry']
+            diff = ex_geom.difference(to_add_geom)
+            inter = ex_geom.intersection(to_add_geom)
             if not diff.is_empty:
-                next_final_zones.append({
-                    "geometry": diff,
-                    "dates": existing_zone["dates"]
-                })
-            
-            if not intersection.is_empty:
-                next_final_zones.append({
-                    "geometry": intersection,
-                    "dates": existing_zone["dates"] + date_to_add
-                })
-            
-            geom_to_add = geom_to_add.difference(existing_geom)
+                next_final.append({'geometry': diff, 'dates': existing['dates']})
+            if not inter.is_empty:
+                next_final.append({'geometry': inter, 'dates': existing['dates'] + to_add_dates})
+            to_add_geom = to_add_geom.difference(ex_geom)
+        if not to_add_geom.is_empty:
+            next_final.append({'geometry': to_add_geom, 'dates': to_add_dates})
+        final = next_final
+    return final
 
-        if not geom_to_add.is_empty:
-            next_final_zones.append({
-                "geometry": geom_to_add,
-                "dates": date_to_add
-            })
-            
-        final_zones = next_final_zones
-        
-    return final_zones
 
-proj = pyproj.Transformer.from_crs(3857, 4326, always_xy=True).transform
-
-def extract_raw_points(positions):
-    """Retourne une liste de Points (WGS84) pour l'affichage du tracé brut."""
-    return [Point(p["longitude"], p["latitude"]) for p in positions]
-
-def generate_map(zones, raw_points=None, output_file="static/carte_passages.html"):
-    """Génère et enregistre une carte Folium avec les zones et les passages."""
+def generate_map(zones, raw_points=None, output="static/carte.html"):
+    """Créer une carte Folium avec zones et points GPS."""
     if not zones:
-        print("❌ Aucune zone à afficher sur la carte.")
+        print("Aucune zone à afficher.")
         return
-
-    # CORRECTION : Aplatir la liste des géométries avant de créer le MultiPolygon
-    # Ceci résout l'erreur "Sequences of multi-polygons are not valid arguments"
-    all_polygons = []
+    polys = []
     for z in zones:
-        geom = z["geometry"]
-        if isinstance(geom, Polygon):
-            all_polygons.append(geom)
-        elif isinstance(geom, MultiPolygon):
-            all_polygons.extend(list(geom.geoms))
-
-    if not all_polygons:
-        print("❌ Aucune géométrie valide à afficher.")
-        return
-
-    multi = MultiPolygon(all_polygons)
-    ctr_m = multi.centroid
-    ctr = transform(proj, ctr_m)
-    m = folium.Map(location=[ctr.y, ctr.x], zoom_start=11)
-
+        g = z['geometry']
+        if isinstance(g, Polygon):
+            polys.append(g)
+        else:
+            polys.extend(list(g.geoms))
+    multi = MultiPolygon(polys)
+    ctr = shp_transform(_transformer, multi.centroid)
+    m = folium.Map(location=[ctr.y, ctr.x], zoom_start=12)
     if raw_points:
         for pt in raw_points:
-            folium.CircleMarker(
-                location=[pt.y, pt.x],
-                radius=1,
-                color="grey",
-                fill=True,
-                fill_opacity=0.5,
-                popup="Point GPS"
-            ).add_to(m)
-            
+            folium.CircleMarker(location=[pt.y, pt.x], radius=1, fill=True).add_to(m)
     colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c']
-
     for z in zones:
-        poly_wgs = transform(proj, z["geometry"])
-        
-        if isinstance(poly_wgs, GeometryCollection):
-            geoms = [g for g in poly_wgs.geoms if isinstance(g, Polygon)]
-            if not geoms: continue
-            poly_wgs = MultiPolygon(geoms)
-
+        geom = shp_transform(_transformer, z['geometry'])
+        if isinstance(geom, GeometryCollection):
+            geoms = [g for g in geom.geoms if isinstance(g, Polygon)]
+            geom = MultiPolygon(geoms)
         count = len(z['dates'])
-        surface_ha = z["geometry"].area / 10000
-        
-        popup_html = (
-            f"<b>Passages : {count}</b><br>"
-            f"<b>Surface :</b> {surface_ha:.2f} ha<br>"
-            f"<b>Dates :</b> {', '.join(sorted(list(set(z['dates']))))}"
+        popup = folium.Popup(
+            f"<b>Passages:</b> {count}<br><b>Surface:</b> {(z['geometry'].area/1e4):.2f} ha",
+            max_width=250
         )
-        popup = folium.Popup(popup_html, max_width=300)
-        
-        color_idx = min(count - 1, len(colors) - 1)
-        
+        idx = min(count - 1, len(colors) - 1)
         folium.GeoJson(
-            poly_wgs,
-            style_function=lambda x, color=colors[color_idx]: {
-                "fillColor": color,
-                "color": "black",
-                "weight": 1,
-                "fillOpacity": 0.6,
-            },
+            geom,
+            style_function=lambda x, col=colors[idx]: {'fillColor': col, 'color': 'black', 'weight': 1, 'fillOpacity': 0.6},
             popup=popup,
             tooltip=f"{count} passage(s)"
         ).add_to(m)
+    m.save(output)
 
-    # Enregistre la carte dans le fichier spécifié
-    m.save(output_file)
 
-def print_summary(zones):
-    """Affiche un résumé des zones analysées."""
-    if not zones:
-        print("ℹ️ Aucune zone détectée après analyse.")
-        return
-        
-    total_unique_area_ha = sum(z["geometry"].area for z in zones) / 1e4
-    print(f"🟩 Surface unique totale travaillée : {total_unique_area_ha:.2f} ha")
-    print(f"🔳 Nombre de zones distinctes (par nbre de passages) : {len(zones)}")
+def process_equipment(eq, traccar_url, db, since=None):
+    """Récupère, analyse et enregistre les zones journalières de l’équipement."""
+    to_dt = datetime.utcnow()
+    from_dt = since if since else to_dt - timedelta(days=1)
 
-def analyser_equipement(equipment):
-    """Analyse des positions d'un équipement sur les dernières 24h et enregistre en base."""
-    to_dt = datetime.now(timezone.utc)
-    from_dt = to_dt - timedelta(days=DAYS)
-    positions_json = fetch_positions(equipment.id_traccar, from_dt, to_dt)
-    # Enregistrement des positions
-    for p in positions_json:
-        ts = datetime.fromisoformat(p["deviceTime"].replace("Z", "+00:00"))
-        pos = Position(equipment_id=equipment.id, latitude=p["latitude"], longitude=p["longitude"], timestamp=ts)
-        db.session.add(pos)
+    # 1) Récupérer et stocker les positions
+    positions = fetch_positions(eq.id_traccar, from_dt, to_dt)
+    for p in positions:
+        ts = datetime.fromisoformat(p['deviceTime'].replace('Z', '+00:00'))
+        db.session.add(Position(equipment_id=eq.id, latitude=p['latitude'], longitude=p['longitude'], timestamp=ts))
     db.session.commit()
-    # Clustering des positions
-    zones = cluster_positions(positions_json)
-    centroids = []
-    # Enregistrement des zones journalières
-    for z in zones:
-        surface_ha = z["geometry"].area / 1e4
-        centroids.append(z["geometry"].centroid)
-        dz = DailyZone(equipment_id=equipment.id, date=from_dt.date(), surface_ha=surface_ha, polygon_wkt=z["geometry"].wkt)
+
+    # 2) Créer les clusters et zones
+    daily = cluster_positions(positions)
+    zones_by_date = {}
+    for z in daily:
+        date_str = z['dates'][0]
+        zones_by_date.setdefault(date_str, []).append(z['geometry'])
+
+    # 3) Pour chaque date, remplacer l'ancien par la surface totale agrégée
+    for date_str, geoms in zones_by_date.items():
+        date_obj = datetime.fromisoformat(date_str).date()
+        DailyZone.query.filter_by(equipment_id=eq.id, date=date_obj).delete()
+        daily_zones = [{'geometry': g, 'dates': [date_str]} for g in geoms]
+        agg = aggregate_overlapping_zones(daily_zones)
+        total_daily = sum(z['geometry'].area for z in agg) / 1e4
+        dz = DailyZone(
+                equipment_id=eq.id,
+                date=date_obj,
+                surface_ha=total_daily,
+                polygon_wkt=daily_zones[0]['geometry'].wkt if daily_zones else None
+            )
         db.session.add(dz)
-    # Calcul de la distance entre centroïdes successifs
-    distance = 0.0
-    if len(centroids) > 1:
-        for i in range(1, len(centroids)):
-            distance += centroids[i].distance(centroids[i - 1])
-    equipment.total_hectares += sum(d.surface_ha for d in DailyZone.query.filter_by(equipment_id=equipment.id, date=from_dt.date()))
-    equipment.distance_between_zones = distance
+
+    # 4) Mettre à jour les stats sur l'équipement
+    total = sum(d.surface_ha for d in DailyZone.query.filter_by(equipment_id=eq.id))
+    eq.total_hectares = total
+    eq.distance_between_zones = 0.0
+    eq.last_position = to_dt
     db.session.commit()
+
+
 
 def analyse_quotidienne():
-    """Tâche planifiée : lance l'analyse pour tous les équipements activés."""
-    equipments = Equipment.query.all()
-    for eq in equipments:
-        analyser_equipement(eq)
+    """Tâche planifiée: analyse pour tous les équipements."""
+    for eq in Equipment.query.all():
+        process_equipment(eq, BASE_URL, db)
+
+
+def analyser_equipement(eq, start_date=None):
+    """Alias pour compatibilité: analyse d'un équipement donné depuis start_date."""
+    process_equipment(eq, BASE_URL, db, since=start_date, date_ref=start_date)
