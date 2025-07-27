@@ -129,11 +129,10 @@ def aggregate_overlapping_zones(daily_zones):
     return final
 
 
-def generate_map(zones, raw_points=None, output="static/carte.html"):
-    """Créer une carte Folium avec zones et points GPS."""
+def _build_map(zones, raw_points=None):
+    """Construit un objet ``folium.Map`` pour les zones fournies."""
     if not zones:
-        print("Aucune zone à afficher.")
-        return
+        return None
     polys = []
     for z in zones:
         g = z['geometry']
@@ -165,7 +164,25 @@ def generate_map(zones, raw_points=None, output="static/carte.html"):
             popup=popup,
             tooltip=f"{count} passage(s)"
         ).add_to(m)
-    m.save(output)
+    return m
+
+
+def generate_map_html(zones, raw_points=None):
+    """Retourne le code HTML d'une carte Folium pour les zones."""
+    m = _build_map(zones, raw_points)
+    if m is None:
+        return None
+    return m.get_root().render()
+
+
+def generate_map(zones, raw_points=None, output="static/carte.html"):
+    """Créer un fichier HTML contenant la carte des zones."""
+    html = generate_map_html(zones, raw_points)
+    if html is None:
+        print("Aucune zone à afficher.")
+        return
+    with open(output, "w", encoding="utf-8") as fh:
+        fh.write(html)
 
 
 
