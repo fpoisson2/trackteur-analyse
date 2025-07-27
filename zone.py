@@ -168,19 +168,41 @@ def generate_map(zones, raw_points=None, output="static/carte.html"):
     m.save(output)
 
 
+
 def process_equipment(eq, traccar_url, db, since=None):
-    """Récupère, analyse et enregistre les zones journalières de l’équipement."""
+    """Récupère, analyse et enregistre les zones journalières de l'équipement."""
     to_dt = datetime.utcnow()
     from_dt = since if since else to_dt - timedelta(days=1)
 
     # 1) Récupérer et stocker les positions
     positions = fetch_positions(eq.id_traccar, from_dt, to_dt)
+    
+    # ✅ CORRECTION : Trouver la position la plus récente AVANT de stocker
+    latest_position_time = None
+    if positions:
+        # Trier les positions par timestamp pour trouver la plus récente
+        sorted_positions = sorted(positions, key=lambda p: p['deviceTime'])
+        latest_position_time = datetime.fromisoformat(
+            sorted_positions[-1]['deviceTime'].replace('Z', '+00:00')
+        )
+    
     for p in positions:
         ts = datetime.fromisoformat(p['deviceTime'].replace('Z', '+00:00'))
-        db.session.add(Position(equipment_id=eq.id, latitude=p['latitude'], longitude=p['longitude'], timestamp=ts))
+        # Convertir en naive datetime pour stockage cohérent
+        ts_naive = ts.replace(tzinfo=None)
+        db.session.add(Position(equipment_id=eq.id, latitude=p['latitude'], longitude=p['longitude'], timestamp=ts_naive))
+    
+    # ✅ CORRECTION : Mettre à jour last_position seulement si on a des positions
+    # et seulement si cette position est plus récente que l'actuelle
+    if latest_position_time:
+        # Convertir en naive datetime (UTC) pour la comparaison
+        latest_naive = latest_position_time.replace(tzinfo=None)
+        if not eq.last_position or latest_naive > eq.last_position:
+            eq.last_position = latest_naive
+    
     db.session.commit()
 
-    # 2) Créer les clusters et zones
+    # 2) Créer les clusters et zones (reste identique)
     daily = cluster_positions(positions)
     zones_by_date = {}
     for z in daily:
@@ -206,8 +228,10 @@ def process_equipment(eq, traccar_url, db, since=None):
     total = sum(d.surface_ha for d in DailyZone.query.filter_by(equipment_id=eq.id))
     eq.total_hectares = total
     eq.distance_between_zones = 0.0
-    eq.last_position = to_dt
+    # ✅ CORRECTION : last_position déjà mise à jour plus haut
+    
     db.session.commit()
+
 
 
 
