@@ -177,10 +177,9 @@ def process_equipment(eq, traccar_url, db, since=None):
     # 1) Récupérer et stocker les positions
     positions = fetch_positions(eq.id_traccar, from_dt, to_dt)
     
-    # ✅ CORRECTION : Trouver la position la plus récente AVANT de stocker
+    # ✅ FIX : Trouver la position la plus récente et gérer les timezones
     latest_position_time = None
     if positions:
-        # Trier les positions par timestamp pour trouver la plus récente
         sorted_positions = sorted(positions, key=lambda p: p['deviceTime'])
         latest_position_time = datetime.fromisoformat(
             sorted_positions[-1]['deviceTime'].replace('Z', '+00:00')
@@ -190,48 +189,194 @@ def process_equipment(eq, traccar_url, db, since=None):
         ts = datetime.fromisoformat(p['deviceTime'].replace('Z', '+00:00'))
         # Convertir en naive datetime pour stockage cohérent
         ts_naive = ts.replace(tzinfo=None)
-        db.session.add(Position(equipment_id=eq.id, latitude=p['latitude'], longitude=p['longitude'], timestamp=ts_naive))
+        # ✅ FIX : Vérifier si la position existe déjà pour éviter les doublons
+        existing = Position.query.filter_by(
+            equipment_id=eq.id,
+            latitude=p['latitude'],
+            longitude=p['longitude'],
+            timestamp=ts_naive
+        ).first()
+        if not existing:
+            db.session.add(Position(
+                equipment_id=eq.id, 
+                latitude=p['latitude'], 
+                longitude=p['longitude'], 
+                timestamp=ts_naive
+            ))
     
-    # ✅ CORRECTION : Mettre à jour last_position seulement si on a des positions
-    # et seulement si cette position est plus récente que l'actuelle
+    # ✅ FIX : Mettre à jour last_position correctement
     if latest_position_time:
-        # Convertir en naive datetime (UTC) pour la comparaison
         latest_naive = latest_position_time.replace(tzinfo=None)
         if not eq.last_position or latest_naive > eq.last_position:
             eq.last_position = latest_naive
     
     db.session.commit()
 
-    # 2) Créer les clusters et zones (reste identique)
+    # 2) Créer les clusters et zones
     daily = cluster_positions(positions)
     zones_by_date = {}
     for z in daily:
         date_str = z['dates'][0]
         zones_by_date.setdefault(date_str, []).append(z['geometry'])
 
-    # 3) Pour chaque date, remplacer l'ancien par la surface totale agrégée
+    # 3) ✅ FIX MAJEUR : Améliorer le calcul des zones journalières
     for date_str, geoms in zones_by_date.items():
         date_obj = datetime.fromisoformat(date_str).date()
+        
+        # Supprimer l'ancienne zone pour cette date
         DailyZone.query.filter_by(equipment_id=eq.id, date=date_obj).delete()
-        daily_zones = [{'geometry': g, 'dates': [date_str]} for g in geoms]
-        agg = aggregate_overlapping_zones(daily_zones)
-        total_daily = sum(z['geometry'].area for z in agg) / 1e4
-        dz = DailyZone(
+        
+        if geoms:  # ✅ FIX : Vérifier qu'on a des géométries
+            # Créer les zones avec leurs dates
+            daily_zones = [{'geometry': g, 'dates': [date_str]} for g in geoms]
+            
+            # ✅ FIX : Appliquer l'agrégation des zones chevauchantes
+            agg = aggregate_overlapping_zones(daily_zones)
+            
+            # Calculer la surface totale pour cette date
+            total_daily = sum(z['geometry'].area for z in agg) / 1e4
+            
+            # ✅ FIX : Créer un polygon_wkt représentatif (union de toutes les zones)
+            from shapely.ops import unary_union
+            all_geoms = [z['geometry'] for z in agg]
+            if len(all_geoms) == 1:
+                union_geom = all_geoms[0]
+            else:
+                union_geom = unary_union(all_geoms)
+            
+            # Créer la zone journalière
+            dz = DailyZone(
                 equipment_id=eq.id,
                 date=date_obj,
                 surface_ha=total_daily,
-                polygon_wkt=daily_zones[0]['geometry'].wkt if daily_zones else None
+                polygon_wkt=union_geom.wkt
             )
-        db.session.add(dz)
+            db.session.add(dz)
 
-    # 4) Mettre à jour les stats sur l'équipement
-    total = sum(d.surface_ha for d in DailyZone.query.filter_by(equipment_id=eq.id))
+    # 4) ✅ FIX : Recalculer le total sur TOUTES les zones existantes
+    all_zones = DailyZone.query.filter_by(equipment_id=eq.id).all()
+    total = sum(d.surface_ha for d in all_zones)
     eq.total_hectares = total
     eq.distance_between_zones = 0.0
-    # ✅ CORRECTION : last_position déjà mise à jour plus haut
     
     db.session.commit()
 
+
+# ✅ NOUVELLE FONCTION : Recalculer proprement les hectares depuis la base
+def recalculate_hectares_from_positions(equipment_id, since_date=None):
+    """Recalcule les hectares en utilisant toutes les positions stockées en base."""
+    eq = Equipment.query.get(equipment_id)
+    if not eq:
+        return None
+    
+    # Récupérer toutes les positions depuis since_date
+    query = Position.query.filter_by(equipment_id=equipment_id)
+    if since_date:
+        query = query.filter(Position.timestamp >= since_date)
+    
+    positions_db = query.order_by(Position.timestamp).all()
+    
+    if not positions_db:
+        return 0
+    
+    # Convertir en format compatible avec cluster_positions
+    positions_formatted = []
+    for pos in positions_db:
+        positions_formatted.append({
+            'latitude': pos.latitude,
+            'longitude': pos.longitude,
+            'deviceTime': pos.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ')
+        })
+    
+    # Recalculer les zones
+    daily = cluster_positions(positions_formatted)
+    zones_by_date = {}
+    for z in daily:
+        date_str = z['dates'][0]
+        zones_by_date.setdefault(date_str, []).append(z['geometry'])
+    
+    # Nettoyer les anciennes zones et recalculer
+    if since_date:
+        DailyZone.query.filter(
+            DailyZone.equipment_id == equipment_id,
+            DailyZone.date >= since_date.date()
+        ).delete()
+    else:
+        DailyZone.query.filter_by(equipment_id=equipment_id).delete()
+    
+    # Créer les nouvelles zones
+    for date_str, geoms in zones_by_date.items():
+        date_obj = datetime.fromisoformat(date_str).date()
+        
+        if geoms:
+            daily_zones = [{'geometry': g, 'dates': [date_str]} for g in geoms]
+            agg = aggregate_overlapping_zones(daily_zones)
+            total_daily = sum(z['geometry'].area for z in agg) / 1e4
+            
+            from shapely.ops import unary_union
+            all_geoms = [z['geometry'] for z in agg]
+            union_geom = unary_union(all_geoms) if len(all_geoms) > 1 else all_geoms[0]
+            
+            dz = DailyZone(
+                equipment_id=equipment_id,
+                date=date_obj,
+                surface_ha=total_daily,
+                polygon_wkt=union_geom.wkt
+            )
+            db.session.add(dz)
+    
+    # Recalculer le total
+    all_zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+    total = sum(d.surface_ha for d in all_zones)
+    eq.total_hectares = total
+    
+    db.session.commit()
+    return total
+
+
+# ✅ FONCTION DE DEBUG : Pour voir ce qui se passe
+def debug_hectares_calculation(equipment_id):
+    """Affiche des infos de debug sur le calcul des hectares."""
+    eq = Equipment.query.get(equipment_id)
+    if not eq:
+        print(f"Équipement {equipment_id} introuvable")
+        return
+    
+    print(f"\n=== DEBUG HECTARES pour {eq.name} ===")
+    
+    # Stats des positions
+    pos_count = Position.query.filter_by(equipment_id=equipment_id).count()
+    print(f"Positions en base: {pos_count}")
+    
+    if pos_count > 0:
+        first_pos = Position.query.filter_by(equipment_id=equipment_id).order_by(Position.timestamp.asc()).first()
+        last_pos = Position.query.filter_by(equipment_id=equipment_id).order_by(Position.timestamp.desc()).first()
+        print(f"Première position: {first_pos.timestamp}")
+        print(f"Dernière position: {last_pos.timestamp}")
+    
+    # Stats des zones
+    zones = DailyZone.query.filter_by(equipment_id=equipment_id).order_by(DailyZone.date).all()
+    print(f"Zones journalières: {len(zones)}")
+    
+    if zones:
+        print(f"Première zone: {zones[0].date} ({zones[0].surface_ha:.2f} ha)")
+        print(f"Dernière zone: {zones[-1].date} ({zones[-1].surface_ha:.2f} ha)")
+        
+        total_calculated = sum(z.surface_ha for z in zones)
+        print(f"Total calculé: {total_calculated:.2f} ha")
+        print(f"Total stocké: {eq.total_hectares:.2f} ha")
+        
+        # Répartition par mois
+        monthly = {}
+        for z in zones:
+            month_key = f"{z.date.year}-{z.date.month:02d}"
+            monthly[month_key] = monthly.get(month_key, 0) + z.surface_ha
+        
+        print("\nRépartition mensuelle:")
+        for month, ha in sorted(monthly.items()):
+            print(f"  {month}: {ha:.2f} ha")
+    
+    print("=" * 50)
 
 
 
