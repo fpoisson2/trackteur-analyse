@@ -141,6 +141,7 @@ def test_build_map_and_generate(tmp_path):
     assert fmap is not None
     html = zone.generate_map_html(zones)
     assert "folium-map" in html
+    assert "2023-01-01" in html
 
     out = tmp_path / "map.html"
     zone.generate_map(zones, output=str(out))
