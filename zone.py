@@ -152,7 +152,7 @@ def _build_map(zones, raw_points=None):
         for pt in raw_points:
             folium.CircleMarker(location=[pt.y, pt.x], radius=1, fill=True).add_to(m)
     colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c']
-    for z in zones:
+    for idx_zone, z in enumerate(zones):
         geom = shp_transform(_transformer, z['geometry'])
         if isinstance(geom, GeometryCollection):
             geoms = [g for g in geom.geoms if isinstance(g, Polygon)]
@@ -165,12 +165,25 @@ def _build_map(zones, raw_points=None):
         if dates_list:
             popup_text += f"<br><b>Dates:</b> {dates_list}"
         popup = folium.Popup(popup_text, max_width=250)
-        idx = min(count - 1, len(colors) - 1)
+        color_idx = min(count - 1, len(colors) - 1)
+
+        feature = {
+            "type": "Feature",
+            "id": str(idx_zone),
+            "properties": {"dates": z['dates']},
+            "geometry": geom.__geo_interface__,
+        }
+
         folium.GeoJson(
-            geom,
-            style_function=lambda x, col=colors[idx]: {'fillColor': col, 'color': 'black', 'weight': 1, 'fillOpacity': 0.6},
+            data=feature,
+            style_function=lambda x, col=colors[color_idx]: {
+                'fillColor': col,
+                'color': 'black',
+                'weight': 1,
+                'fillOpacity': 0.6,
+            },
             popup=popup,
-            tooltip=f"{count} passage(s)"
+            tooltip=f"{count} passage(s)",
         ).add_to(m)
     return m
 
