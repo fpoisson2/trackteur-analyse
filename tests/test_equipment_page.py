@@ -65,3 +65,32 @@ def test_equipment_detail_page_loads(monkeypatch):
         resp = client.get(f"/equipment/{eq.id}")
     assert resp.status_code == 200
     assert b"map" in resp.data
+
+
+def test_index_year_filter():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        last_year = date(today.year - 1, 1, 1)
+        db.session.add(
+            DailyZone(
+                equipment_id=eq.id,
+                date=last_year,
+                surface_ha=2.0,
+                polygon_wkt="POLYGON((0 0,2 0,2 1,0 1,0 0))",
+            )
+        )
+        db.session.commit()
+
+    resp = client.get("/")
+    assert b"3.0" in resp.data
+
+    resp = client.get(f"/?year={today.year}")
+    assert b"1.0" in resp.data
+
+    resp = client.get(f"/?year={today.year - 1}")
+    assert b"2.0" in resp.data

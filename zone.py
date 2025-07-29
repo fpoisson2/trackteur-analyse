@@ -449,11 +449,22 @@ def recalculate_hectares_from_positions(equipment_id, since_date=None):
     return total
 
 
-def calculate_relative_hectares(equipment_id):
-    """Calcule la surface unique (hectares relatifs) pour un équipement."""
-    zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+def calculate_relative_hectares(equipment_id, year=None):
+    """Calcule la surface unique (hectares relatifs) pour un équipement.
+
+    Si ``year`` est fourni, seules les zones de cette année sont prises
+    en compte.
+    """
+    query = DailyZone.query.filter_by(equipment_id=equipment_id)
+    if year:
+        start = datetime(year, 1, 1).date()
+        end = datetime(year, 12, 31).date()
+        query = query.filter(DailyZone.date >= start, DailyZone.date <= end)
+
+    zones = query.all()
     if not zones:
         return 0.0
+
     from shapely import wkt
 
     daily = [
@@ -463,6 +474,39 @@ def calculate_relative_hectares(equipment_id):
     aggregated = aggregate_overlapping_zones(daily)
     total = sum(z["geometry"].area for z in aggregated) / 1e4
     return total
+
+
+def calculate_total_hectares(equipment_id, year=None):
+    """Calcule la surface totale pour un équipement.
+
+    Si ``year`` est fourni, seules les zones de cette année sont prises en
+    compte.
+    """
+    query = DailyZone.query.filter_by(equipment_id=equipment_id)
+    if year:
+        start = datetime(year, 1, 1).date()
+        end = datetime(year, 12, 31).date()
+        query = query.filter(DailyZone.date >= start, DailyZone.date <= end)
+    return sum(z.surface_ha for z in query.all())
+
+
+def calculate_distance_between_zones_for_year(equipment_id, year=None):
+    """Calcule la distance entre les zones sur une année donnée."""
+    query = DailyZone.query.filter_by(equipment_id=equipment_id)
+    if year:
+        start = datetime(year, 1, 1).date()
+        end = datetime(year, 12, 31).date()
+        query = query.filter(DailyZone.date >= start, DailyZone.date <= end)
+    query = query.order_by(DailyZone.date)
+
+    from shapely import wkt
+
+    polygons = [
+        wkt.loads(z.polygon_wkt)
+        for z in query.all()
+        if z.polygon_wkt
+    ]
+    return calculate_distance_between_zones(polygons)
 
 
 # ✅ FONCTION DE DEBUG : Pour voir ce qui se passe

@@ -248,6 +248,15 @@ def create_app():
         equipments = Equipment.query.all()
         message = None
 
+        # Années disponibles pour le filtre
+        years_query = db.session.query(
+            db.extract('year', DailyZone.date)
+        ).distinct()
+        years = sorted(int(y[0]) for y in years_query)
+
+        year_param = request.args.get('year')
+        selected_year = int(year_param) if year_param else None
+
         # 2) Plus de lancement manuel d'analyse
 
         # 3) Préparation des données pour l’affichage
@@ -264,23 +273,27 @@ def create_app():
                 last = None
                 delta_str = "–"
 
+            total_ha = zone.calculate_total_hectares(eq.id, selected_year)
+            rel_ha = zone.calculate_relative_hectares(eq.id, selected_year)
+            dist = zone.calculate_distance_between_zones_for_year(
+                eq.id, selected_year
+            )
+
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
                 "last_seen": last,
-                "total_hectares": round(eq.total_hectares or 0, 2),
-                "relative_hectares": round(
-                    zone.calculate_relative_hectares(eq.id), 2
-                ),
-                "distance_km": round(
-                    (eq.distance_between_zones or 0) / 1000, 2
-                ),
+                "total_hectares": round(total_ha, 2),
+                "relative_hectares": round(rel_ha, 2),
+                "distance_km": round(dist / 1000, 2),
                 "delta_str": delta_str
             })
 
         return render_template(
             'index.html',
             equipment_data=equipment_data,
+            years=years,
+            selected_year=selected_year,
             message=message
         )
 

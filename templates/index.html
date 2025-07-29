@@ -24,6 +24,20 @@
     <div class="alert alert-info">{{ message }}</div>
     {% endif %}
 
+    <form method="get" class="row g-2 mb-3">
+      <div class="col-auto">
+        <label for="year" class="col-form-label">Année</label>
+      </div>
+      <div class="col-auto">
+        <select id="year" name="year" class="form-select" onchange="this.form.submit()">
+          <option value="" {% if not selected_year %}selected{% endif %}>Toutes</option>
+          {% for y in years %}
+          <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+
     <table class="table table-bordered align-middle">
       <thead class="table-light">
         <tr>
