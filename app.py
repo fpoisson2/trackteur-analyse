@@ -148,6 +148,7 @@ def create_app():
         if not current_user.is_admin:
             return redirect(url_for('index'))
 
+        cfg = Config.query.first()
         devices = zone.fetch_devices()
         followed = Equipment.query.all()
         selected_ids = {e.id_traccar for e in followed}
@@ -155,7 +156,20 @@ def create_app():
 
         if request.method == 'POST':
             token_global = request.form.get('token_global')
+            base_url = request.form.get('base_url')
             checked_ids = {int(x) for x in request.form.getlist('equip_ids')}
+
+            if cfg:
+                if base_url:
+                    cfg.traccar_url = base_url
+                if token_global:
+                    cfg.traccar_token = token_global
+            else:
+                cfg = Config(
+                    traccar_url=base_url or "",
+                    traccar_token=token_global or "",
+                )
+                db.session.add(cfg)
 
             for dev in devices:
                 if dev['id'] in checked_ids:
@@ -175,13 +189,15 @@ def create_app():
             message = "Configuration enregistrée !"
 
         # 👉 Pré‑remplir avec le token du premier équipement si possible
-        existing_token = followed[0].token_api if followed else ""
+        existing_token = cfg.traccar_token if cfg else ""
+        existing_url = cfg.traccar_url if cfg else ""
 
         return render_template(
             'admin.html',
             devices=devices,
             selected_ids=selected_ids,
             existing_token=existing_token,
+            existing_url=existing_url,
             message=message
         )
 
