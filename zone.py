@@ -158,10 +158,13 @@ def _build_map(zones, raw_points=None):
             geoms = [g for g in geom.geoms if isinstance(g, Polygon)]
             geom = MultiPolygon(geoms)
         count = len(z['dates'])
-        popup = folium.Popup(
-            f"<b>Passages:</b> {count}<br><b>Surface:</b> {(z['geometry'].area/1e4):.2f} ha",
-            max_width=250
-        )
+        dates_list = ", ".join(sorted(z['dates']))
+        popup_text = (
+            f"<b>Passages:</b> {count}<br>"
+            f"<b>Surface:</b> {(z['geometry'].area/1e4):.2f} ha")
+        if dates_list:
+            popup_text += f"<br><b>Dates:</b> {dates_list}"
+        popup = folium.Popup(popup_text, max_width=250)
         idx = min(count - 1, len(colors) - 1)
         folium.GeoJson(
             geom,
