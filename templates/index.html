@@ -12,8 +12,8 @@
       <h1>Résumé des équipements</h1>
       <div>
         {% if current_user.is_admin %}
-        <a href="{{ url_for('admin') }}" 
-           class="btn btn-sm btn-secondary">Admin</a>
+        <a href="{{ url_for('admin') }}" class="btn btn-sm btn-secondary">Admin</a>
+        <a href="{{ url_for('users') }}" class="btn btn-sm btn-secondary ms-2">Utilisateurs</a>
         {% endif %}
         <a href="{{ url_for('logout') }}" 
            class="btn btn-sm btn-outline-secondary">Déconnexion</a>
