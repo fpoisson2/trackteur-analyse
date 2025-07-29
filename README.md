@@ -9,11 +9,10 @@ Trackteur Analyse interroge l'API Traccar, agrège les positions par jour et cal
 2. [Prérequis](#prérequis)
 3. [Installation](#installation)
 4. [Configuration](#configuration)
-5. [Initialisation de la base](#initialisation-de-la-base)
-6. [Utilisation](#utilisation)
-7. [Structure du projet](#structure-du-projet)
-8. [Contribution](#contribution)
-9. [Licence](#licence)
+5. [Utilisation](#utilisation)
+6. [Structure du projet](#structure-du-projet)
+7. [Contribution](#contribution)
+8. [Licence](#licence)
 
 ## Fonctionnalités
 - Authentification avec gestion d'un utilisateur administrateur
@@ -35,31 +34,13 @@ pip install -r requirements.txt
 ```
 
 ## Configuration
-Avant le lancement, définissez les variables d'environnement suivantes (ou placez-les dans un fichier `.env`) :
+Au premier lancement, ouvrez l'application dans votre navigateur. Un assistant se lance automatiquement pour :
+1. Créer le compte administrateur
+2. Saisir l'URL et le token du serveur Traccar
+3. Choisir les appareils à suivre
+4. Lancer une analyse initiale
 
-| Variable | Description |
-|----------|-------------|
-| `TRACCAR_AUTH_TOKEN` | Token d'authentification pour l'API Traccar |
-| `TRACCAR_BASE_URL` | URL de base de votre serveur (ex. `https://mon.traccar/api`) |
-| `APP_USERNAME` | Identifiant de connexion |
-| `APP_PASSWORD` | Mot de passe associé |
-| `FLASK_SECRET_KEY` | *(optionnel)* Clé secrète Flask |
-
-Exemple :
-```bash
-export TRACCAR_AUTH_TOKEN="votre_token"
-export TRACCAR_BASE_URL="https://mon.traccar/api"
-export APP_USERNAME="admin"
-export APP_PASSWORD="motdepasse"
-```
-
-## Initialisation de la base
-
-Lors du premier démarrage :
-```bash
-python app.py
-```
-Puis ouvrez [http://localhost:5000/initdb](http://localhost:5000/initdb) pour créer la base. Si `APP_USERNAME` et `APP_PASSWORD` sont définies, un compte administrateur est généré.
+Seule la variable `FLASK_SECRET_KEY` peut être définie au besoin.
 
 ## Utilisation
 
