@@ -33,6 +33,8 @@ Ce fichier `Agents.md` fournit des directives claires pour OpenAI Codex et autre
 - Ajouter les nouvelles routes dans `app.py` (ou via Blueprint futur)
 - Réutiliser les layouts Bootstrap existants dans les templates HTML
 - L'initialisation de la base s'effectue via `@app.before_first_request`
+- Restreindre les routes d'administration (`/admin`, `/users`, `/initdb`)
+  aux comptes disposant d'un rôle **admin**
 
 ### Traitement de données GPS
 
