@@ -41,7 +41,6 @@ Avant le lancement, définissez les variables d'environnement suivantes (ou plac
 |----------|-------------|
 | `TRACCAR_AUTH_TOKEN` | Token d'authentification pour l'API Traccar |
 | `TRACCAR_BASE_URL` | URL de base de votre serveur (ex. `https://mon.traccar/api`) |
-| `TRACCAR_DEVICE_NAME` | *(optionnel)* Nom du dispositif à suivre |
 | `APP_USERNAME` | Identifiant de connexion |
 | `APP_PASSWORD` | Mot de passe associé |
 | `FLASK_SECRET_KEY` | *(optionnel)* Clé secrète Flask |
