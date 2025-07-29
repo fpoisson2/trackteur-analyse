@@ -359,6 +359,22 @@ def recalculate_hectares_from_positions(equipment_id, since_date=None):
     return total
 
 
+def calculate_relative_hectares(equipment_id):
+    """Calcule la surface unique (hectares relatifs) pour un équipement."""
+    zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+    if not zones:
+        return 0.0
+    from shapely import wkt
+
+    daily = [
+        {"geometry": wkt.loads(z.polygon_wkt), "dates": [str(z.date)]}
+        for z in zones
+    ]
+    aggregated = aggregate_overlapping_zones(daily)
+    total = sum(z["geometry"].area for z in aggregated) / 1e4
+    return total
+
+
 # ✅ FONCTION DE DEBUG : Pour voir ce qui se passe
 def debug_hectares_calculation(equipment_id):
     """Affiche des infos de debug sur le calcul des hectares."""

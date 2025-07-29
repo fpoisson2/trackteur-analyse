@@ -209,6 +209,36 @@ def test_recalculate_hectares_from_positions(monkeypatch):
             assert eq.total_hectares == total
 
 
+def test_calculate_relative_hectares():
+    for app in setup_db():
+        with app.app_context():
+            eq = zone.Equipment(id_traccar=1, name="eq1")
+            zone.db.session.add(eq)
+            zone.db.session.commit()
+
+            poly = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+            zone.db.session.add(
+                zone.DailyZone(
+                    equipment_id=eq.id,
+                    date=datetime(2023, 1, 1).date(),
+                    surface_ha=1.0,
+                    polygon_wkt=poly.wkt,
+                )
+            )
+            zone.db.session.add(
+                zone.DailyZone(
+                    equipment_id=eq.id,
+                    date=datetime(2023, 1, 2).date(),
+                    surface_ha=1.0,
+                    polygon_wkt=poly.wkt,
+                )
+            )
+            zone.db.session.commit()
+
+            total = zone.calculate_relative_hectares(eq.id)
+            assert abs(total - 1.0) < 1e-6
+
+
 # ---------- analyse_quotidienne & analyser_equipement ----------
 
 def test_analyse_quotidienne(monkeypatch):
