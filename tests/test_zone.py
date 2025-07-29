@@ -268,3 +268,26 @@ def test_analyser_equipement(monkeypatch):
     eq = types.SimpleNamespace(id_traccar=5)
     zone.analyser_equipement(eq, start_date=42)
     assert called == {"id": 5, "since": 42}
+
+
+def test_distance_between_zones_calculation(monkeypatch):
+    for app in setup_db():
+        with app.app_context():
+            eq = zone.Equipment(id_traccar=1, name="eq1")
+            zone.db.session.add(eq)
+            zone.db.session.commit()
+
+            monkeypatch.setattr(zone, "fetch_positions", lambda *a, **k: [])
+
+            def fake_cluster(pos):
+                return [
+                    {"geometry": Polygon([(0, 0), (100, 0), (100, 100), (0, 100)]), "dates": ["2023-01-01"]},
+                    {"geometry": Polygon([(1000, 0), (1100, 0), (1100, 100), (1000, 100)]), "dates": ["2023-01-02"]},
+                ]
+
+            monkeypatch.setattr(zone, "cluster_positions", fake_cluster)
+            monkeypatch.setattr(zone, "aggregate_overlapping_zones", lambda z: z)
+
+            zone.process_equipment(eq, "http://example.com", zone.db)
+
+            assert eq.distance_between_zones > 0

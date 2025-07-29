@@ -196,6 +196,17 @@ def generate_map(zones, raw_points=None, output="static/carte.html"):
         fh.write(html)
 
 
+def calculate_distance_between_zones(polygons):
+    """Calcule la distance totale entre les centroids des zones successives."""
+    if not polygons or len(polygons) < 2:
+        return 0.0
+
+    total = 0.0
+    for a, b in zip(polygons, polygons[1:]):
+        total += a.centroid.distance(b.centroid)
+    return float(total)
+
+
 
 def process_equipment(eq, traccar_url, db, since=None):
     """Récupère, analyse et enregistre les zones journalières de l'équipement."""
@@ -282,10 +293,14 @@ def process_equipment(eq, traccar_url, db, since=None):
             db.session.add(dz)
 
     # 4) ✅ FIX : Recalculer le total sur TOUTES les zones existantes
-    all_zones = DailyZone.query.filter_by(equipment_id=eq.id).all()
+    all_zones = DailyZone.query.filter_by(equipment_id=eq.id).order_by(DailyZone.date).all()
     total = sum(d.surface_ha for d in all_zones)
     eq.total_hectares = total
-    eq.distance_between_zones = 0.0
+
+    from shapely import wkt
+
+    polygons = [wkt.loads(z.polygon_wkt) for z in all_zones if z.polygon_wkt]
+    eq.distance_between_zones = calculate_distance_between_zones(polygons)
     
     db.session.commit()
 
