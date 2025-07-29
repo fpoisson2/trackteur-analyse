@@ -33,6 +33,7 @@
           <th>Ha uniques</th>
           <th>Distance zones (km)</th>
           <th>Temps écoulé</th>
+          <th>Score</th>
         </tr>
       </thead>
       <tbody>
@@ -48,6 +49,14 @@
           <td>{{ eq.relative_hectares|round(2) }}</td>
           <td>{{ eq.distance_km|round(2) }}</td>
           <td>{{ eq.delta_str }}</td>
+          <td>
+            {{ eq.score }}
+            {% if eq.rank == 1 %}
+            <span class="ms-1">🥇</span>
+            {% elif eq.rank == 2 %}
+            <span class="ms-1">🥈</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

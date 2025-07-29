@@ -273,26 +273,73 @@ def create_app():
             if eq.last_position:
                 last = eq.last_position.strftime('%Y-%m-%d %H:%M:%S')
                 delta = now - eq.last_position
+                delta_seconds = delta.total_seconds()
                 hours = delta.seconds // 3600
                 minutes = (delta.seconds % 3600) // 60
                 delta_str = f"{delta.days} j {hours} h {minutes} min"
             else:
                 last = None
+                delta_seconds = None
                 delta_str = "–"
+
+            distance_km = (eq.distance_between_zones or 0) / 1000
+            rel_hectares = zone.calculate_relative_hectares(eq.id)
+            ratio_eff = eq.total_hectares / distance_km if distance_km else 0.0
 
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
                 "last_seen": last,
                 "total_hectares": round(eq.total_hectares or 0, 2),
-                "relative_hectares": round(
-                    zone.calculate_relative_hectares(eq.id), 2
-                ),
-                "distance_km": round(
-                    (eq.distance_between_zones or 0) / 1000, 2
-                ),
-                "delta_str": delta_str
+                "relative_hectares": round(rel_hectares, 2),
+                "distance_km": round(distance_km, 2),
+                "delta_seconds": delta_seconds,
+                "ratio_eff": ratio_eff,
+                "delta_str": delta_str,
             })
+
+        # Normalisation des critères
+        def normalize(values, value, invert=False):
+            clean = [v for v in values if v is not None]
+            if not clean or value is None:
+                return 0.0
+            vmin = min(clean)
+            vmax = max(clean)
+            if vmax == vmin:
+                return 1.0
+            if invert:
+                return (vmax - value) / (vmax - vmin)
+            return (value - vmin) / (vmax - vmin)
+
+        times = [
+            d["delta_seconds"]
+            for d in equipment_data
+            if d["delta_seconds"] is not None
+        ]
+        totals = [d["total_hectares"] for d in equipment_data]
+        uniques = [d["relative_hectares"] for d in equipment_data]
+        distances = [d["distance_km"] for d in equipment_data]
+        ratios = [d["ratio_eff"] for d in equipment_data]
+
+        for d in equipment_data:
+            n_time = normalize(times, d["delta_seconds"], invert=True)
+            n_total = normalize(totals, d["total_hectares"])
+            n_unique = normalize(uniques, d["relative_hectares"])
+            n_dist = normalize(distances, d["distance_km"])
+            n_ratio = normalize(ratios, d["ratio_eff"])
+            d["score"] = round(
+                0.3 * n_time
+                + 0.3 * n_total
+                + 0.2 * n_unique
+                + 0.1 * n_dist
+                + 0.1 * n_ratio,
+                3,
+            )
+
+        equipment_data.sort(key=lambda x: x["score"], reverse=True)
+
+        for idx, d in enumerate(equipment_data, start=1):
+            d["rank"] = idx
 
         return render_template(
             'index.html',
