@@ -10,7 +10,7 @@ os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 from app import create_app  # noqa: E402
-from models import db, User, Equipment, DailyZone  # noqa: E402
+from models import db, User, Equipment, DailyZone, Config  # noqa: E402
 
 
 def make_app():
@@ -24,6 +24,12 @@ def make_app():
         admin = User(username="admin", is_admin=True)
         admin.set_password("pass")
         db.session.add(admin)
+        db.session.add(
+            Config(
+                traccar_url="http://example.com",
+                traccar_token="dummy",
+            )
+        )
         eq = Equipment(id_traccar=1, name="tractor")
         db.session.add(eq)
         db.session.commit()

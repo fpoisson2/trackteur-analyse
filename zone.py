@@ -12,20 +12,34 @@ from sklearn.cluster import DBSCAN
 import folium
 from geopandas import GeoDataFrame
 
-from models import db, Equipment, Position, DailyZone
+from models import db, Equipment, Position, DailyZone, Config
 
 # Ignorer avertissements GEOS
 warnings.filterwarnings("ignore", "GEOS messages", UserWarning)
 
 # 🔐 Paramètres de connexion au serveur Traccar
-AUTH_TOKEN = os.environ.get("TRACCAR_AUTH_TOKEN")
-BASE_URL = os.environ.get("TRACCAR_BASE_URL")
-if not AUTH_TOKEN or not BASE_URL:
-    raise EnvironmentError(
-        "Les variables d'environnement "
-        "TRACCAR_AUTH_TOKEN et TRACCAR_BASE_URL doivent être définies"
-    )
-AUTH_HEADER = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+
+
+def _get_credentials():
+    """Retourne le token et l'URL Traccar depuis la config ou l'env."""
+    token = os.environ.get("TRACCAR_AUTH_TOKEN")
+    base = os.environ.get("TRACCAR_BASE_URL")
+    if not token or not base:
+        cfg = Config.query.first()
+        if cfg:
+            token = cfg.traccar_token
+            base = cfg.traccar_url
+    if not token or not base:
+        raise EnvironmentError(
+            "TRACCAR_AUTH_TOKEN et TRACCAR_BASE_URL non configurés"
+        )
+    return token, base
+
+
+def _auth_header():
+    token, _ = _get_credentials()
+    return {"Authorization": f"Bearer {token}"}
+
 
 # 📥 Paramètres d’analyse
 DAYS = 60
@@ -43,8 +57,9 @@ _transformer = pyproj.Transformer.from_crs(
 
 def fetch_devices():
     """Récupère la liste des dispositifs Traccar."""
-    base = BASE_URL.rstrip('/')
-    resp = requests.get(f"{base}/api/devices", headers=AUTH_HEADER)
+    _, base = _get_credentials()
+    url = f"{base.rstrip('/')}/api/devices"
+    resp = requests.get(url, headers=_auth_header())
     resp.raise_for_status()
     devices = resp.json()
     device_name = os.environ.get('TRACCAR_DEVICE_NAME')
@@ -62,9 +77,11 @@ def fetch_positions(device_id, from_dt, to_dt):
         "from": fmt(from_dt),
         "to": fmt(to_dt),
     }
-    base = BASE_URL.rstrip('/')
+    _, base = _get_credentials()
     resp = requests.get(
-        f"{base}/api/positions", headers=AUTH_HEADER, params=params
+        f"{base.rstrip('/')}/api/positions",
+        headers=_auth_header(),
+        params=params,
     )
     try:
         resp.raise_for_status()
@@ -253,7 +270,7 @@ def calculate_distance_between_zones(polygons):
     return float(total)
 
 
-def process_equipment(eq, traccar_url, db, since=None):
+def process_equipment(eq, since=None):
     """Analyse et enregistre les zones journalières de l'équipement."""
     to_dt = datetime.utcnow()
     from_dt = since if since else to_dt - timedelta(days=1)
@@ -513,9 +530,9 @@ def debug_hectares_calculation(equipment_id):
 def analyse_quotidienne():
     """Tâche planifiée: analyse pour tous les équipements."""
     for eq in Equipment.query.all():
-        process_equipment(eq, BASE_URL, db)
+        process_equipment(eq)
 
 
 def analyser_equipement(eq, start_date=None):
     """Analyse un équipement donné à partir de start_date."""
-    process_equipment(eq, BASE_URL, db, since=start_date)
+    process_equipment(eq, since=start_date)

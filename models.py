@@ -18,6 +18,14 @@ class User(UserMixin, db.Model):  # type: ignore[name-defined]
         return check_password_hash(self.password_hash, password)
 
 
+class Config(db.Model):  # type: ignore[name-defined]
+    """Paramètres de connexion Traccar."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    traccar_url = db.Column(db.String, nullable=False)
+    traccar_token = db.Column(db.String, nullable=False)
+
+
 class Equipment(db.Model):  # type: ignore[name-defined]
     id = db.Column(db.Integer, primary_key=True)
     id_traccar = db.Column(db.Integer, nullable=False)

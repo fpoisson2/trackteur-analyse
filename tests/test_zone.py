@@ -243,7 +243,7 @@ def test_process_equipment(monkeypatch):
                 lambda z: z,
             )
 
-            zone.process_equipment(eq, "http://example.com", zone.db)
+            zone.process_equipment(eq)
 
             dz = zone.DailyZone.query.filter_by(equipment_id=eq.id).first()
             assert dz is not None
@@ -351,7 +351,7 @@ def test_analyse_quotidienne(monkeypatch):
 
             called = []
 
-            def fake_process(e, base, db):
+            def fake_process(e):
                 called.append(e.id_traccar)
             monkeypatch.setattr(zone, "process_equipment", fake_process)
 
@@ -362,7 +362,7 @@ def test_analyse_quotidienne(monkeypatch):
 def test_analyser_equipement(monkeypatch):
     called = {}
 
-    def fake_process(eq, base, db, since=None):
+    def fake_process(eq, since=None):
         called["id"] = eq.id_traccar
         called["since"] = since
     monkeypatch.setattr(zone, "process_equipment", fake_process)
@@ -411,6 +411,6 @@ def test_distance_between_zones_calculation(monkeypatch):
                 lambda z: z,
             )
 
-            zone.process_equipment(eq, "http://example.com", zone.db)
+            zone.process_equipment(eq)
 
             assert eq.distance_between_zones > 0

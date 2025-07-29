@@ -10,7 +10,7 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, DailyZone
+from models import db, User, Equipment, DailyZone, Config
 import zone
 
 from datetime import datetime
@@ -30,27 +30,36 @@ def create_app():
     login_manager = LoginManager(app)
     login_manager.login_view = 'login'
 
+    if hasattr(app, "before_first_request"):
+        @app.before_first_request
+        def init_db() -> None:
+            """Crée les tables de la base si nécessaire."""
+            db.create_all()
+    else:
+        @app.before_request
+        def init_db_once() -> None:
+            """Fallback pour Flask 3 sans before_first_request."""
+            if not getattr(app, "_db_init", False):
+                db.create_all()
+                app._db_init = True
+
+    @app.before_request
+    def ensure_setup():
+        allowed = {'setup', 'static'}
+        if request.endpoint in allowed:
+            return
+        if User.query.count() == 0:
+            return redirect(url_for('setup'))
+        if Config.query.count() == 0:
+            if current_user.is_authenticated or request.endpoint != 'login':
+                return redirect(url_for('setup'))
+        if Equipment.query.count() == 0:
+            if current_user.is_authenticated or request.endpoint != 'login':
+                return redirect(url_for('setup'))
+
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(int(user_id))
-
-    @app.route('/initdb')
-    @login_required
-    def initdb():
-        if not current_user.is_admin:
-            return redirect(url_for('index'))
-
-        db.create_all()
-        # Création de l'utilisateur admin initial
-        admin_user = os.environ.get('APP_USERNAME')
-        admin_pass = os.environ.get('APP_PASSWORD')
-        if admin_user and admin_pass:
-            if not User.query.filter_by(username=admin_user).first():
-                u = User(username=admin_user, is_admin=True)
-                u.set_password(admin_pass)
-                db.session.add(u)
-                db.session.commit()
-        return 'Base de données initialisée.'
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -70,6 +79,68 @@ def create_app():
     def logout():
         logout_user()
         return redirect(url_for('login'))
+
+    @app.route('/setup', methods=['GET', 'POST'])
+    def setup():
+        """Assistant de première configuration."""
+        # Détermination de l'étape
+        if User.query.count() == 0:
+            step = 1
+        elif Config.query.count() == 0:
+            step = 2
+        elif Equipment.query.count() == 0:
+            step = 3
+        else:
+            step = 4
+
+        if step == 1:
+            if request.method == 'POST':
+                username = request.form.get('username')
+                password = request.form.get('password')
+                if username and password:
+                    admin = User(username=username, is_admin=True)
+                    admin.set_password(password)
+                    db.session.add(admin)
+                    db.session.commit()
+                    return redirect(url_for('setup'))
+            return render_template('setup_step1.html')
+
+        if step == 2:
+            if request.method == 'POST':
+                url = request.form.get('base_url')
+                token = request.form.get('token')
+                if url and token:
+                    cfg = Config(traccar_url=url, traccar_token=token)
+                    db.session.add(cfg)
+                    db.session.commit()
+                    return redirect(url_for('setup'))
+            return render_template('setup_step2.html')
+
+        if step == 3:
+            devices = zone.fetch_devices()
+            if request.method == 'POST':
+                ids = {int(x) for x in request.form.getlist('equip_ids')}
+                cfg = Config.query.first()
+                for dev in devices:
+                    if dev['id'] in ids:
+                        eq = Equipment(
+                            id_traccar=dev['id'],
+                            name=dev['name'],
+                            token_api=cfg.traccar_token,
+                        )
+                        db.session.add(eq)
+                db.session.commit()
+                return redirect(url_for('setup'))
+            return render_template('setup_step3.html', devices=devices)
+
+        # step 4
+        now = datetime.utcnow()
+        start_of_year = datetime(now.year, 1, 1)
+        processed = []
+        for eq in Equipment.query.all():
+            zone.process_equipment(eq, since=start_of_year)
+            processed.append(eq.name)
+        return render_template('setup_step4.html', devices=processed)
 
     @app.route('/admin', methods=['GET', 'POST'])
     @login_required
@@ -123,7 +194,7 @@ def create_app():
         now = datetime.utcnow()
         start_of_year = datetime(now.year, 1, 1)
         for eq in Equipment.query.all():
-            zone.process_equipment(eq, zone.BASE_URL, db, since=start_of_year)
+            zone.process_equipment(eq, since=start_of_year)
 
         return redirect(url_for('admin', msg="Analyse complète terminée"))
 
@@ -261,9 +332,7 @@ def create_app():
             now = datetime.utcnow()
             start_of_year = datetime(now.year, 1, 1)
             for eq in Equipment.query.all():
-                zone.process_equipment(
-                    eq, zone.BASE_URL, db, since=start_of_year
-                )
+                zone.process_equipment(eq, since=start_of_year)
 
     if not os.environ.get("SKIP_INITIAL_ANALYSIS"):
         initial_analysis()
