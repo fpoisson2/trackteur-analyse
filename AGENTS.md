@@ -53,7 +53,7 @@ Les agents peuvent être exécutés automatiquement ou manuellement :
 | Agent                      | Fréquence        | Déclenchement |
 |----------------------------|------------------|----------------|
 | `analyseur_zones_journalières` | chaque nuit      | APScheduler    |
-| `analyse_manuelle`         | à la demande     | UI utilisateur |
+| `analyse_initiale`         | au démarrage     | automatique |
 | `rapport_par_tracteur`     | futur            | script manuel  |
 | `verificateur_inactivite`  | futur            | planifié       |
 

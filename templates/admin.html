@@ -51,6 +51,10 @@
 
       <button type="submit" class="btn btn-primary">Enregistrer la configuration</button>
     </form>
+
+    <form method="post" action="{{ url_for('reanalyze_all') }}" class="mt-3">
+      <button type="submit" class="btn btn-danger">Tout réanalyser</button>
+    </form>
   </div>
 </body>
 </html>

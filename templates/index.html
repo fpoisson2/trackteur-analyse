@@ -33,7 +33,6 @@
           <th>Ha uniques</th>
           <th>Distance zones (km)</th>
           <th>Temps écoulé</th>
-          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -49,14 +48,6 @@
           <td>{{ eq.relative_hectares|round(2) }}</td>
           <td>{{ eq.distance_km|round(2) }}</td>
           <td>{{ eq.delta_str }}</td>
-          <td>
-            <form method="post" class="d-inline">
-              <input type="hidden" name="equip_id" value="{{ eq.id }}">
-              <button type="submit" class="btn btn-sm btn-primary">
-                Analyser
-              </button>
-            </form>
-          </td>
         </tr>
         {% endfor %}
       </tbody>
