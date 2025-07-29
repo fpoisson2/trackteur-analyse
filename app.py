@@ -148,6 +148,7 @@ def create_app():
                 "name": eq.name,
                 "last_seen": last,
                 "total_hectares": round(eq.total_hectares or 0, 2),
+                "relative_hectares": round(zone.calculate_relative_hectares(eq.id), 2),
                 "distance_km": round((eq.distance_between_zones or 0) / 1000, 2),
                 "delta_str": delta_str
             })
