@@ -10,7 +10,8 @@ os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 from app import create_app
-from models import db, User
+from models import db, User, Equipment
+import zone
 
 
 def make_app():
@@ -109,3 +110,36 @@ def test_password_reset():
     with app.app_context():
         user = User.query.get(uid)
         assert user.check_password("new")
+
+
+def test_non_admin_cannot_reanalyze():
+    app = make_app()
+    with app.app_context():
+        u = User(username="reader", is_admin=False)
+        u.set_password("pwd")
+        db.session.add(u)
+        db.session.commit()
+    client = app.test_client()
+    login(client, "reader", "pwd")
+    resp = client.post("/reanalyze_all")
+    assert resp.status_code == 302
+
+
+def test_admin_can_trigger_reanalyze(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    with app.app_context():
+        db.session.add(Equipment(id_traccar=1, name="eq"))
+        db.session.commit()
+
+    called = []
+
+    def fake_process(eq, base, db, since=None):
+        called.append(eq.id_traccar)
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+
+    resp = client.post("/reanalyze_all")
+    assert resp.status_code == 302
+    assert called == [1]

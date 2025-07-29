@@ -74,7 +74,7 @@ def create_app():
         devices = zone.fetch_devices()
         followed = Equipment.query.all()
         selected_ids = {e.id_traccar for e in followed}
-        message = None
+        message = request.args.get('msg')
 
         if request.method == 'POST':
             token_global = request.form.get('token_global')
@@ -105,6 +105,19 @@ def create_app():
             existing_token=existing_token,
             message=message
         )
+
+    @app.route('/reanalyze_all', methods=['POST'])
+    @login_required
+    def reanalyze_all():
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+
+        now = datetime.utcnow()
+        start_of_year = datetime(now.year, 1, 1)
+        for eq in Equipment.query.all():
+            zone.process_equipment(eq, zone.BASE_URL, db, since=start_of_year)
+
+        return redirect(url_for('admin', msg="Analyse complète terminée"))
 
     @app.route('/users', methods=['GET', 'POST'])
     @login_required
@@ -149,32 +162,14 @@ def create_app():
         users = User.query.all()
         return render_template('users.html', users=users, message=message)
 
-    @app.route('/', methods=['GET', 'POST'])
+    @app.route('/')
     @login_required
     def index():
         # 1) Récupération des équipements
         equipments = Equipment.query.all()
         message = None
 
-        # 2) Si on clique sur "Analyser"
-        if request.method == 'POST':
-            equip_id = request.form.get('equip_id')
-            if equip_id:
-                eq = Equipment.query.get(int(equip_id))
-                if eq:
-                    # a) Calcul du début de l’année courante (UTC)
-                    now = datetime.utcnow()
-                    start_of_year = datetime(now.year, 1, 1)
-
-                    # Nouveau : on transmet start_of_year en since
-                    zone.process_equipment(eq, zone.BASE_URL, db, since=start_of_year)
-
-                    message = (
-                        f"Analyse lancée pour « {eq.name} » "
-                        f"depuis le {start_of_year.date()}"
-                    )
-            else:
-                message = "Aucun équipement sélectionné."
+        # 2) Plus de lancement manuel d'analyse
 
         # 3) Préparation des données pour l’affichage
         equipment_data = []
@@ -237,6 +232,19 @@ def create_app():
 
     scheduler.add_job(scheduled_job, trigger='cron', hour=2)
     scheduler.start()
+
+    def initial_analysis():
+        with app.app_context():
+            try:
+                Equipment.query.all()
+            except Exception:
+                return
+            now = datetime.utcnow()
+            start_of_year = datetime(now.year, 1, 1)
+            for eq in Equipment.query.all():
+                zone.process_equipment(eq, zone.BASE_URL, db, since=start_of_year)
+
+    initial_analysis()
 
     return app
 
