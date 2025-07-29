@@ -1,5 +1,5 @@
 import os
-import requests
+import requests  # type: ignore
 import pandas as pd
 import numpy as np
 import base64
