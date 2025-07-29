@@ -1,20 +1,26 @@
 import os
 
 from flask import Flask, render_template, request, redirect, url_for
-from flask_login import LoginManager, login_user, login_required, logout_user, current_user
+from flask_login import (
+    LoginManager,
+    login_user,
+    login_required,
+    logout_user,
+    current_user,
+)
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, DailyZone
+from models import db, User, Equipment, DailyZone
 import zone
 
 from datetime import datetime
 
-from shapely.ops import unary_union
-
 
 def create_app():
     app = Flask(__name__)
-    app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
+    app.config['SECRET_KEY'] = os.environ.get(
+        'FLASK_SECRET_KEY', os.urandom(24)
+    )
     app.config['SQLALCHEMY_DATABASE_URI'] = (
         'sqlite:///' + os.path.join(app.instance_path, 'trackteur.db')
     )
@@ -82,7 +88,9 @@ def create_app():
 
             for dev in devices:
                 if dev['id'] in checked_ids:
-                    eq = Equipment.query.filter_by(id_traccar=dev['id']).first()
+                    eq = Equipment.query.filter_by(
+                        id_traccar=dev['id']
+                    ).first()
                     if not eq:
                         eq = Equipment(id_traccar=dev['id'])
                         db.session.add(eq)
@@ -190,8 +198,12 @@ def create_app():
                 "name": eq.name,
                 "last_seen": last,
                 "total_hectares": round(eq.total_hectares or 0, 2),
-                "relative_hectares": round(zone.calculate_relative_hectares(eq.id), 2),
-                "distance_km": round((eq.distance_between_zones or 0) / 1000, 2),
+                "relative_hectares": round(
+                    zone.calculate_relative_hectares(eq.id), 2
+                ),
+                "distance_km": round(
+                    (eq.distance_between_zones or 0) / 1000, 2
+                ),
                 "delta_str": delta_str
             })
 
@@ -201,12 +213,16 @@ def create_app():
             message=message
         )
 
-
     @app.route('/equipment/<int:equipment_id>')
     @login_required
     def equipment_detail(equipment_id):
         eq = Equipment.query.get_or_404(equipment_id)
-        zones = DailyZone.query.filter_by(equipment_id=equipment_id).order_by(DailyZone.date.desc()).all()
+        zones = (
+            DailyZone.query
+            .filter_by(equipment_id=equipment_id)
+            .order_by(DailyZone.date.desc())
+            .all()
+        )
         # Génération de la carte Folium avec comptage des passages
         map_html = None
         if zones:
@@ -222,10 +238,13 @@ def create_app():
 
             aggregated = zone.aggregate_overlapping_zones(daily)
             map_html = zone.generate_map_html(aggregated)
-        return render_template('equipment.html', equipment=eq, zones=zones, map_html=map_html)
+        return render_template(
+            'equipment.html', equipment=eq, zones=zones, map_html=map_html
+        )
 
     # Planification de la tâche quotidienne à 2h du matin
     scheduler = BackgroundScheduler()
+
     def scheduled_job():
         with app.app_context():
             zone.analyse_quotidienne()
@@ -242,9 +261,12 @@ def create_app():
             now = datetime.utcnow()
             start_of_year = datetime(now.year, 1, 1)
             for eq in Equipment.query.all():
-                zone.process_equipment(eq, zone.BASE_URL, db, since=start_of_year)
+                zone.process_equipment(
+                    eq, zone.BASE_URL, db, since=start_of_year
+                )
 
-    initial_analysis()
+    if not os.environ.get("SKIP_INITIAL_ANALYSIS"):
+        initial_analysis()
 
     return app
 

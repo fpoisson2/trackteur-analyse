@@ -6,16 +6,15 @@ from datetime import datetime
 import pytest
 from shapely.geometry import Polygon
 
-# Assurer la présence des variables d'environnement attendues par zone.py
-os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
-os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
-
 # S'assurer que le dossier racine est dans sys.path pour l'import de zone
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-import zone
+import zone  # noqa: E402
+
+os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
+os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 
 class DummyResponse:
@@ -23,7 +22,9 @@ class DummyResponse:
         self._json = json_data
         self.status_code = status_code
         self.text = text
-        self.content = content if content else (b"" if json_data is None else b"1")
+        self.content = (
+            content if content else (b"" if json_data is None else b"1")
+        )
 
     def json(self):
         return self._json
@@ -52,7 +53,12 @@ def test_fetch_devices_filtered(monkeypatch):
     monkeypatch.setenv("TRACCAR_DEVICE_NAME", "tractor2")
 
     def fake_get(url, headers):
-        return DummyResponse(json_data=[{"id": 1, "name": "tractor"}, {"id": 2, "name": "tractor2"}])
+        return DummyResponse(
+            json_data=[
+                {"id": 1, "name": "tractor"},
+                {"id": 2, "name": "tractor2"},
+            ]
+        )
 
     monkeypatch.setattr(zone.requests, "get", fake_get)
     devices = zone.fetch_devices()
@@ -71,7 +77,9 @@ def test_fetch_devices_http_error(monkeypatch):
 # ---------- fetch_positions ----------
 
 def test_fetch_positions_success(monkeypatch):
-    resp_data = [{"latitude": 0, "longitude": 0, "deviceTime": "2023-01-01T00:00:00Z"}]
+    resp_data = [
+        {"latitude": 0, "longitude": 0, "deviceTime": "2023-01-01T00:00:00Z"}
+    ]
 
     def fake_get(url, headers, params):
         return DummyResponse(json_data=resp_data)
@@ -105,9 +113,21 @@ def test_cluster_positions_returns_zones():
     now = datetime.utcnow().strftime("%Y-%m-%d")
     positions = []
     for i in range(3):
-        positions.append({"latitude": 0, "longitude": 0, "deviceTime": f"{now}T00:00:0{i}Z"})
+        positions.append(
+            {
+                "latitude": 0,
+                "longitude": 0,
+                "deviceTime": f"{now}T00:00:0{i}Z",
+            }
+        )
     for i in range(3):
-        positions.append({"latitude": 0.002, "longitude": 0.002, "deviceTime": f"{now}T00:00:1{i}Z"})
+        positions.append(
+            {
+                "latitude": 0.002,
+                "longitude": 0.002,
+                "deviceTime": f"{now}T00:00:1{i}Z",
+            }
+        )
     # Rendre la détection plus permissive
     old_min = zone.MIN_SURFACE_HA
     zone.MIN_SURFACE_HA = 0
@@ -122,8 +142,8 @@ def test_cluster_positions_returns_zones():
 # ---------- aggregate_overlapping_zones ----------
 
 def test_aggregate_overlapping_zones():
-    poly1 = Polygon([(0,0),(1,0),(1,1),(0,1)])
-    poly2 = Polygon([(0.5,0.5),(1.5,0.5),(1.5,1.5),(0.5,1.5)])
+    poly1 = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    poly2 = Polygon([(0.5, 0.5), (1.5, 0.5), (1.5, 1.5), (0.5, 1.5)])
     daily = [
         {"geometry": poly1, "dates": ["2023-01-01"]},
         {"geometry": poly2, "dates": ["2023-01-02"]},
@@ -135,7 +155,7 @@ def test_aggregate_overlapping_zones():
 # ---------- _build_map / generate_map_html / generate_map ----------
 
 def test_build_map_and_generate(tmp_path):
-    poly = Polygon([(0,0),(1,0),(1,1),(0,1)])
+    poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
     zones = [{"geometry": poly, "dates": ["2023-01-01"]}]
     fmap = zone._build_map(zones)
     assert fmap is not None
@@ -152,7 +172,11 @@ def test_geojson_features_contain_dates():
     poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
     zones = [{"geometry": poly, "dates": ["2023-01-01"]}]
     fmap = zone._build_map(zones)
-    geo_layers = [c for c in fmap._children.values() if isinstance(c, zone.folium.GeoJson)]
+    geo_layers = [
+        c
+        for c in fmap._children.values()
+        if isinstance(c, zone.folium.GeoJson)
+    ]
     assert geo_layers
     feature = geo_layers[0].data["features"][0]
     assert feature["properties"]["dates"] == ["2023-01-01"]
@@ -181,14 +205,43 @@ def test_process_equipment(monkeypatch):
             zone.db.session.commit()
 
             positions = [
-                {"latitude": 0, "longitude": 0, "deviceTime": "2023-01-01T00:00:00Z"},
-                {"latitude": 0, "longitude": 0, "deviceTime": "2023-01-01T00:01:00Z"},
-                {"latitude": 0, "longitude": 0, "deviceTime": "2023-01-01T00:02:00Z"},
+                {
+                    "latitude": 0,
+                    "longitude": 0,
+                    "deviceTime": "2023-01-01T00:00:00Z",
+                },
+                {
+                    "latitude": 0,
+                    "longitude": 0,
+                    "deviceTime": "2023-01-01T00:01:00Z",
+                },
+                {
+                    "latitude": 0,
+                    "longitude": 0,
+                    "deviceTime": "2023-01-01T00:02:00Z",
+                },
             ]
 
-            monkeypatch.setattr(zone, "fetch_positions", lambda *a, **k: positions)
-            monkeypatch.setattr(zone, "cluster_positions", lambda pos: [{"geometry": Polygon([(0,0),(1,0),(1,1),(0,1)]), "dates": ["2023-01-01"]}])
-            monkeypatch.setattr(zone, "aggregate_overlapping_zones", lambda z: z)
+            monkeypatch.setattr(
+                zone,
+                "fetch_positions",
+                lambda *a, **k: positions,
+            )
+            monkeypatch.setattr(
+                zone,
+                "cluster_positions",
+                lambda pos: [
+                    {
+                        "geometry": Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
+                        "dates": ["2023-01-01"],
+                    }
+                ],
+            )
+            monkeypatch.setattr(
+                zone,
+                "aggregate_overlapping_zones",
+                lambda z: z,
+            )
 
             zone.process_equipment(eq, "http://example.com", zone.db)
 
@@ -207,13 +260,49 @@ def test_recalculate_hectares_from_positions(monkeypatch):
             zone.db.session.add(eq)
             zone.db.session.commit()
 
-            zone.db.session.add(zone.Position(equipment_id=eq.id, latitude=0, longitude=0, timestamp=datetime(2023,1,1)))
-            zone.db.session.add(zone.Position(equipment_id=eq.id, latitude=0, longitude=0, timestamp=datetime(2023,1,1,0,1)))
-            zone.db.session.add(zone.Position(equipment_id=eq.id, latitude=0, longitude=0, timestamp=datetime(2023,1,1,0,2)))
+            zone.db.session.add(
+                zone.Position(
+                    equipment_id=eq.id,
+                    latitude=0,
+                    longitude=0,
+                    timestamp=datetime(2023, 1, 1),
+                )
+            )
+            zone.db.session.add(
+                zone.Position(
+                    equipment_id=eq.id,
+                    latitude=0,
+                    longitude=0,
+                    timestamp=datetime(2023, 1, 1, 0, 1),
+                )
+            )
+            zone.db.session.add(
+                zone.Position(
+                    equipment_id=eq.id,
+                    latitude=0,
+                    longitude=0,
+                    timestamp=datetime(2023, 1, 1, 0, 2),
+                )
+            )
             zone.db.session.commit()
 
-            monkeypatch.setattr(zone, "cluster_positions", lambda pos: [{"geometry": Polygon([(0,0),(1,0),(1,1),(0,1)]), "dates": ["2023-01-01"]}])
-            monkeypatch.setattr(zone, "aggregate_overlapping_zones", lambda z: z)
+            monkeypatch.setattr(
+                zone,
+                "cluster_positions",
+                lambda pos: [
+                    {
+                        "geometry": Polygon(
+                            [(0, 0), (1, 0), (1, 1), (0, 1)]
+                        ),
+                        "dates": ["2023-01-01"],
+                    }
+                ],
+            )
+            monkeypatch.setattr(
+                zone,
+                "aggregate_overlapping_zones",
+                lambda z: z,
+            )
 
             total = zone.recalculate_hectares_from_positions(eq.id)
             assert total > 0
@@ -261,16 +350,18 @@ def test_analyse_quotidienne(monkeypatch):
             zone.db.session.commit()
 
             called = []
+
             def fake_process(e, base, db):
                 called.append(e.id_traccar)
             monkeypatch.setattr(zone, "process_equipment", fake_process)
 
             zone.analyse_quotidienne()
-            assert set(called) == {1,2}
+            assert set(called) == {1, 2}
 
 
 def test_analyser_equipement(monkeypatch):
     called = {}
+
     def fake_process(eq, base, db, since=None):
         called["id"] = eq.id_traccar
         called["since"] = since
@@ -287,16 +378,38 @@ def test_distance_between_zones_calculation(monkeypatch):
             zone.db.session.add(eq)
             zone.db.session.commit()
 
-            monkeypatch.setattr(zone, "fetch_positions", lambda *a, **k: [])
+            monkeypatch.setattr(
+                zone,
+                "fetch_positions",
+                lambda *a, **k: [],
+            )
 
             def fake_cluster(pos):
                 return [
-                    {"geometry": Polygon([(0, 0), (100, 0), (100, 100), (0, 100)]), "dates": ["2023-01-01"]},
-                    {"geometry": Polygon([(1000, 0), (1100, 0), (1100, 100), (1000, 100)]), "dates": ["2023-01-02"]},
+                    {
+                        "geometry": Polygon(
+                            [(0, 0), (100, 0), (100, 100), (0, 100)]
+                        ),
+                        "dates": ["2023-01-01"],
+                    },
+                    {
+                        "geometry": Polygon(
+                            [(1000, 0), (1100, 0), (1100, 100), (1000, 100)]
+                        ),
+                        "dates": ["2023-01-02"],
+                    },
                 ]
 
-            monkeypatch.setattr(zone, "cluster_positions", fake_cluster)
-            monkeypatch.setattr(zone, "aggregate_overlapping_zones", lambda z: z)
+            monkeypatch.setattr(
+                zone,
+                "cluster_positions",
+                fake_cluster,
+            )
+            monkeypatch.setattr(
+                zone,
+                "aggregate_overlapping_zones",
+                lambda z: z,
+            )
 
             zone.process_equipment(eq, "http://example.com", zone.db)
 
