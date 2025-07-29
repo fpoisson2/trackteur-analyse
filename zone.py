@@ -19,11 +19,11 @@ from models import db, Equipment, Position, DailyZone
 warnings.filterwarnings("ignore", "GEOS messages", UserWarning)
 
 # 🔐 Paramètres de connexion au serveur Traccar
-AUTH_TOKEN = os.environ.get("TRACCAR_TOKEN")
+AUTH_TOKEN = os.environ.get("TRACCAR_AUTH_TOKEN")
 BASE_URL = os.environ.get("TRACCAR_BASE_URL")
 if not AUTH_TOKEN or not BASE_URL:
     raise EnvironmentError(
-        "Les variables d'environnement TRACCAR_TOKEN et TRACCAR_BASE_URL doivent être définies"
+        "Les variables d'environnement TRACCAR_AUTH_TOKEN et TRACCAR_BASE_URL doivent être définies"
     )
 AUTH_HEADER = {"Authorization": f"Bearer {AUTH_TOKEN}"}
 
