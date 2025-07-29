@@ -4,7 +4,7 @@ import types
 from datetime import datetime
 
 import pytest
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, Point
 
 # S'assurer que le dossier racine est dans sys.path pour l'import de zone
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -166,6 +166,14 @@ def test_build_map_and_generate(tmp_path):
     out = tmp_path / "map.html"
     zone.generate_map(zones, output=str(out))
     assert out.read_text().strip().startswith("<div")
+
+
+def test_generate_map_with_raw_points():
+    poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    zones = [{"geometry": poly, "dates": ["2023-01-01"]}]
+    pts = [Point(0.1, 0.2), Point(0.3, 0.4)]
+    html = zone.generate_map_html(zones, raw_points=pts)
+    assert "circleMarker" in html
 
 
 def test_geojson_features_contain_dates():

@@ -260,7 +260,13 @@ def generate_map(zones, raw_points=None, output="static/carte.html"):
 
 
 def calculate_distance_between_zones(polygons):
-    """Calcule la distance totale entre les centroids des zones successives."""
+    """Calcule la distance totale entre les centroids des zones successives.
+
+    Les polygones doivent être en projection métrique (EPSG:3857). Pour
+    chaque polygone on calcule son centroïde, puis on additionne les
+    distances euclidiennes entre centroids consécutifs. Le résultat est
+    retourné en mètres.
+    """
     if not polygons or len(polygons) < 2:
         return 0.0
 

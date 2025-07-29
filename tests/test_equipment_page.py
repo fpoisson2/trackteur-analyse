@@ -10,7 +10,8 @@ os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 from app import create_app  # noqa: E402
-from models import db, User, Equipment, DailyZone, Config  # noqa: E402
+from models import db, User, Equipment, Position  # noqa: E402
+from models import DailyZone, Config  # noqa: E402
 
 
 def make_app():
@@ -41,6 +42,14 @@ def make_app():
             polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
         )
         db.session.add(dz)
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=0.0,
+                longitude=0.0,
+                timestamp=date.today(),
+            )
+        )
         db.session.commit()
     return app
 
@@ -57,11 +66,18 @@ def test_equipment_detail_page_loads(monkeypatch):
     client = app.test_client()
     login(client)
 
-    # Simplifier la génération de carte
-    monkeypatch.setattr("zone.generate_map_html", lambda *_: "<div>map</div>")
+    # Simplifier la génération de carte et vérifier les points envoyés
+    called = {}
+
+    def fake_generate(zones, raw_points=None):
+        called["raw"] = raw_points
+        return "<div>map</div>"
+
+    monkeypatch.setattr("zone.generate_map_html", fake_generate)
 
     with app.app_context():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     assert resp.status_code == 200
     assert b"map" in resp.data
+    assert called["raw"]

@@ -10,7 +10,8 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, DailyZone, Config
+from models import db, User, Equipment, Position, DailyZone, Config
+from shapely.geometry import Point
 import zone
 
 from datetime import datetime
@@ -308,7 +309,19 @@ def create_app():
             ]
 
             aggregated = zone.aggregate_overlapping_zones(daily)
-            map_html = zone.generate_map_html(aggregated)
+
+            raw_points = [
+                Point(p.longitude, p.latitude)
+                for p in (
+                    Position.query.filter_by(equipment_id=equipment_id)
+                    .order_by(Position.timestamp.desc())
+                    .limit(500)
+                )
+            ]
+
+            map_html = zone.generate_map_html(
+                aggregated, raw_points=raw_points
+            )
         return render_template(
             'equipment.html', equipment=eq, zones=zones, map_html=map_html
         )
