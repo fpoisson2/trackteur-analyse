@@ -313,9 +313,10 @@ def create_app():
             raw_points = [
                 Point(p.longitude, p.latitude)
                 for p in (
-                    Position.query.filter_by(equipment_id=equipment_id)
+                    Position.query
+                    .filter_by(equipment_id=equipment_id)
                     .order_by(Position.timestamp.desc())
-                    .limit(500)
+                    .all()
                 )
             ]
 

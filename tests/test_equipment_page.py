@@ -42,14 +42,15 @@ def make_app():
             polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
         )
         db.session.add(dz)
-        db.session.add(
-            Position(
-                equipment_id=eq.id,
-                latitude=0.0,
-                longitude=0.0,
-                timestamp=date.today(),
+        for i in range(3):
+            db.session.add(
+                Position(
+                    equipment_id=eq.id,
+                    latitude=0.0,
+                    longitude=0.0,
+                    timestamp=date.today(),
+                )
             )
-        )
         db.session.commit()
     return app
 
@@ -80,4 +81,4 @@ def test_equipment_detail_page_loads(monkeypatch):
         resp = client.get(f"/equipment/{eq.id}")
     assert resp.status_code == 200
     assert b"map" in resp.data
-    assert called["raw"]
+    assert len(called["raw"]) == 3
