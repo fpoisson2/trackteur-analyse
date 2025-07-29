@@ -1,5 +1,5 @@
 import os
-import requests
+import requests  # type: ignore
 import pandas as pd
 import numpy as np
 import base64
@@ -152,22 +152,38 @@ def _build_map(zones, raw_points=None):
         for pt in raw_points:
             folium.CircleMarker(location=[pt.y, pt.x], radius=1, fill=True).add_to(m)
     colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c']
-    for z in zones:
+    for idx_zone, z in enumerate(zones):
         geom = shp_transform(_transformer, z['geometry'])
         if isinstance(geom, GeometryCollection):
             geoms = [g for g in geom.geoms if isinstance(g, Polygon)]
             geom = MultiPolygon(geoms)
         count = len(z['dates'])
-        popup = folium.Popup(
-            f"<b>Passages:</b> {count}<br><b>Surface:</b> {(z['geometry'].area/1e4):.2f} ha",
-            max_width=250
-        )
-        idx = min(count - 1, len(colors) - 1)
+        dates_list = ", ".join(sorted(z['dates']))
+        popup_text = (
+            f"<b>Passages:</b> {count}<br>"
+            f"<b>Surface:</b> {(z['geometry'].area/1e4):.2f} ha")
+        if dates_list:
+            popup_text += f"<br><b>Dates:</b> {dates_list}"
+        popup = folium.Popup(popup_text, max_width=250)
+        color_idx = min(count - 1, len(colors) - 1)
+
+        feature = {
+            "type": "Feature",
+            "id": str(idx_zone),
+            "properties": {"dates": z['dates']},
+            "geometry": geom.__geo_interface__,
+        }
+
         folium.GeoJson(
-            geom,
-            style_function=lambda x, col=colors[idx]: {'fillColor': col, 'color': 'black', 'weight': 1, 'fillOpacity': 0.6},
+            data=feature,
+            style_function=lambda x, col=colors[color_idx]: {
+                'fillColor': col,
+                'color': 'black',
+                'weight': 1,
+                'fillOpacity': 0.6,
+            },
             popup=popup,
-            tooltip=f"{count} passage(s)"
+            tooltip=f"{count} passage(s)",
         ).add_to(m)
     return m
 
@@ -191,6 +207,17 @@ def generate_map(zones, raw_points=None, output="static/carte.html"):
         return
     with open(output, "w", encoding="utf-8") as fh:
         fh.write(html)
+
+
+def calculate_distance_between_zones(polygons):
+    """Calcule la distance totale entre les centroids des zones successives."""
+    if not polygons or len(polygons) < 2:
+        return 0.0
+
+    total = 0.0
+    for a, b in zip(polygons, polygons[1:]):
+        total += a.centroid.distance(b.centroid)
+    return float(total)
 
 
 
@@ -279,10 +306,14 @@ def process_equipment(eq, traccar_url, db, since=None):
             db.session.add(dz)
 
     # 4) ✅ FIX : Recalculer le total sur TOUTES les zones existantes
-    all_zones = DailyZone.query.filter_by(equipment_id=eq.id).all()
+    all_zones = DailyZone.query.filter_by(equipment_id=eq.id).order_by(DailyZone.date).all()
     total = sum(d.surface_ha for d in all_zones)
     eq.total_hectares = total
-    eq.distance_between_zones = 0.0
+
+    from shapely import wkt
+
+    polygons = [wkt.loads(z.polygon_wkt) for z in all_zones if z.polygon_wkt]
+    eq.distance_between_zones = calculate_distance_between_zones(polygons)
     
     db.session.commit()
 
@@ -356,6 +387,22 @@ def recalculate_hectares_from_positions(equipment_id, since_date=None):
     eq.total_hectares = total
     
     db.session.commit()
+    return total
+
+
+def calculate_relative_hectares(equipment_id):
+    """Calcule la surface unique (hectares relatifs) pour un équipement."""
+    zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+    if not zones:
+        return 0.0
+    from shapely import wkt
+
+    daily = [
+        {"geometry": wkt.loads(z.polygon_wkt), "dates": [str(z.date)]}
+        for z in zones
+    ]
+    aggregated = aggregate_overlapping_zones(daily)
+    total = sum(z["geometry"].area for z in aggregated) / 1e4
     return total
 
 

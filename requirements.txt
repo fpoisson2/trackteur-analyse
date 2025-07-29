@@ -12,3 +12,7 @@ geopandas
 folium
 alphashape
 pyproj
+flake8
+pytest-cov
+pytest
+mypy

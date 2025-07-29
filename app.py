@@ -29,7 +29,11 @@ def create_app():
         return User.query.get(int(user_id))
 
     @app.route('/initdb')
+    @login_required
     def initdb():
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+
         db.create_all()
         # Création de l'utilisateur admin initial
         admin_user = os.environ.get('APP_USERNAME')
@@ -102,6 +106,49 @@ def create_app():
             message=message
         )
 
+    @app.route('/users', methods=['GET', 'POST'])
+    @login_required
+    def users():
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+
+        message = None
+        if request.method == 'POST':
+            action = request.form.get('action')
+            if action == 'add':
+                username = request.form.get('username')
+                password = request.form.get('password')
+                role = request.form.get('role')
+                if username and password:
+                    if User.query.filter_by(username=username).first():
+                        message = "Utilisateur déjà existant"
+                    else:
+                        user = User(
+                            username=username, is_admin=(role == 'admin')
+                        )
+                        user.set_password(password)
+                        db.session.add(user)
+                        db.session.commit()
+                        message = "Utilisateur ajouté"
+            elif action == 'reset':
+                uid = request.form.get('user_id')
+                password = request.form.get('password')
+                user = User.query.get(int(uid)) if uid else None
+                if user and password:
+                    user.set_password(password)
+                    db.session.commit()
+                    message = "Mot de passe réinitialisé"
+            elif action == 'delete':
+                uid = request.form.get('user_id')
+                user = User.query.get(int(uid)) if uid else None
+                if user and user != current_user:
+                    db.session.delete(user)
+                    db.session.commit()
+                    message = "Utilisateur supprimé"
+
+        users = User.query.all()
+        return render_template('users.html', users=users, message=message)
+
     @app.route('/', methods=['GET', 'POST'])
     @login_required
     def index():
@@ -148,6 +195,7 @@ def create_app():
                 "name": eq.name,
                 "last_seen": last,
                 "total_hectares": round(eq.total_hectares or 0, 2),
+                "relative_hectares": round(zone.calculate_relative_hectares(eq.id), 2),
                 "distance_km": round((eq.distance_between_zones or 0) / 1000, 2),
                 "delta_str": delta_str
             })

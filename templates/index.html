@@ -12,8 +12,8 @@
       <h1>Résumé des équipements</h1>
       <div>
         {% if current_user.is_admin %}
-        <a href="{{ url_for('admin') }}" 
-           class="btn btn-sm btn-secondary">Admin</a>
+        <a href="{{ url_for('admin') }}" class="btn btn-sm btn-secondary">Admin</a>
+        <a href="{{ url_for('users') }}" class="btn btn-sm btn-secondary ms-2">Utilisateurs</a>
         {% endif %}
         <a href="{{ url_for('logout') }}" 
            class="btn btn-sm btn-outline-secondary">Déconnexion</a>
@@ -29,7 +29,8 @@
         <tr>
           <th>Équipement</th>
           <th>Dernière position</th>
-          <th>Total hectares</th>
+          <th>Ha traités</th>
+          <th>Ha uniques</th>
           <th>Distance zones (km)</th>
           <th>Temps écoulé</th>
           <th>Actions</th>
@@ -45,6 +46,7 @@
           </td>
           <td>{{ eq.last_seen or '–' }}</td>
           <td>{{ eq.total_hectares|round(2) }}</td>
+          <td>{{ eq.relative_hectares|round(2) }}</td>
           <td>{{ eq.distance_km|round(2) }}</td>
           <td>{{ eq.delta_str }}</td>
           <td>
