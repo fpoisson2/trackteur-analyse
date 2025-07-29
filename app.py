@@ -164,37 +164,21 @@ def create_app():
     def equipment_detail(equipment_id):
         eq = Equipment.query.get_or_404(equipment_id)
         zones = DailyZone.query.filter_by(equipment_id=equipment_id).order_by(DailyZone.date.desc()).all()
-        # Génération de la carte Folium
+        # Génération de la carte Folium avec comptage des passages
         map_html = None
         if zones:
             from shapely import wkt
-            from shapely.ops import transform as shp_transform
-            import pyproj
-            import folium
 
-            transformer = pyproj.Transformer.from_crs(3857, 4326, always_xy=True)
-            proj = transformer.transform
-            # Centre de la carte
-            poly_list = [shp_transform(proj, wkt.loads(z.polygon_wkt)) for z in zones]
-            # 1) Réparer chaque polygone projeté
-            fixed = [p.buffer(0) for p in poly_list]
+            daily = [
+                {
+                    "geometry": wkt.loads(z.polygon_wkt),
+                    "dates": [str(z.date)]
+                }
+                for z in zones
+            ]
 
-            # 2) Fusionner proprement
-            multi = unary_union(fixed)
-
-            # 3) Centrer la carte
-            ctr = multi.centroid
-            m = folium.Map(location=[ctr.y, ctr.x], zoom_start=12)
-            for z in zones:
-                geom = shp_transform(proj, wkt.loads(z.polygon_wkt))
-                gj = folium.GeoJson(
-                    geom,
-                    style_function=lambda x: {'fillColor': 'blue', 'color': 'black', 'weight': 1, 'fillOpacity': 0.5}
-                )
-                popup = folium.Popup(f"{z.date}: {z.surface_ha:.2f} ha", max_width=300)
-                gj.add_child(popup)
-                gj.add_to(m)
-            map_html = m._repr_html_()
+            aggregated = zone.aggregate_overlapping_zones(daily)
+            map_html = zone.generate_map_html(aggregated)
         return render_template('equipment.html', equipment=eq, zones=zones, map_html=map_html)
 
     # Planification de la tâche quotidienne à 2h du matin
