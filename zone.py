@@ -413,4 +413,4 @@ def analyse_quotidienne():
 
 def analyser_equipement(eq, start_date=None):
     """Alias pour compatibilité: analyse d'un équipement donné depuis start_date."""
-    process_equipment(eq, BASE_URL, db, since=start_date, date_ref=start_date)
+    process_equipment(eq, BASE_URL, db, since=start_date)
