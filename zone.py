@@ -11,6 +11,7 @@ import alphashape
 from sklearn.cluster import DBSCAN
 import folium
 from geopandas import GeoDataFrame
+from typing import Optional
 
 from models import db, Equipment, Position, DailyZone, Config
 
@@ -449,7 +450,9 @@ def recalculate_hectares_from_positions(equipment_id, since_date=None):
     return total
 
 
-def calculate_relative_hectares(equipment_id, year=None):
+def calculate_relative_hectares(
+    equipment_id: int, year: Optional[int] = None
+) -> float:
     """Calcule la surface unique (hectares relatifs) pour un équipement.
 
     Si ``year`` est fourni, seules les zones de cette année sont prises
@@ -476,7 +479,9 @@ def calculate_relative_hectares(equipment_id, year=None):
     return total
 
 
-def calculate_total_hectares(equipment_id, year=None):
+def calculate_total_hectares(
+    equipment_id: int, year: Optional[int] = None
+) -> float:
     """Calcule la surface totale pour un équipement.
 
     Si ``year`` est fourni, seules les zones de cette année sont prises en
@@ -490,7 +495,9 @@ def calculate_total_hectares(equipment_id, year=None):
     return sum(z.surface_ha for z in query.all())
 
 
-def calculate_distance_between_zones_for_year(equipment_id, year=None):
+def calculate_distance_between_zones_for_year(
+    equipment_id: int, year: Optional[int] = None
+) -> float:
     """Calcule la distance entre les zones sur une année donnée."""
     query = DailyZone.query.filter_by(equipment_id=equipment_id)
     if year:
