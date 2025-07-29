@@ -16,13 +16,13 @@
     </div>
     <h2>Zones journalières</h2>
     {% if zones %}
-    <table class="table table-striped">
+    <table id="zones-table" class="table table-striped">
       <thead>
         <tr><th>Date</th><th>Surface (ha)</th></tr>
       </thead>
       <tbody>
         {% for z in zones %}
-        <tr>
+        <tr class="zone-row" data-date="{{ z.date }}">
           <td>{{ z.date }}</td>
           <td>{{ z.surface_ha|round(2) }}</td>
         </tr>
@@ -31,12 +31,69 @@
     </table>
     <h2>Carte des passages</h2>
     <p class="text-muted">Les couleurs indiquent le nombre de passages sur chaque zone.</p>
-    <div>
+    <div id="map-container">
       {{ map_html|safe }}
     </div>
     {% else %}
     <p>Aucune donnée disponible pour cet équipement.</p>
     {% endif %}
   </div>
+
+  <script>
+    function highlightDate(date) {
+      const rows = document.querySelectorAll('.zone-row');
+      rows.forEach(r => {
+        r.classList.toggle('table-primary', r.dataset.date === date);
+      });
+
+      const iframe = document.querySelector('#map-container iframe');
+      if (!iframe || !iframe.contentWindow) return;
+      const win = iframe.contentWindow;
+      if (!win.dateLayers) return;
+
+      Object.values(win.dateLayers).forEach(lst => {
+        lst.forEach(layer => layer.setStyle({weight: 1}));
+      });
+      if (win.dateLayers[date]) {
+        win.dateLayers[date].forEach(layer => {
+          layer.setStyle({weight: 4});
+          if (layer.bringToFront) layer.bringToFront();
+        });
+      }
+    }
+
+    function setupInteractions() {
+      document.querySelectorAll('.zone-row').forEach(row => {
+        row.addEventListener('click', () => highlightDate(row.dataset.date));
+      });
+
+      const iframe = document.querySelector('#map-container iframe');
+      if (!iframe) return;
+      iframe.addEventListener('load', () => {
+        const win = iframe.contentWindow;
+        if (!win) return;
+        win.dateLayers = {};
+        for (const key of Object.keys(win)) {
+          const obj = win[key];
+          if (obj && obj instanceof win.L.GeoJSON) {
+            obj.eachLayer(layer => {
+              const props = layer.feature && layer.feature.properties;
+              if (props && props.dates) {
+                props.dates.forEach(d => {
+                  win.dateLayers[d] = win.dateLayers[d] || [];
+                  win.dateLayers[d].push(layer);
+                });
+                layer.on('click', () => {
+                  if (window.highlightDate) window.highlightDate(props.dates[0]);
+                });
+              }
+            });
+          }
+        }
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', setupInteractions);
+  </script>
 </body>
 </html>

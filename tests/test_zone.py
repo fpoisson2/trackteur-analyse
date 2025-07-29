@@ -148,6 +148,16 @@ def test_build_map_and_generate(tmp_path):
     assert out.read_text().strip().startswith("<div")
 
 
+def test_geojson_features_contain_dates():
+    poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    zones = [{"geometry": poly, "dates": ["2023-01-01"]}]
+    fmap = zone._build_map(zones)
+    geo_layers = [c for c in fmap._children.values() if isinstance(c, zone.folium.GeoJson)]
+    assert geo_layers
+    feature = geo_layers[0].data["features"][0]
+    assert feature["properties"]["dates"] == ["2023-01-01"]
+
+
 # ---------- Helpers for DB ----------
 
 def setup_db():
