@@ -1,21 +1,22 @@
 import os
 import sys
-import pytest
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+from app import create_app  # noqa: E402
+from models import db, User, Equipment  # noqa: E402
+import zone  # noqa: E402
+
 os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
-from app import create_app
-from models import db, User, Equipment
-import zone
-
 
 def make_app():
+    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
     app = create_app()
+    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     with app.app_context():
         db.drop_all()
@@ -28,7 +29,10 @@ def make_app():
 
 
 def login(client, username="admin", password="pass"):
-    return client.post("/login", data={"username": username, "password": password})
+    return client.post(
+        "/login",
+        data={"username": username, "password": password},
+    )
 
 
 def test_non_admin_cannot_access_users():
