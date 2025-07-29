@@ -30,6 +30,19 @@ def create_app():
     login_manager = LoginManager(app)
     login_manager.login_view = 'login'
 
+    if hasattr(app, "before_first_request"):
+        @app.before_first_request
+        def init_db() -> None:
+            """Crée les tables de la base si nécessaire."""
+            db.create_all()
+    else:
+        @app.before_request
+        def init_db_once() -> None:
+            """Fallback pour Flask 3 sans before_first_request."""
+            if not getattr(app, "_db_init", False):
+                db.create_all()
+                app._db_init = True
+
     @app.before_request
     def ensure_setup():
         allowed = {'setup', 'static'}
