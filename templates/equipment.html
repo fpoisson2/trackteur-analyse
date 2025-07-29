@@ -14,25 +14,31 @@
         <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-secondary">Déconnexion</a>
       </div>
     </div>
-    <h2>Zones journalières</h2>
     {% if zones %}
-    <table class="table table-striped">
-      <thead>
-        <tr><th>Date</th><th>Surface (ha)</th></tr>
-      </thead>
-      <tbody>
-        {% for z in zones %}
-        <tr>
-          <td>{{ z.date }}</td>
-          <td>{{ z.surface_ha|round(2) }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <h2>Carte des passages</h2>
-    <p class="text-muted">Les couleurs indiquent le nombre de passages sur chaque zone.</p>
-    <div>
-      {{ map_html|safe }}
+    <div class="row">
+      <div class="col-md-4 mb-4">
+        <h2>Zones journalières</h2>
+        <table class="table table-striped">
+          <thead>
+            <tr><th>Date</th><th>Surface (ha)</th></tr>
+          </thead>
+          <tbody>
+            {% for z in zones %}
+            <tr>
+              <td>{{ z.date }}</td>
+              <td>{{ z.surface_ha|round(2) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="col-md-8">
+        <h2>Carte des passages</h2>
+        <p class="text-muted">Les couleurs indiquent le nombre de passages sur chaque zone.</p>
+        <div class="border rounded" style="height: 500px;">
+          {{ map_html|safe }}
+        </div>
+      </div>
     </div>
     {% else %}
     <p>Aucune donnée disponible pour cet équipement.</p>
