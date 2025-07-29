@@ -16,6 +16,9 @@
     </div>
     <h2>Zones journalières</h2>
     {% if zones %}
+    <style>
+      .zone-row { cursor: pointer; }
+    </style>
     <table id="zones-table" class="table table-striped">
       <thead>
         <tr><th>Date</th><th>Surface (ha)</th></tr>
@@ -55,10 +58,15 @@
         lst.forEach(layer => layer.setStyle({weight: 1}));
       });
       if (win.dateLayers[date]) {
+        const bounds = win.L.latLngBounds();
         win.dateLayers[date].forEach(layer => {
           layer.setStyle({weight: 4});
+          if (layer.getBounds) bounds.extend(layer.getBounds());
           if (layer.bringToFront) layer.bringToFront();
         });
+        if (win.leafletMap && bounds.isValid()) {
+          win.leafletMap.fitBounds(bounds, { maxZoom: 17 });
+        }
       }
     }
 
@@ -72,6 +80,12 @@
       iframe.addEventListener('load', () => {
         const win = iframe.contentWindow;
         if (!win) return;
+        for (const key of Object.keys(win)) {
+          const obj = win[key];
+          if (obj && obj instanceof win.L.Map) {
+            win.leafletMap = obj;
+          }
+        }
         win.dateLayers = {};
         for (const key of Object.keys(win)) {
           const obj = win[key];
