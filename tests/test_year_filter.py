@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
@@ -11,7 +11,6 @@ os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 from app import create_app  # noqa: E402
 from models import db, User, Equipment, DailyZone, Config  # noqa: E402
-import zone  # noqa: E402
 
 
 def make_app():
@@ -26,39 +25,22 @@ def make_app():
         admin.set_password("pass")
         db.session.add(admin)
         db.session.add(
-            Config(
-                traccar_url="http://example.com",
-                traccar_token="dummy",
-            )
+            Config(traccar_url="http://example.com", traccar_token="dummy")
         )
-        now = datetime.utcnow()
-        eq1 = Equipment(
-            id_traccar=1,
-            name="T1",
-            total_hectares=10.0,
-            distance_between_zones=1000.0,
-            last_position=now - timedelta(hours=1),
-        )
-        eq2 = Equipment(
-            id_traccar=2,
-            name="T2",
-            total_hectares=5.0,
-            distance_between_zones=2000.0,
-            last_position=now - timedelta(hours=10),
-        )
-        db.session.add_all([eq1, eq2])
+        eq = Equipment(id_traccar=1, name="tractor")
+        db.session.add(eq)
         db.session.commit()
         db.session.add_all([
             DailyZone(
-                equipment_id=eq1.id,
-                date=date.today(),
-                surface_ha=10.0,
+                equipment_id=eq.id,
+                date=date(2023, 1, 1),
+                surface_ha=1.0,
                 polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
             ),
             DailyZone(
-                equipment_id=eq2.id,
-                date=date.today(),
-                surface_ha=5.0,
+                equipment_id=eq.id,
+                date=date(2024, 1, 1),
+                surface_ha=2.0,
                 polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
             ),
         ])
@@ -73,21 +55,17 @@ def login(client):
     )
 
 
-def test_index_sorted_by_score(monkeypatch):
+def test_year_filter_on_index():
     app = make_app()
     client = app.test_client()
     login(client)
 
-    with app.app_context():
-        ids = {e.name: e.id for e in Equipment.query.all()}
-
-    def fake_rel(equipment_id: int, year=None) -> float:
-        return 9.0 if equipment_id == ids["T1"] else 4.0
-
-    monkeypatch.setattr(zone, "calculate_relative_hectares", fake_rel)
-
-    resp = client.get("/")
+    resp = client.get("/?year=2023")
     assert resp.status_code == 200
     html = resp.data.decode()
-    assert "🥇" in html
-    assert html.index("T1") < html.index("T2")
+    assert "1.0" in html
+    assert "2.0" not in html
+
+    resp = client.get("/?year=2024")
+    html = resp.data.decode()
+    assert "2.0" in html

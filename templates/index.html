@@ -20,9 +20,18 @@
       </div>
     </div>
 
-    {% if message %}
-    <div class="alert alert-info">{{ message }}</div>
-    {% endif %}
+  {% if message %}
+  <div class="alert alert-info">{{ message }}</div>
+  {% endif %}
+
+  <form method="get" class="mb-3">
+    <label for="year" class="form-label fw-bold">Année :</label>
+    <select id="year" name="year" class="form-select w-auto d-inline-block" onchange="this.form.submit()">
+      {% for y in years %}
+      <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </form>
 
     <table class="table table-bordered align-middle">
       <thead class="table-light">

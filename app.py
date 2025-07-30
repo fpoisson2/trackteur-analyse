@@ -264,6 +264,23 @@ def create_app():
         equipments = Equipment.query.all()
         message = None
 
+        # Année sélectionnée pour le filtrage
+        year_param = request.args.get("year")
+        try:
+            selected_year = (
+                int(year_param) if year_param else datetime.utcnow().year
+            )
+        except ValueError:
+            selected_year = datetime.utcnow().year
+
+        bounds = db.session.query(
+            db.func.min(DailyZone.date), db.func.max(DailyZone.date)
+        ).first()
+        if bounds[0] and bounds[1]:
+            years = list(range(bounds[0].year, bounds[1].year + 1))
+        else:
+            years = [selected_year]
+
         # 2) Plus de lancement manuel d'analyse
 
         # 3) Préparation des données pour l’affichage
@@ -282,15 +299,37 @@ def create_app():
                 delta_seconds = None
                 delta_str = "–"
 
-            distance_km = (eq.distance_between_zones or 0) / 1000
-            rel_hectares = zone.calculate_relative_hectares(eq.id)
-            ratio_eff = eq.total_hectares / distance_km if distance_km else 0.0
+            start = datetime(selected_year, 1, 1).date()
+            end = datetime(selected_year + 1, 1, 1).date()
+            year_zones = (
+                DailyZone.query
+                .filter_by(equipment_id=eq.id)
+                .filter(DailyZone.date >= start, DailyZone.date < end)
+                .order_by(DailyZone.date)
+                .all()
+            )
+
+            from shapely import wkt
+
+            polygons = [
+                wkt.loads(z.polygon_wkt)
+                for z in year_zones
+                if z.polygon_wkt
+            ]
+            total_hectares = sum(z.surface_ha for z in year_zones)
+            distance_km = (
+                zone.calculate_distance_between_zones(polygons) / 1000
+            )
+            rel_hectares = zone.calculate_relative_hectares(
+                eq.id, selected_year
+            )
+            ratio_eff = total_hectares / distance_km if distance_km else 0.0
 
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
                 "last_seen": last,
-                "total_hectares": round(eq.total_hectares or 0, 2),
+                "total_hectares": round(total_hectares, 2),
                 "relative_hectares": round(rel_hectares, 2),
                 "distance_km": round(distance_km, 2),
                 "delta_seconds": delta_seconds,
@@ -344,7 +383,9 @@ def create_app():
         return render_template(
             'index.html',
             equipment_data=equipment_data,
-            message=message
+            message=message,
+            years=years,
+            selected_year=selected_year,
         )
 
     @app.route('/equipment/<int:equipment_id>')

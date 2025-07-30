@@ -3,7 +3,7 @@ import requests  # type: ignore
 import pandas as pd
 import numpy as np
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as dt_date
 from shapely.geometry import Point, Polygon, MultiPolygon, GeometryCollection
 from shapely.ops import transform as shp_transform
 import pyproj
@@ -449,11 +449,21 @@ def recalculate_hectares_from_positions(equipment_id, since_date=None):
     return total
 
 
-def calculate_relative_hectares(equipment_id):
-    """Calcule la surface unique (hectares relatifs) pour un équipement."""
-    zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+def calculate_relative_hectares(equipment_id, year=None):
+    """Calcule la surface unique (hectares relatifs) pour un équipement.
+
+    Si ``year`` est fourni, ne prend en compte que les zones de cette année.
+    """
+    query = DailyZone.query.filter_by(equipment_id=equipment_id)
+    if year is not None:
+        start = dt_date(int(year), 1, 1)
+        end = dt_date(int(year) + 1, 1, 1)
+        query = query.filter(DailyZone.date >= start, DailyZone.date < end)
+
+    zones = query.all()
     if not zones:
         return 0.0
+
     from shapely import wkt
 
     daily = [
