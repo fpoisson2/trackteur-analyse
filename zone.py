@@ -542,3 +542,56 @@ def analyse_quotidienne():
 def analyser_equipement(eq, start_date=None):
     """Analyse un équipement donné à partir de start_date."""
     process_equipment(eq, since=start_date)
+
+
+def _simplify_tolerance(zoom: int) -> float:
+    """Tolérance de simplification (m) selon le zoom."""
+    if zoom >= 15:
+        return 1.0
+    if zoom >= 12:
+        return 5.0
+    if zoom >= 10:
+        return 20.0
+    return 50.0
+
+
+def zones_geojson(equipment_id: int, bbox=None, zoom: int = 12):
+    """Retourne les zones en GeoJSON pour l'API."""
+    query = DailyZone.query.filter_by(equipment_id=equipment_id)
+
+    bbox_poly = None
+    if bbox:
+        bbox_poly = Polygon(
+            [
+                (bbox[0], bbox[1]),
+                (bbox[2], bbox[1]),
+                (bbox[2], bbox[3]),
+                (bbox[0], bbox[3]),
+                (bbox[0], bbox[1]),
+            ]
+        )
+
+    from shapely import wkt
+
+    features = []
+    tol = _simplify_tolerance(zoom)
+    for dz in query.all():
+        geom = wkt.loads(dz.polygon_wkt)
+        if bbox_poly and not geom.intersects(bbox_poly):
+            continue
+        if tol:
+            geom = geom.simplify(tol, preserve_topology=True)
+        geom_wgs = shp_transform(_transformer, geom)
+        features.append(
+            {
+                "type": "Feature",
+                "id": str(dz.id),
+                "properties": {
+                    "dates": [str(dz.date)],
+                    "surface_ha": dz.surface_ha,
+                },
+                "geometry": geom_wgs.__geo_interface__,
+            }
+        )
+
+    return {"type": "FeatureCollection", "features": features}
