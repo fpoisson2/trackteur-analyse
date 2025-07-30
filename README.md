@@ -63,4 +63,4 @@ static/        - Ressources statiques (ex. carte générée)
 Les issues et pull requests sont bienvenues pour signaler un bug ou proposer des améliorations.
 
 ## Licence
-Ce projet est fourni sans fichier de licence ; contactez l'auteur pour toute question d'utilisation.
+Ce projet est distribué sous licence [MIT](LICENSE).
