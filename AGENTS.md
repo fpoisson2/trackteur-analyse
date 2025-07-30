@@ -59,9 +59,11 @@ Les agents peuvent être exécutés automatiquement ou manuellement :
 
 ---
 
-## 🔐 Variables d’environnement (recommandées)
+## 🔐 Variables d’environnement (optionnelles)
 
-Toutes les informations sensibles doivent être passées par variables d’environnement :
+Les paramètres Traccar peuvent être saisis via l'interface d'administration et
+sont enregistrés en base de données. Les variables ci-dessous permettent de
+fournir ou de surcharger cette configuration lors du déploiement :
 
 | Variable              | Rôle                                |
 |-----------------------|--------------------------------------|
