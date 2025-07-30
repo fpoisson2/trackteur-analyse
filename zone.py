@@ -1,4 +1,5 @@
 import os
+import logging
 import requests  # type: ignore
 import pandas as pd
 import numpy as np
@@ -16,6 +17,8 @@ from models import db, Equipment, Position, DailyZone, Config
 
 # Ignorer avertissements GEOS
 warnings.filterwarnings("ignore", "GEOS messages", UserWarning)
+
+logger = logging.getLogger(__name__)
 
 # 🔐 Paramètres de connexion au serveur Traccar
 
@@ -59,12 +62,16 @@ def fetch_devices():
     """Récupère la liste des dispositifs Traccar."""
     _, base = _get_credentials()
     url = f"{base.rstrip('/')}/api/devices"
+    logger.debug("Fetching devices from %s", url)
     resp = requests.get(url, headers=_auth_header())
     resp.raise_for_status()
     devices = resp.json()
+    logger.debug("Received %d devices", len(devices))
     device_name = os.environ.get('TRACCAR_DEVICE_NAME')
     if device_name:
+        logger.debug("Filtering devices with name '%s'", device_name)
         devices = [d for d in devices if d.get('name') == device_name]
+    logger.info("Fetched %d device(s)", len(devices))
     return devices
 
 
@@ -78,11 +85,14 @@ def fetch_positions(device_id, from_dt, to_dt):
         "to": fmt(to_dt),
     }
     _, base = _get_credentials()
-    resp = requests.get(
-        f"{base.rstrip('/')}/api/positions",
-        headers=_auth_header(),
-        params=params,
+    url = f"{base.rstrip('/')}/api/positions"
+    logger.debug(
+        "Fetching positions for %s between %s and %s",
+        device_id,
+        params["from"],
+        params["to"],
     )
+    resp = requests.get(url, headers=_auth_header(), params=params)
     try:
         resp.raise_for_status()
     except requests.exceptions.HTTPError:
@@ -92,9 +102,11 @@ def fetch_positions(device_id, from_dt, to_dt):
     if resp.status_code == 204 or not resp.content.strip():
         return []
     try:
-        return resp.json()
+        data = resp.json()
+        logger.debug("Received %d positions", len(data))
+        return data
     except ValueError:
-        print("Réponse inattendue :", resp.status_code, resp.text[:200])
+        logger.warning("Unexpected response %s", resp.text[:200])
         return []
 
 
@@ -280,9 +292,17 @@ def process_equipment(eq, since=None):
     """Analyse et enregistre les zones journalières de l'équipement."""
     to_dt = datetime.utcnow()
     from_dt = since if since else to_dt - timedelta(days=1)
+    logger.info(
+        "Processing equipment %s (%s) from %s to %s",
+        eq.id_traccar,
+        eq.name,
+        from_dt.isoformat(),
+        to_dt.isoformat(),
+    )
 
     # 1) Récupérer et stocker les positions
     positions = fetch_positions(eq.id_traccar, from_dt, to_dt)
+    logger.debug("Fetched %d positions", len(positions))
 
     # ✅ FIX : Trouver la position la plus récente et gérer les timezones
     latest_position_time = None
@@ -377,6 +397,14 @@ def process_equipment(eq, since=None):
         if z.polygon_wkt
     ]
     eq.distance_between_zones = calculate_distance_between_zones(polygons)
+
+    logger.debug("Computed %d daily zones", len(all_zones))
+    logger.info(
+        "Totals for %s: %.2f ha, distance %.0f m",
+        eq.name,
+        eq.total_hectares,
+        eq.distance_between_zones or 0.0,
+    )
 
     db.session.commit()
 
