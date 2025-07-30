@@ -40,12 +40,14 @@ Au premier lancement, ouvrez l'application dans votre navigateur. Un assistant s
 3. Choisir les appareils à suivre
 4. Lancer une analyse initiale
 
-Seule la variable `FLASK_SECRET_KEY` peut être définie au besoin.
+Seule la variable `FLASK_SECRET_KEY` est requise. Pour éviter la longue analyse initiale à chaque démarrage, vous pouvez définir `SKIP_INITIAL_ANALYSIS=1`.
 
 ## Utilisation
 
 Démarrer l'application :
 ```bash
+# (optionnel) désactiver l'analyse initiale
+export SKIP_INITIAL_ANALYSIS=1
 python app.py
 ```
 Accédez à [http://localhost:5000](http://localhost:5000). La page d'accueil liste les équipements, leur dernière position et les surfaces calculées. Vous pouvez lancer une analyse manuelle ou consulter le détail d'un équipement (zones par jour et carte interactive). Une analyse automatique a lieu chaque nuit à 2 h.
