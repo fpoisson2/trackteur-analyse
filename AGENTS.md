@@ -65,10 +65,10 @@ Toutes les informations sensibles doivent être passées par variables d’envir
 
 | Variable              | Rôle                                |
 |-----------------------|--------------------------------------|
-| `API_AUTH_TOKEN`      | Token d’accès à l’API externe        |
-| `API_BASE_URL`        | URL de base pour requêtes GPS        |
-| `APP_USERNAME`        | Identifiant administrateur           |
-| `APP_PASSWORD`        | Mot de passe administrateur          |
+| `TRACCAR_AUTH_TOKEN`  | Jeton d’accès au serveur Traccar     |
+| `TRACCAR_BASE_URL`    | URL de base de l’API Traccar         |
+| `TRACCAR_DEVICE_NAME` | Nom de l’équipement à suivre (option)|
+| `SKIP_INITIAL_ANALYSIS` | Désactiver l’analyse initiale (0/1) |
 | `FLASK_SECRET_KEY`    | Clé secrète Flask                    |
 
 **Codex ne doit jamais coder ces valeurs en dur.**
