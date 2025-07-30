@@ -40,7 +40,14 @@ Au premier lancement, ouvrez l'application dans votre navigateur. Un assistant s
 3. Choisir les appareils à suivre
 4. Lancer une analyse initiale
 
-Seule la variable `FLASK_SECRET_KEY` est requise. Pour éviter la longue analyse initiale à chaque démarrage, vous pouvez définir `SKIP_INITIAL_ANALYSIS=1`.
+Les paramètres saisis sont enregistrés dans la base de données et restent
+disponibles au redémarrage. Vous pouvez néanmoins les fournir via les variables
+`TRACCAR_AUTH_TOKEN` et `TRACCAR_BASE_URL` (et `TRACCAR_DEVICE_NAME` si besoin)
+pour surcharger la configuration.
+
+Seule la variable `FLASK_SECRET_KEY` est obligatoire. Pour éviter la longue
+analyse initiale à chaque démarrage, vous pouvez définir
+`SKIP_INITIAL_ANALYSIS=1`.
 
 ## Utilisation
 
