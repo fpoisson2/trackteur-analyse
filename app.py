@@ -1,6 +1,14 @@
 import os
 
-from flask import Flask, render_template, request, redirect, url_for
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    jsonify,
+    abort,
+)
 from flask_login import (
     LoginManager,
     login_user,
@@ -10,8 +18,7 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, DailyZone, Config
-from shapely.geometry import Point
+from models import db, User, Equipment, DailyZone, Config
 import zone
 
 from datetime import datetime
@@ -358,37 +365,54 @@ def create_app():
             .order_by(DailyZone.date.desc())
             .all()
         )
-        # Génération de la carte Folium avec comptage des passages
-        map_html = None
+        center = [46.0, 2.0]
         if zones:
             from shapely import wkt
 
-            daily = [
-                {
-                    "geometry": wkt.loads(z.polygon_wkt),
-                    "dates": [str(z.date)]
-                }
-                for z in zones
-            ]
-
-            aggregated = zone.aggregate_overlapping_zones(daily)
-
-            raw_points = [
-                Point(p.longitude, p.latitude)
-                for p in (
-                    Position.query
-                    .filter_by(equipment_id=equipment_id)
-                    .order_by(Position.timestamp.desc())
-                    .all()
-                )
-            ]
-
-            map_html = zone.generate_map_html(
-                aggregated, raw_points=raw_points
-            )
+            first_geom = wkt.loads(zones[0].polygon_wkt)
+            ctr = zone.shp_transform(zone._transformer, first_geom.centroid)
+            center = [ctr.y, ctr.x]
         return render_template(
-            'equipment.html', equipment=eq, zones=zones, map_html=map_html
+            'equipment.html', equipment=eq, zones=zones, center=center
         )
+
+    @app.route('/equipment/<int:equipment_id>/zones.geojson')
+    @login_required
+    def equipment_zones_geojson(equipment_id):
+        Equipment.query.get_or_404(equipment_id)
+        bbox_param = request.args.get('bbox')
+        zoom = int(request.args.get('zoom', '12'))
+        bbox = None
+        if bbox_param:
+            parts = [p.strip() for p in bbox_param.split(',')]
+            if len(parts) != 4:
+                abort(400)
+            try:
+                bbox = [float(x) for x in parts]
+            except ValueError:
+                abort(400)
+        data = zone.zones_geojson(equipment_id, bbox=bbox, zoom=zoom)
+        return jsonify(data)
+
+    @app.route(
+        '/equipment/<int:equipment_id>/points.geojson',
+        endpoint='equipment_points_geojson'
+    )
+    @login_required
+    def equipment_points_geojson(equipment_id):
+        Equipment.query.get_or_404(equipment_id)
+        bbox_param = request.args.get('bbox')
+        bbox = None
+        if bbox_param:
+            parts = [p.strip() for p in bbox_param.split(',')]
+            if len(parts) != 4:
+                abort(400)
+            try:
+                bbox = [float(x) for x in parts]
+            except ValueError:
+                abort(400)
+        data = zone.positions_geojson(equipment_id, bbox=bbox)
+        return jsonify(data)
 
     # Planification de la tâche quotidienne à 2h du matin
     scheduler = BackgroundScheduler()
