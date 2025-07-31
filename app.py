@@ -417,6 +417,7 @@ def create_app():
     @app.route('/equipment/<int:equipment_id>/points.geojson')
     @login_required
     def equipment_points_geojson(equipment_id):
+        """Return a random sample of GPS points for the current map view."""
         Equipment.query.get_or_404(equipment_id)
         bbox = request.args.get('bbox')
         limit = int(request.args.get('limit', 5000))
@@ -431,7 +432,7 @@ def create_app():
                 Position.latitude >= south,
                 Position.latitude <= north,
             )
-        query = query.order_by(Position.timestamp.desc()).limit(limit)
+        query = query.order_by(db.func.random()).limit(limit)
         features = []
         for p in query:
             features.append({

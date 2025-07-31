@@ -86,13 +86,11 @@
           skipFetch = true;
           map.once('moveend', () => {
             skipFetch = false;
-            const layer = dateLayers[date] && dateLayers[date][0];
-            if (layer) layer.openPopup();
+            (dateLayers[date] || []).forEach(l => l.openPopup());
           });
           map.fitBounds(bounds, { maxZoom: 17 });
         } else {
-          const layer = dateLayers[date] && dateLayers[date][0];
-          if (layer) layer.openPopup();
+          (dateLayers[date] || []).forEach(l => l.openPopup());
         }
       }
     }
@@ -139,13 +137,7 @@
         }
       }).addTo(map);
       pointLayer = L.geoJSON(null, {
-        pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 }),
-        onEachFeature: (f, l) => {
-          if (f.properties.timestamp) {
-            const date = new Date(f.properties.timestamp).toLocaleString();
-            l.bindPopup(date);
-          }
-        }
+        pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 })
       }).addTo(map);
       map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
