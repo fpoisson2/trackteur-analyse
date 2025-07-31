@@ -4,7 +4,13 @@ import pandas as pd
 import numpy as np
 import warnings
 from datetime import datetime, timedelta
-from shapely.geometry import Point, Polygon, MultiPolygon, GeometryCollection
+from shapely.geometry import (
+    Point,
+    Polygon,
+    MultiPolygon,
+    GeometryCollection,
+    box,
+)
 from shapely.ops import transform as shp_transform
 import pyproj
 import alphashape
@@ -51,6 +57,12 @@ ALPHA = 0.02
 _transformer = pyproj.Transformer.from_crs(
     3857,
     4326,
+    always_xy=True,
+).transform
+# Inverse transform: WGS84 -> Web Mercator
+_transformer_to_metric = pyproj.Transformer.from_crs(
+    4326,
+    3857,
     always_xy=True,
 ).transform
 
@@ -542,3 +554,93 @@ def analyse_quotidienne():
 def analyser_equipement(eq, start_date=None):
     """Analyse un équipement donné à partir de start_date."""
     process_equipment(eq, since=start_date)
+
+
+def _simplify_tolerance(zoom: int) -> float:
+    """Return simplification tolerance in meters based on zoom level."""
+    if zoom >= 16:
+        return 1.0
+    if zoom >= 14:
+        return 5.0
+    if zoom >= 12:
+        return 20.0
+    if zoom >= 10:
+        return 50.0
+    return 200.0
+
+
+def zones_geojson(equipment_id: int, bbox=None, zoom: int = 12):
+    """Return aggregated zones as GeoJSON for the API."""
+    query = DailyZone.query.filter_by(equipment_id=equipment_id)
+
+    bbox_poly = None
+    if bbox:
+        west, south, east, north = bbox
+        bbox_wgs = box(west, south, east, north)
+        bbox_poly = shp_transform(_transformer_to_metric, bbox_wgs)
+
+    from shapely import wkt
+
+    daily = []
+    for dz in query.all():
+        geom = wkt.loads(dz.polygon_wkt)
+        if bbox_poly and not geom.intersects(bbox_poly):
+            continue
+        if bbox_poly:
+            geom = geom.intersection(bbox_poly)
+            if geom.is_empty:
+                continue
+        daily.append({"geometry": geom, "dates": [str(dz.date)]})
+
+    aggregated = aggregate_overlapping_zones(daily)
+
+    features = []
+    tol = _simplify_tolerance(zoom)
+    for idx, item in enumerate(aggregated):
+        geom = item["geometry"]
+        if tol:
+            geom = geom.simplify(tol, preserve_topology=True)
+        geom_wgs = shp_transform(_transformer, geom)
+        features.append(
+            {
+                "type": "Feature",
+                "id": str(idx),
+                "properties": {
+                    "dates": sorted(item["dates"]),
+                    "surface_ha": geom.area / 1e4,
+                    "pass_count": len(item["dates"]),
+                },
+                "geometry": geom_wgs.__geo_interface__,
+            }
+        )
+
+    return {"type": "FeatureCollection", "features": features}
+
+
+def positions_geojson(equipment_id: int, bbox=None):
+    """Retourne les positions GPS en GeoJSON."""
+    query = Position.query.filter_by(equipment_id=equipment_id)
+    if bbox:
+        west, south, east, north = bbox
+        query = query.filter(
+            Position.longitude >= west,
+            Position.longitude <= east,
+            Position.latitude >= south,
+            Position.latitude <= north,
+        )
+
+    features = [
+        {
+            "type": "Feature",
+            "properties": {
+                "timestamp": p.timestamp.isoformat() if p.timestamp else None,
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [p.longitude, p.latitude],
+            },
+        }
+        for p in query.all()
+    ]
+
+    return {"type": "FeatureCollection", "features": features}
