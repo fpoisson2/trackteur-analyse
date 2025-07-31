@@ -102,3 +102,30 @@ def test_points_geojson_api_returns_features():
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["features"]
+
+
+def test_zones_geojson_groups_overlaps():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        eq_id = eq.id
+        other = DailyZone(
+            equipment_id=eq_id,
+            date=date.today().replace(day=max(1, date.today().day - 1)),
+            surface_ha=1.0,
+            polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
+        )
+        db.session.add(other)
+        db.session.commit()
+
+    resp = client.get(
+        f"/equipment/{eq_id}/zones.geojson?bbox=-1,-1,2,2&zoom=12"
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data["features"]) == 1
+    props = data["features"][0]["properties"]
+    assert props["pass_count"] == 2

@@ -59,16 +59,19 @@
       document.querySelectorAll('.zone-row').forEach(r => {
         r.classList.toggle('table-primary', r.dataset.date === date);
       });
-      Object.values(dateLayers).flat().forEach(l => l.setStyle({weight: 1}));
+      Object.values(dateLayers).flat().forEach(l => l.setStyle({ weight: 1 }));
       if (dateLayers[date]) {
         const bounds = L.latLngBounds();
         dateLayers[date].forEach(l => {
-          l.setStyle({weight: 4});
+          l.setStyle({ weight: 4 });
           if (l.getBounds) bounds.extend(l.getBounds());
           l.bringToFront();
         });
         if (bounds.isValid()) {
           map.fitBounds(bounds, { maxZoom: 17 });
+        }
+        if (dateLayers[date][0]) {
+          dateLayers[date][0].openPopup();
         }
       }
     }
@@ -84,7 +87,12 @@
           dateLayers = {};
           zoneLayer.addData(data);
           zoneLayer.eachLayer(layer => {
-            const dates = layer.feature.properties.dates;
+            const props = layer.feature.properties;
+            const dates = props.dates;
+            const popup = `<b>Passages:</b> ${props.pass_count}` +
+                          `<br><b>Surface:</b> ${props.surface_ha.toFixed(2)} ha` +
+                          `<br><b>Dates:</b> ${dates.join(', ')}`;
+            layer.bindPopup(popup);
             dates.forEach(d => {
               dateLayers[d] = dateLayers[d] || [];
               dateLayers[d].push(layer);

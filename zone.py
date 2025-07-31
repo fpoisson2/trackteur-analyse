@@ -557,18 +557,20 @@ def analyser_equipement(eq, start_date=None):
 
 
 def _simplify_tolerance(zoom: int) -> float:
-    """Tolérance de simplification (m) selon le zoom."""
-    if zoom >= 15:
-        return 1.0
+    """Return simplification tolerance in meters based on zoom level."""
+    if zoom >= 16:
+        return 0.5
+    if zoom >= 14:
+        return 2.0
     if zoom >= 12:
-        return 5.0
+        return 10.0
     if zoom >= 10:
-        return 20.0
-    return 50.0
+        return 30.0
+    return 100.0
 
 
 def zones_geojson(equipment_id: int, bbox=None, zoom: int = 12):
-    """Retourne les zones en GeoJSON pour l'API."""
+    """Return aggregated zones as GeoJSON for the API."""
     query = DailyZone.query.filter_by(equipment_id=equipment_id)
 
     bbox_poly = None
@@ -579,22 +581,34 @@ def zones_geojson(equipment_id: int, bbox=None, zoom: int = 12):
 
     from shapely import wkt
 
-    features = []
-    tol = _simplify_tolerance(zoom)
+    daily = []
     for dz in query.all():
         geom = wkt.loads(dz.polygon_wkt)
         if bbox_poly and not geom.intersects(bbox_poly):
             continue
+        if bbox_poly:
+            geom = geom.intersection(bbox_poly)
+            if geom.is_empty:
+                continue
+        daily.append({"geometry": geom, "dates": [str(dz.date)]})
+
+    aggregated = aggregate_overlapping_zones(daily)
+
+    features = []
+    tol = _simplify_tolerance(zoom)
+    for idx, item in enumerate(aggregated):
+        geom = item["geometry"]
         if tol:
             geom = geom.simplify(tol, preserve_topology=True)
         geom_wgs = shp_transform(_transformer, geom)
         features.append(
             {
                 "type": "Feature",
-                "id": str(dz.id),
+                "id": str(idx),
                 "properties": {
-                    "dates": [str(dz.date)],
-                    "surface_ha": dz.surface_ha,
+                    "dates": sorted(item["dates"]),
+                    "surface_ha": geom.area / 1e4,
+                    "pass_count": len(item["dates"]),
                 },
                 "geometry": geom_wgs.__geo_interface__,
             }
