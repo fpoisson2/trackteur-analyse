@@ -54,6 +54,7 @@
     let zoneLayer;
     let pointLayer;
     let dateLayers = {};
+    let skipFetch = false;
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
 
@@ -82,7 +83,16 @@
           if (l.bringToFront) l.bringToFront();
         });
         if (bounds.isValid()) {
+          skipFetch = true;
+          map.once('moveend', () => {
+            skipFetch = false;
+            const layer = dateLayers[date] && dateLayers[date][0];
+            if (layer) layer.openPopup();
+          });
           map.fitBounds(bounds, { maxZoom: 17 });
+        } else {
+          const layer = dateLayers[date] && dateLayers[date][0];
+          if (layer) layer.openPopup();
         }
       }
     }
@@ -98,7 +108,7 @@
           zoneLayer.addData(data);
           rebuildDateLayers();
         });
-      fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}`)
+      fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
         .then(r => r.json())
         .then(data => {
           pointLayer.clearLayers();
@@ -137,7 +147,7 @@
           }
         }
       }).addTo(map);
-      map.on('moveend zoomend', fetchData);
+      map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
         const b = L.latLngBounds(
           [initialBounds[1], initialBounds[0]],

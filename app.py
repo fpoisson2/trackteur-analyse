@@ -419,7 +419,7 @@ def create_app():
     def equipment_points_geojson(equipment_id):
         Equipment.query.get_or_404(equipment_id)
         bbox = request.args.get('bbox')
-        limit = int(request.args.get('limit', 1000))
+        limit = int(request.args.get('limit', 5000))
         west = south = east = north = None
         if bbox:
             west, south, east, north = [float(x) for x in bbox.split(',')]
