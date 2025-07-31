@@ -479,6 +479,11 @@ def create_app():
     scheduler.add_job(scheduled_job, trigger='cron', hour=2)
     scheduler.start()
 
+    # Assurer que la base est prête avant l'analyse initiale
+    with app.app_context():
+        db.create_all()
+        upgrade_db()
+
     def initial_analysis():
         with app.app_context():
             try:
