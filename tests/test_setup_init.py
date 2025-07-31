@@ -74,3 +74,65 @@ def test_schema_upgrade_adds_pass_count(tmp_path):
         insp = inspect(db.engine)
         cols = [c["name"] for c in insp.get_columns("daily_zone")]
     assert "pass_count" in cols
+
+
+def test_initial_analysis_upgrades_before_processing(tmp_path, monkeypatch):
+    """initial_analysis should run after upgrade_db."""
+    inst = tmp_path / "inst"
+    inst.mkdir()
+    db_file = inst / "trackteur.db"
+
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(f"sqlite:///{db_file}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE equipment (\n"
+                "id INTEGER PRIMARY KEY,\n"
+                "id_traccar INTEGER NOT NULL,\n"
+                "name VARCHAR NOT NULL,\n"
+                "token_api VARCHAR,\n"
+                "last_position DATETIME,\n"
+                "total_hectares FLOAT,\n"
+                "distance_between_zones FLOAT\n"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE daily_zone (\n"
+                "id INTEGER PRIMARY KEY,\n"
+                "equipment_id INTEGER NOT NULL,\n"
+                "date DATE,\n"
+                "surface_ha FLOAT,\n"
+                "polygon_wkt TEXT,\n"
+                "FOREIGN KEY(equipment_id) REFERENCES equipment(id)\n"
+                ")"
+            )
+        )
+
+    import importlib
+    from flask import Flask as RealFlask
+    import app as app_module
+
+    monkeypatch.setattr(
+        app_module,
+        "Flask",
+        lambda name: RealFlask(name, instance_path=str(inst)),
+    )
+    monkeypatch.setattr(
+        app_module.zone,
+        "process_equipment",
+        lambda *a, **k: None,
+    )
+
+    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+    app = importlib.reload(app_module).create_app()
+
+    with app.app_context():
+        from sqlalchemy import inspect
+
+        insp = inspect(db.engine)
+        cols = [c["name"] for c in insp.get_columns("daily_zone")]
+    assert "pass_count" in cols
