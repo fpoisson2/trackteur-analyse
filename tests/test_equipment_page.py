@@ -101,6 +101,7 @@ def test_zones_geojson_endpoint():
     data = resp.get_json()
     assert data["features"]
     assert "surface_ha" in data["features"][0]["properties"]
+    assert "dz_ids" in data["features"][0]["properties"]
 
 
 def test_points_geojson_endpoint():
@@ -144,3 +145,15 @@ def test_equipment_page_contains_highlight_rows():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert "function highlightRows" in html
+
+
+def test_zone_rows_have_ids():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert 'data-zone-id="' in html

@@ -32,7 +32,7 @@
           </thead>
           <tbody>
             {% for z in zones %}
-            <tr class="zone-row" data-date="{{ z.date }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
+            <tr class="zone-row" data-date="{{ z.date }}" data-zone-id="{{ z.id }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
               <td>{{ z.date }}</td>
               <td>{{ z.surface_ha|round(2) }}</td>
             </tr>
@@ -57,6 +57,7 @@
     let zoneLayer;
     let pointLayer;
     let dateLayers = {};
+    let dzIdLayers = {};
     let featureLayers = {};
     let skipFetch = false;
     const equipmentId = {{ equipment.id }};
@@ -65,21 +66,27 @@
 
     function rebuildDateLayers() {
       dateLayers = {};
+      dzIdLayers = {};
       featureLayers = {};
       zoneLayer.eachLayer(layer => {
         const dates = layer.feature.properties.dates;
+        const ids = layer.feature.properties.dz_ids || [];
         featureLayers[layer.feature.id] = layer;
         dates.forEach(d => {
           dateLayers[d] = dateLayers[d] || [];
           dateLayers[d].push(layer);
         });
+        ids.forEach(i => {
+          dzIdLayers[i] = dzIdLayers[i] || [];
+          dzIdLayers[i].push(layer);
+        });
       });
     }
 
-    function highlightRows(dates) {
+    function highlightRows(ids) {
       const rows = document.querySelectorAll('.zone-row');
       rows.forEach(r => {
-        r.classList.toggle('table-primary', dates.includes(r.dataset.date));
+        r.classList.toggle('table-primary', ids.includes(parseInt(r.dataset.zoneId)));
       });
     }
 
@@ -154,8 +161,14 @@
           if (dates) html += `<br><b>Dates:</b> ${dates}`;
           layer.bindPopup(html);
           layer.on('click', () => {
-            highlightRows(feature.properties.dates);
-            highlightZone(feature.id);
+            const ids = feature.properties.dz_ids || [];
+            const zoneIds = [];
+            ids.forEach(zid => {
+              const layers = dzIdLayers[zid] || [];
+              layers.forEach(l => zoneIds.push(l.feature.id));
+            });
+            highlightRows(ids.map(i => parseInt(i)));
+            highlightZone(zoneIds.length ? zoneIds : feature.id);
           });
         }
       }).addTo(map);
@@ -191,9 +204,9 @@
     function setupInteractions() {
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', () => {
-          const date = row.dataset.date;
-          highlightRows([date]);
-          const layers = dateLayers[date] || [];
+          const zoneId = parseInt(row.dataset.zoneId);
+          highlightRows([zoneId]);
+          const layers = dzIdLayers[zoneId] || [];
           if (layers.length) {
             const ids = layers.map(l => l.feature.id);
             highlightZone(ids);
@@ -207,9 +220,9 @@
             map.once('moveend', () => {
               skipFetch = false;
               fetchData().then(() => {
-                const newLayers = dateLayers[date] || [];
+                const newLayers = dzIdLayers[zoneId] || [];
                 const ids = newLayers.map(l => l.feature.id);
-                highlightRows([date]);
+                highlightRows([zoneId]);
                 if (ids.length) highlightZone(ids);
               });
             });
