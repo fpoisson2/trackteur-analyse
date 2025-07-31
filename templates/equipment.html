@@ -101,6 +101,7 @@
         skipFetch = true;
         map.once('moveend', () => {
           skipFetch = false;
+          fetchData();
           if (ids.length === 1 && featureLayers[ids[0]]) {
             featureLayers[ids[0]].openPopup();
           }
