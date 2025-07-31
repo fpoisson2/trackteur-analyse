@@ -394,7 +394,10 @@ def create_app():
         data = zone.zones_geojson(equipment_id, bbox=bbox, zoom=zoom)
         return jsonify(data)
 
-    @app.route('/equipment/<int:equipment_id>/points.geojson')
+    @app.route(
+        '/equipment/<int:equipment_id>/points.geojson',
+        endpoint='equipment_points_geojson'
+    )
     @login_required
     def equipment_points_geojson(equipment_id):
         Equipment.query.get_or_404(equipment_id)
