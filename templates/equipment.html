@@ -32,7 +32,7 @@
           </thead>
           <tbody>
             {% for z in zones %}
-            <tr class="zone-row" data-date="{{ z.date }}">
+            <tr class="zone-row" data-date="{{ z.date }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
               <td>{{ z.date }}</td>
               <td>{{ z.surface_ha|round(2) }}</td>
             </tr>
@@ -101,10 +101,11 @@
         skipFetch = true;
         map.once('moveend', () => {
           skipFetch = false;
-          fetchData();
-          if (ids.length === 1 && featureLayers[ids[0]]) {
-            featureLayers[ids[0]].openPopup();
-          }
+          fetchData().then(() => {
+            if (ids.length === 1 && featureLayers[ids[0]]) {
+              featureLayers[ids[0]].openPopup();
+            }
+          });
         });
         map.fitBounds(bounds, { maxZoom: 17 });
       } else if (ids.length === 1 && featureLayers[ids[0]]) {
@@ -117,19 +118,20 @@
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
       const zoom = map.getZoom();
-      fetch(`/equipment/${equipmentId}/zones.geojson?bbox=${bbox}&zoom=${zoom}`)
+      const zonesPromise = fetch(`/equipment/${equipmentId}/zones.geojson?bbox=${bbox}&zoom=${zoom}`)
         .then(r => r.json())
         .then(data => {
           zoneLayer.clearLayers();
           zoneLayer.addData(data);
           rebuildDateLayers();
         });
-      fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
+      const pointsPromise = fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
         .then(r => r.json())
         .then(data => {
           pointLayer.clearLayers();
           pointLayer.addData(data);
         });
+      return Promise.all([zonesPromise, pointsPromise]);
     }
 
     function setupMap() {
@@ -195,6 +197,23 @@
           if (layers.length) {
             const ids = layers.map(l => l.feature.id);
             highlightZone(ids);
+          } else if (row.dataset.bounds) {
+            const b = JSON.parse(row.dataset.bounds);
+            const bounds = L.latLngBounds(
+              [b[1], b[0]],
+              [b[3], b[2]]
+            );
+            skipFetch = true;
+            map.once('moveend', () => {
+              skipFetch = false;
+              fetchData().then(() => {
+                const newLayers = dateLayers[date] || [];
+                const ids = newLayers.map(l => l.feature.id);
+                highlightRows([date]);
+                if (ids.length) highlightZone(ids);
+              });
+            });
+            map.fitBounds(bounds, { maxZoom: 17 });
           }
         });
       });
