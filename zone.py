@@ -80,7 +80,10 @@ def get_aggregated_zones(equipment_id: int):
 
         zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
         daily = [
-            {"geometry": wkt.loads(z.polygon_wkt), "dates": [str(z.date)]}
+            {
+                "geometry": wkt.loads(z.polygon_wkt),
+                "dates": [str(z.date)] * (z.pass_count or 1),
+            }
             for z in zones
             if z.polygon_wkt
         ]
@@ -416,25 +419,16 @@ def process_equipment(eq, since=None):
             # ✅ FIX : Appliquer l'agrégation des zones chevauchantes
             agg = aggregate_overlapping_zones(daily_zones)
 
-            # Calculer la surface totale pour cette date
-            total_daily = sum(z['geometry'].area for z in agg) / 1e4
-
-            # ✅ FIX : Créer un polygon_wkt représentant l'union des zones
-            from shapely.ops import unary_union
-            all_geoms = [z['geometry'] for z in agg]
-            if len(all_geoms) == 1:
-                union_geom = all_geoms[0]
-            else:
-                union_geom = unary_union(all_geoms)
-
-            # Créer la zone journalière
-            dz = DailyZone(
-                equipment_id=eq.id,
-                date=date_obj,
-                surface_ha=total_daily,
-                polygon_wkt=union_geom.wkt
-            )
-            db.session.add(dz)
+            # Enregistrer chaque morceau avec le nombre de passages
+            for part in agg:
+                dz = DailyZone(
+                    equipment_id=eq.id,
+                    date=date_obj,
+                    surface_ha=part['geometry'].area / 1e4,
+                    polygon_wkt=part['geometry'].wkt,
+                    pass_count=len(part['dates']),
+                )
+                db.session.add(dz)
 
     # 4) ✅ FIX : Recalculer le total sur TOUTES les zones existantes
     all_zones = (
@@ -442,17 +436,26 @@ def process_equipment(eq, since=None):
         .order_by(DailyZone.date)
         .all()
     )
-    total = sum(d.surface_ha for d in all_zones)
-    eq.total_hectares = total
 
     from shapely import wkt
+    from shapely.ops import unary_union
 
-    polygons = [
-        wkt.loads(z.polygon_wkt)
-        for z in all_zones
-        if z.polygon_wkt
-    ]
-    eq.distance_between_zones = calculate_distance_between_zones(polygons)
+    zones_by_date = {}
+    for dz in all_zones:
+        if not dz.polygon_wkt:
+            continue
+        poly = wkt.loads(dz.polygon_wkt)
+        zones_by_date.setdefault(dz.date, []).append(poly)
+
+    total = 0.0
+    daily_polys = []
+    for _, polys in sorted(zones_by_date.items()):
+        union = unary_union(polys) if len(polys) > 1 else polys[0]
+        total += union.area / 1e4
+        daily_polys.append(union)
+
+    eq.total_hectares = total
+    eq.distance_between_zones = calculate_distance_between_zones(daily_polys)
 
     logger.debug("Computed %d daily zones", len(all_zones))
     logger.info(
@@ -515,25 +518,41 @@ def recalculate_hectares_from_positions(equipment_id, since_date=None):
         if geoms:
             daily_zones = [{'geometry': g, 'dates': [date_str]} for g in geoms]
             agg = aggregate_overlapping_zones(daily_zones)
-            total_daily = sum(z['geometry'].area for z in agg) / 1e4
 
-            from shapely.ops import unary_union
-            all_geoms = [z['geometry'] for z in agg]
-            union_geom = (
-                unary_union(all_geoms) if len(all_geoms) > 1 else all_geoms[0]
-            )
-
-            dz = DailyZone(
-                equipment_id=equipment_id,
-                date=date_obj,
-                surface_ha=total_daily,
-                polygon_wkt=union_geom.wkt
-            )
-            db.session.add(dz)
+            for part in agg:
+                dz = DailyZone(
+                    equipment_id=equipment_id,
+                    date=date_obj,
+                    surface_ha=part['geometry'].area / 1e4,
+                    polygon_wkt=part['geometry'].wkt,
+                    pass_count=len(part['dates']),
+                )
+                db.session.add(dz)
 
     # Recalculer le total
-    all_zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
-    total = sum(d.surface_ha for d in all_zones)
+    all_zones = (
+        DailyZone.query.filter_by(equipment_id=equipment_id)
+        .order_by(DailyZone.date)
+        .all()
+    )
+
+    from shapely import wkt
+    from shapely.ops import unary_union
+
+    zones_by_date2 = {}
+    for dz in all_zones:
+        if not dz.polygon_wkt:
+            continue
+        poly = wkt.loads(dz.polygon_wkt)
+        zones_by_date2.setdefault(dz.date, []).append(poly)
+
+    total = 0.0
+    daily_polys = []
+    for _, polys in sorted(zones_by_date2.items()):
+        union = unary_union(polys) if len(polys) > 1 else polys[0]
+        total += union.area / 1e4
+        daily_polys.append(union)
+
     eq.total_hectares = total
 
     db.session.commit()
@@ -549,7 +568,10 @@ def calculate_relative_hectares(equipment_id):
     from shapely import wkt
 
     daily = [
-        {"geometry": wkt.loads(z.polygon_wkt), "dates": [str(z.date)]}
+        {
+            "geometry": wkt.loads(z.polygon_wkt),
+            "dates": [str(z.date)] * (z.pass_count or 1),
+        }
         for z in zones
     ]
     aggregated = aggregate_overlapping_zones(daily)
