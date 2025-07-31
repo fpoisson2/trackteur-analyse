@@ -1,4 +1,5 @@
 import os
+import logging
 
 from flask import Flask, render_template, request, redirect, url_for
 from flask_login import (
@@ -19,6 +20,16 @@ from datetime import datetime
 
 def create_app():
     app = Flask(__name__)
+    # Configure logging
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=log_level,
+            format="[%(asctime)s] %(levelname)s in %(module)s: %(message)s",
+        )
+    else:
+        logging.getLogger().setLevel(log_level)
+    app.logger.setLevel(log_level)
     app.config['SECRET_KEY'] = os.environ.get(
         'FLASK_SECRET_KEY', os.urandom(24)
     )
