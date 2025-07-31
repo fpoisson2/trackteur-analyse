@@ -57,3 +57,4 @@ class DailyZone(db.Model):  # type: ignore[name-defined]
     date = db.Column(db.Date)
     surface_ha = db.Column(db.Float)
     polygon_wkt = db.Column(db.Text)
+    pass_count = db.Column(db.Integer, default=1)

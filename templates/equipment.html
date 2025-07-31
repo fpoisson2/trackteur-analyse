@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ equipment.name }} - Détails</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
@@ -20,6 +21,8 @@
     <style>
       .zone-row { cursor: pointer; }
       #map-container { height: 70vh; }
+      .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
+      .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
     </style>
     <div class="row">
       <div class="col-md-4 mb-4">
@@ -54,14 +57,18 @@
     let zoneLayer;
     let pointLayer;
     let dateLayers = {};
+    let featureLayers = {};
     let skipFetch = false;
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
+    const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
 
     function rebuildDateLayers() {
       dateLayers = {};
+      featureLayers = {};
       zoneLayer.eachLayer(layer => {
         const dates = layer.feature.properties.dates;
+        featureLayers[layer.feature.id] = layer;
         dates.forEach(d => {
           dateLayers[d] = dateLayers[d] || [];
           dateLayers[d].push(layer);
@@ -69,31 +76,32 @@
       });
     }
 
-    function highlightDate(date) {
+    function highlightRow(date) {
       const rows = document.querySelectorAll('.zone-row');
       rows.forEach(r => {
         r.classList.toggle('table-primary', r.dataset.date === date);
       });
+    }
+
+    function highlightZone(id) {
       zoneLayer.eachLayer(l => l.setStyle({weight: 1}));
-      if (dateLayers[date]) {
-        const bounds = L.latLngBounds();
-        dateLayers[date].forEach(l => {
-          l.setStyle({weight: 4});
-          if (l.getBounds) bounds.extend(l.getBounds());
-          if (l.bringToFront) l.bringToFront();
-        });
-        if (bounds.isValid()) {
+      const layer = featureLayers[id];
+      if (layer) {
+        layer.setStyle({weight: 4});
+        if (layer.getBounds && layer.getBounds().isValid()) {
+          const bounds = layer.getBounds();
           skipFetch = true;
           map.once('moveend', () => {
             skipFetch = false;
-            (dateLayers[date] || []).forEach(l => l.openPopup());
+            layer.openPopup();
           });
           map.fitBounds(bounds, { maxZoom: 17 });
         } else {
-          (dateLayers[date] || []).forEach(l => l.openPopup());
+          layer.openPopup();
         }
       }
     }
+
 
     function fetchData() {
       const b = map.getBounds();
@@ -119,9 +127,9 @@
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
+      L.control.scale().addTo(map);
       zoneLayer = L.geoJSON(null, {
         style: f => {
-          const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
           const count = f.properties.count || 1;
           const col = colors[Math.min(count - 1, colors.length - 1)];
           return { color: 'black', weight: 1, fillColor: col, fillOpacity: 0.6 };
@@ -133,12 +141,28 @@
           let html = `<b>Passages:</b> ${c}<br><b>Surface:</b> ${area.toFixed(2)} ha`;
           if (dates) html += `<br><b>Dates:</b> ${dates}`;
           layer.bindPopup(html);
-          layer.on('click', () => highlightDate(feature.properties.dates[0]));
+          layer.on('click', () => {
+            highlightRow(feature.properties.dates[0]);
+            highlightZone(feature.id);
+          });
         }
       }).addTo(map);
       pointLayer = L.geoJSON(null, {
         pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 })
       }).addTo(map);
+      const legend = L.control({ position: 'bottomright' });
+      legend.onAdd = () => {
+        const div = L.DomUtil.create('div', 'legend');
+        const levels = [1, 2, 3, 4, 5];
+        let html = '<strong>Passages</strong><br>';
+        levels.forEach((l, i) => {
+          const label = i === levels.length - 1 ? `${l}+` : `${l}`;
+          html += `<i style="background:${colors[i]}"></i> ${label}<br>`;
+        });
+        div.innerHTML = html;
+        return div;
+      };
+      legend.addTo(map);
       map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
         const b = L.latLngBounds(
@@ -154,7 +178,14 @@
 
     function setupInteractions() {
       document.querySelectorAll('.zone-row').forEach(row => {
-        row.addEventListener('click', () => highlightDate(row.dataset.date));
+        row.addEventListener('click', () => {
+          const date = row.dataset.date;
+          highlightRow(date);
+          const layers = dateLayers[date] || [];
+          if (layers.length) {
+            highlightZone(layers[0].feature.id);
+          }
+        });
       });
       setupMap();
     }

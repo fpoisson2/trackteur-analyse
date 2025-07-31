@@ -41,17 +41,37 @@ def create_app():
     login_manager = LoginManager(app)
     login_manager.login_view = 'login'
 
+    def upgrade_db() -> None:
+        """Ensure the database schema includes recent columns."""
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(db.engine)
+        try:
+            cols = [c["name"] for c in inspector.get_columns("daily_zone")]
+        except Exception:
+            return
+        if "pass_count" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE daily_zone ADD COLUMN pass_count "
+                        "INTEGER DEFAULT 1"
+                    )
+                )
+
     if hasattr(app, "before_first_request"):
         @app.before_first_request
         def init_db() -> None:
-            """Crée les tables de la base si nécessaire."""
+            """Crée les tables et applique les migrations légères."""
             db.create_all()
+            upgrade_db()
     else:
         @app.before_request
         def init_db_once() -> None:
             """Fallback pour Flask 3 sans before_first_request."""
             if not getattr(app, "_db_init", False):
                 db.create_all()
+                upgrade_db()
                 app._db_init = True
 
     @app.before_request
@@ -459,6 +479,11 @@ def create_app():
     scheduler.add_job(scheduled_job, trigger='cron', hour=2)
     scheduler.start()
 
+    # Assurer que la base est prête avant l'analyse initiale
+    with app.app_context():
+        db.create_all()
+        upgrade_db()
+
     def initial_analysis():
         with app.app_context():
             try:
@@ -478,4 +503,4 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0')
