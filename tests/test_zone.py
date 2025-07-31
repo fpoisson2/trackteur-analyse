@@ -422,3 +422,30 @@ def test_distance_between_zones_calculation(monkeypatch):
             zone.process_equipment(eq)
 
             assert eq.distance_between_zones > 0
+
+
+def test_zones_split_by_pass_count(monkeypatch):
+    for app in setup_db():
+        with app.app_context():
+            eq = zone.Equipment(id_traccar=1, name="eq1")
+            zone.db.session.add(eq)
+            zone.db.session.commit()
+
+            poly1 = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+            poly2 = Polygon([(0.5, 0.5), (1.5, 0.5), (1.5, 1.5), (0.5, 1.5)])
+
+            monkeypatch.setattr(zone, "fetch_positions", lambda *a, **k: [])
+            monkeypatch.setattr(
+                zone,
+                "cluster_positions",
+                lambda pos: [
+                    {"geometry": poly1, "dates": ["2023-01-01"]},
+                    {"geometry": poly2, "dates": ["2023-01-01"]},
+                ],
+            )
+
+            zone.process_equipment(eq, since=datetime(2023, 1, 1))
+
+            zones = zone.DailyZone.query.filter_by(equipment_id=eq.id).all()
+            counts = sorted(z.pass_count for z in zones)
+            assert counts == [1, 1, 2]

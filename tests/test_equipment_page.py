@@ -75,6 +75,18 @@ def test_equipment_detail_page_loads():
     assert "map-container" in html
 
 
+def test_equipment_page_shows_legend():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "legend" in html
+
+
 def test_zones_geojson_endpoint():
     app = make_app()
     client = app.test_client()
@@ -104,3 +116,15 @@ def test_points_geojson_endpoint():
     assert resp.status_code == 200
     data = resp.get_json()
     assert len(data["features"]) <= 2
+
+
+def test_equipment_page_contains_highlight_zone():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "function highlightZone" in html
