@@ -369,37 +369,79 @@ def create_app():
             .order_by(DailyZone.date.desc())
             .all()
         )
-        # Génération de la carte Folium avec comptage des passages
-        map_html = None
-        if zones:
-            from shapely import wkt
-
-            daily = [
-                {
-                    "geometry": wkt.loads(z.polygon_wkt),
-                    "dates": [str(z.date)]
-                }
-                for z in zones
-            ]
-
-            aggregated = zone.aggregate_overlapping_zones(daily)
-
-            raw_points = [
-                Point(p.longitude, p.latitude)
-                for p in (
-                    Position.query
-                    .filter_by(equipment_id=equipment_id)
-                    .order_by(Position.timestamp.desc())
-                    .all()
-                )
-            ]
-
-            map_html = zone.generate_map_html(
-                aggregated, raw_points=raw_points
-            )
         return render_template(
-            'equipment.html', equipment=eq, zones=zones, map_html=map_html
+            'equipment.html', equipment=eq, zones=zones
         )
+
+    @app.route('/equipment/<int:equipment_id>/zones.geojson')
+    @login_required
+    def equipment_zones_geojson(equipment_id):
+        Equipment.query.get_or_404(equipment_id)
+        bbox = request.args.get('bbox')
+        zoom = int(request.args.get('zoom', 12))
+        agg = zone.get_aggregated_zones(equipment_id)
+
+        from shapely.geometry import box
+        from shapely.ops import transform as shp_transform
+
+        bbox_geom = None
+        if bbox:
+            west, south, east, north = [float(x) for x in bbox.split(',')]
+            bbox_geom = shp_transform(zone._to_webmerc, box(west, south, east, north))
+
+        features = []
+        for idx, z in enumerate(agg):
+            geom = z['geometry']
+            if bbox_geom and not geom.intersects(bbox_geom):
+                continue
+            if bbox_geom:
+                geom = geom.intersection(bbox_geom)
+            geom = zone.simplify_for_zoom(geom, zoom)
+            geom_wgs = shp_transform(zone._transformer, geom)
+            features.append({
+                'type': 'Feature',
+                'id': str(idx),
+                'properties': {
+                    'dates': z['dates'],
+                    'count': len(z['dates']),
+                },
+                'geometry': geom_wgs.__geo_interface__,
+            })
+
+        return {'type': 'FeatureCollection', 'features': features}
+
+    @app.route('/equipment/<int:equipment_id>/points.geojson')
+    @login_required
+    def equipment_points_geojson(equipment_id):
+        Equipment.query.get_or_404(equipment_id)
+        bbox = request.args.get('bbox')
+        limit = int(request.args.get('limit', 1000))
+        west = south = east = north = None
+        if bbox:
+            west, south, east, north = [float(x) for x in bbox.split(',')]
+        query = (
+            Position.query
+            .filter_by(equipment_id=equipment_id)
+            .order_by(Position.timestamp.desc())
+            .limit(limit)
+        )
+        features = []
+        for p in query:
+            if bbox and not (west <= p.longitude <= east and south <= p.latitude <= north):
+                continue
+            features.append({
+                'type': 'Feature',
+                'id': str(p.id),
+                'properties': {
+                    'timestamp': p.timestamp.isoformat(),
+                },
+                'geometry': {
+                    'type': 'Point',
+                    'coordinates': [p.longitude, p.latitude],
+                },
+            })
+
+        return {'type': 'FeatureCollection', 'features': features}
 
     # Planification de la tâche quotidienne à 2h du matin
     scheduler = BackgroundScheduler()

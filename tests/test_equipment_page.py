@@ -62,23 +62,44 @@ def login(client):
     )
 
 
-def test_equipment_detail_page_loads(monkeypatch):
+def test_equipment_detail_page_loads():
     app = make_app()
     client = app.test_client()
     login(client)
-
-    # Simplifier la génération de carte et vérifier les points envoyés
-    called = {}
-
-    def fake_generate(zones, raw_points=None):
-        called["raw"] = raw_points
-        return "<div>map</div>"
-
-    monkeypatch.setattr("zone.generate_map_html", fake_generate)
 
     with app.app_context():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     assert resp.status_code == 200
-    assert b"map" in resp.data
-    assert len(called["raw"]) == 3
+    html = resp.data.decode()
+    assert "map-container" in html
+
+
+def test_zones_geojson_endpoint():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(
+            f"/equipment/{eq.id}/zones.geojson?bbox=-180,-90,180,90&zoom=12"
+        )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["features"]
+
+
+def test_points_geojson_endpoint():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(
+            f"/equipment/{eq.id}/points.geojson?bbox=-180,-90,180,90&limit=2"
+        )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data["features"]) <= 2
