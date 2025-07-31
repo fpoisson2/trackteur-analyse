@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
 
+
 class User(UserMixin, db.Model):  # type: ignore[name-defined]
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String, unique=True, nullable=False)
@@ -15,6 +16,15 @@ class User(UserMixin, db.Model):  # type: ignore[name-defined]
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+class Config(db.Model):  # type: ignore[name-defined]
+    """Paramètres de connexion Traccar."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    traccar_url = db.Column(db.String, nullable=False)
+    traccar_token = db.Column(db.String, nullable=False)
+
 
 class Equipment(db.Model):  # type: ignore[name-defined]
     id = db.Column(db.Integer, primary_key=True)
@@ -28,16 +38,22 @@ class Equipment(db.Model):  # type: ignore[name-defined]
     positions = db.relationship('Position', backref='equipment', lazy=True)
     daily_zones = db.relationship('DailyZone', backref='equipment', lazy=True)
 
+
 class Position(db.Model):  # type: ignore[name-defined]
     id = db.Column(db.Integer, primary_key=True)
-    equipment_id = db.Column(db.Integer, db.ForeignKey('equipment.id'), nullable=False)
+    equipment_id = db.Column(
+        db.Integer, db.ForeignKey('equipment.id'), nullable=False
+    )
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
     timestamp = db.Column(db.DateTime)
 
+
 class DailyZone(db.Model):  # type: ignore[name-defined]
     id = db.Column(db.Integer, primary_key=True)
-    equipment_id = db.Column(db.Integer, db.ForeignKey('equipment.id'), nullable=False)
+    equipment_id = db.Column(
+        db.Integer, db.ForeignKey('equipment.id'), nullable=False
+    )
     date = db.Column(db.Date)
     surface_ha = db.Column(db.Float)
     polygon_wkt = db.Column(db.Text)

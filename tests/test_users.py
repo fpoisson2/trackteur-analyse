@@ -1,20 +1,22 @@
 import os
 import sys
-import pytest
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+from app import create_app  # noqa: E402
+from models import db, User, Equipment, Config  # noqa: E402
+import zone  # noqa: E402
+
 os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
-from app import create_app
-from models import db, User
-
 
 def make_app():
+    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
     app = create_app()
+    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     with app.app_context():
         db.drop_all()
@@ -22,12 +24,22 @@ def make_app():
         admin = User(username="admin", is_admin=True)
         admin.set_password("pass")
         db.session.add(admin)
+        db.session.add(
+            Config(
+                traccar_url="http://example.com",
+                traccar_token="dummy",
+            )
+        )
+        db.session.add(Equipment(id_traccar=1, name="eq"))
         db.session.commit()
     return app
 
 
 def login(client, username="admin", password="pass"):
-    return client.post("/login", data={"username": username, "password": password})
+    return client.post(
+        "/login",
+        data={"username": username, "password": password},
+    )
 
 
 def test_non_admin_cannot_access_users():
@@ -53,19 +65,6 @@ def test_non_admin_cannot_access_admin_page():
     client = app.test_client()
     login(client, "reader", "pwd")
     resp = client.get("/admin")
-    assert resp.status_code == 302
-
-
-def test_non_admin_cannot_access_initdb():
-    app = make_app()
-    with app.app_context():
-        u = User(username="reader", is_admin=False)
-        u.set_password("pwd")
-        db.session.add(u)
-        db.session.commit()
-    client = app.test_client()
-    login(client, "reader", "pwd")
-    resp = client.get("/initdb")
     assert resp.status_code == 302
 
 
@@ -109,3 +108,33 @@ def test_password_reset():
     with app.app_context():
         user = User.query.get(uid)
         assert user.check_password("new")
+
+
+def test_non_admin_cannot_reanalyze():
+    app = make_app()
+    with app.app_context():
+        u = User(username="reader", is_admin=False)
+        u.set_password("pwd")
+        db.session.add(u)
+        db.session.commit()
+    client = app.test_client()
+    login(client, "reader", "pwd")
+    resp = client.post("/reanalyze_all")
+    assert resp.status_code == 302
+
+
+def test_admin_can_trigger_reanalyze(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    called = []
+
+    def fake_process(eq, since=None):
+        called.append(eq.id_traccar)
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+
+    resp = client.post("/reanalyze_all")
+    assert resp.status_code == 302
+    assert called == [1]

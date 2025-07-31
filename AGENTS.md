@@ -53,22 +53,24 @@ Les agents peuvent être exécutés automatiquement ou manuellement :
 | Agent                      | Fréquence        | Déclenchement |
 |----------------------------|------------------|----------------|
 | `analyseur_zones_journalières` | chaque nuit      | APScheduler    |
-| `analyse_manuelle`         | à la demande     | UI utilisateur |
+| `analyse_initiale`         | au démarrage     | automatique |
 | `rapport_par_tracteur`     | futur            | script manuel  |
 | `verificateur_inactivite`  | futur            | planifié       |
 
 ---
 
-## 🔐 Variables d’environnement (recommandées)
+## 🔐 Variables d’environnement (optionnelles)
 
-Toutes les informations sensibles doivent être passées par variables d’environnement :
+Les paramètres Traccar peuvent être saisis via l'interface d'administration et
+sont enregistrés en base de données. Les variables ci-dessous permettent de
+fournir ou de surcharger cette configuration lors du déploiement :
 
 | Variable              | Rôle                                |
 |-----------------------|--------------------------------------|
-| `API_AUTH_TOKEN`      | Token d’accès à l’API externe        |
-| `API_BASE_URL`        | URL de base pour requêtes GPS        |
-| `APP_USERNAME`        | Identifiant administrateur           |
-| `APP_PASSWORD`        | Mot de passe administrateur          |
+| `TRACCAR_AUTH_TOKEN`  | Jeton d’accès au serveur Traccar     |
+| `TRACCAR_BASE_URL`    | URL de base de l’API Traccar         |
+| `TRACCAR_DEVICE_NAME` | Nom de l’équipement à suivre (option)|
+| `SKIP_INITIAL_ANALYSIS` | Désactiver l’analyse initiale (0/1) |
 | `FLASK_SECRET_KEY`    | Clé secrète Flask                    |
 
 **Codex ne doit jamais coder ces valeurs en dur.**
