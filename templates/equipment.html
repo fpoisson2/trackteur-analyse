@@ -76,29 +76,39 @@
       });
     }
 
-    function highlightRow(date) {
+    function highlightRows(dates) {
       const rows = document.querySelectorAll('.zone-row');
       rows.forEach(r => {
-        r.classList.toggle('table-primary', r.dataset.date === date);
+        r.classList.toggle('table-primary', dates.includes(r.dataset.date));
       });
     }
 
-    function highlightZone(id) {
-      zoneLayer.eachLayer(l => l.setStyle({weight: 1}));
-      const layer = featureLayers[id];
-      if (layer) {
-        layer.setStyle({weight: 4});
-        if (layer.getBounds && layer.getBounds().isValid()) {
-          const bounds = layer.getBounds();
-          skipFetch = true;
-          map.once('moveend', () => {
-            skipFetch = false;
-            layer.openPopup();
-          });
-          map.fitBounds(bounds, { maxZoom: 17 });
-        } else {
-          layer.openPopup();
+    function highlightZone(ids) {
+      zoneLayer.eachLayer(l => l.setStyle({ weight: 1 }));
+      ids = Array.isArray(ids) ? ids : [ids];
+      let bounds;
+      ids.forEach(id => {
+        const layer = featureLayers[id];
+        if (layer) {
+          layer.setStyle({ weight: 4 });
+          if (layer.getBounds && layer.getBounds().isValid()) {
+            const b = layer.getBounds();
+            bounds = bounds ? bounds.extend(b) : b.clone();
+          }
         }
+      });
+      if (bounds) {
+        skipFetch = true;
+        map.once('moveend', () => {
+          skipFetch = false;
+          fetchData();
+          if (ids.length === 1 && featureLayers[ids[0]]) {
+            featureLayers[ids[0]].openPopup();
+          }
+        });
+        map.fitBounds(bounds, { maxZoom: 17 });
+      } else if (ids.length === 1 && featureLayers[ids[0]]) {
+        featureLayers[ids[0]].openPopup();
       }
     }
 
@@ -142,7 +152,7 @@
           if (dates) html += `<br><b>Dates:</b> ${dates}`;
           layer.bindPopup(html);
           layer.on('click', () => {
-            highlightRow(feature.properties.dates[0]);
+            highlightRows(feature.properties.dates);
             highlightZone(feature.id);
           });
         }
@@ -180,10 +190,11 @@
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', () => {
           const date = row.dataset.date;
-          highlightRow(date);
+          highlightRows([date]);
           const layers = dateLayers[date] || [];
           if (layers.length) {
-            highlightZone(layers[0].feature.id);
+            const ids = layers.map(l => l.feature.id);
+            highlightZone(ids);
           }
         });
       });

@@ -128,3 +128,19 @@ def test_equipment_page_contains_highlight_zone():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert "function highlightZone" in html
+    start = html.find("function highlightZone")
+    end = html.find("function fetchData")
+    snippet = html[start:end] if end != -1 else html[start:]
+    assert "fetchData()" in snippet
+
+
+def test_equipment_page_contains_highlight_rows():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "function highlightRows" in html
