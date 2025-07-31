@@ -388,9 +388,18 @@ def create_app():
             .order_by(DailyZone.date.desc())
             .all()
         )
+        zone_bounds = {
+            z.id: zone.wkt_bounds(z.polygon_wkt)
+            for z in zones
+            if z.polygon_wkt
+        }
         bounds = zone.get_bounds_for_equipment(equipment_id)
         return render_template(
-            'equipment.html', equipment=eq, zones=zones, bounds=bounds
+            'equipment.html',
+            equipment=eq,
+            zones=zones,
+            bounds=bounds,
+            zone_bounds=zone_bounds,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')
