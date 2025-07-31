@@ -57,6 +57,7 @@
     let zoneLayer;
     let pointLayer;
     let dateLayers = {};
+    let featureLayers = {};
     let skipFetch = false;
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
@@ -64,8 +65,10 @@
 
     function rebuildDateLayers() {
       dateLayers = {};
+      featureLayers = {};
       zoneLayer.eachLayer(layer => {
         const dates = layer.feature.properties.dates;
+        featureLayers[layer.feature.id] = layer;
         dates.forEach(d => {
           dateLayers[d] = dateLayers[d] || [];
           dateLayers[d].push(layer);
@@ -73,31 +76,32 @@
       });
     }
 
-    function highlightDate(date) {
+    function highlightRow(date) {
       const rows = document.querySelectorAll('.zone-row');
       rows.forEach(r => {
         r.classList.toggle('table-primary', r.dataset.date === date);
       });
+    }
+
+    function highlightZone(id) {
       zoneLayer.eachLayer(l => l.setStyle({weight: 1}));
-      if (dateLayers[date]) {
-        const bounds = L.latLngBounds();
-        dateLayers[date].forEach(l => {
-          l.setStyle({weight: 4});
-          if (l.getBounds) bounds.extend(l.getBounds());
-          if (l.bringToFront) l.bringToFront();
-        });
-        if (bounds.isValid()) {
+      const layer = featureLayers[id];
+      if (layer) {
+        layer.setStyle({weight: 4});
+        if (layer.getBounds && layer.getBounds().isValid()) {
+          const bounds = layer.getBounds();
           skipFetch = true;
           map.once('moveend', () => {
             skipFetch = false;
-            (dateLayers[date] || []).forEach(l => l.openPopup());
+            layer.openPopup();
           });
           map.fitBounds(bounds, { maxZoom: 17 });
         } else {
-          (dateLayers[date] || []).forEach(l => l.openPopup());
+          layer.openPopup();
         }
       }
     }
+
 
     function fetchData() {
       const b = map.getBounds();
@@ -137,7 +141,10 @@
           let html = `<b>Passages:</b> ${c}<br><b>Surface:</b> ${area.toFixed(2)} ha`;
           if (dates) html += `<br><b>Dates:</b> ${dates}`;
           layer.bindPopup(html);
-          layer.on('click', () => highlightDate(feature.properties.dates[0]));
+          layer.on('click', () => {
+            highlightRow(feature.properties.dates[0]);
+            highlightZone(feature.id);
+          });
         }
       }).addTo(map);
       pointLayer = L.geoJSON(null, {
@@ -171,7 +178,14 @@
 
     function setupInteractions() {
       document.querySelectorAll('.zone-row').forEach(row => {
-        row.addEventListener('click', () => highlightDate(row.dataset.date));
+        row.addEventListener('click', () => {
+          const date = row.dataset.date;
+          highlightRow(date);
+          const layers = dateLayers[date] || [];
+          if (layers.length) {
+            highlightZone(layers[0].feature.id);
+          }
+        });
       });
       setupMap();
     }

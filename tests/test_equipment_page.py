@@ -116,3 +116,15 @@ def test_points_geojson_endpoint():
     assert resp.status_code == 200
     data = resp.get_json()
     assert len(data["features"]) <= 2
+
+
+def test_equipment_page_contains_highlight_zone():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "function highlightZone" in html
