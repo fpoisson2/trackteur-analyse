@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <title>{{ equipment.name }} - Détails</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
 </head>
 <body class="p-4">
   <div class="container">
@@ -39,9 +40,7 @@
       <div class="col-md-8">
         <h2>Carte des passages</h2>
         <p class="text-muted">Les couleurs indiquent le nombre de passages sur chaque zone.</p>
-        <div id="map-container">
-          {{ map_html|safe }}
-        </div>
+        <div id="map-container"></div>
       </div>
     </div>
     {% else %}
@@ -49,69 +48,115 @@
     {% endif %}
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
   <script>
+    let map;
+    let zoneLayer;
+    let pointLayer;
+    let dateLayers = {};
+    let skipFetch = false;
+    const equipmentId = {{ equipment.id }};
+    const initialBounds = {{ bounds|tojson }};
+
+    function rebuildDateLayers() {
+      dateLayers = {};
+      zoneLayer.eachLayer(layer => {
+        const dates = layer.feature.properties.dates;
+        dates.forEach(d => {
+          dateLayers[d] = dateLayers[d] || [];
+          dateLayers[d].push(layer);
+        });
+      });
+    }
+
     function highlightDate(date) {
       const rows = document.querySelectorAll('.zone-row');
       rows.forEach(r => {
         r.classList.toggle('table-primary', r.dataset.date === date);
       });
-
-      const iframe = document.querySelector('#map-container iframe');
-      if (!iframe || !iframe.contentWindow) return;
-      const win = iframe.contentWindow;
-      if (!win.dateLayers) return;
-
-      Object.values(win.dateLayers).forEach(lst => {
-        lst.forEach(layer => layer.setStyle({weight: 1}));
-      });
-      if (win.dateLayers[date]) {
-        const bounds = win.L.latLngBounds();
-        win.dateLayers[date].forEach(layer => {
-          layer.setStyle({weight: 4});
-          if (layer.getBounds) bounds.extend(layer.getBounds());
-          if (layer.bringToFront) layer.bringToFront();
+      zoneLayer.eachLayer(l => l.setStyle({weight: 1}));
+      if (dateLayers[date]) {
+        const bounds = L.latLngBounds();
+        dateLayers[date].forEach(l => {
+          l.setStyle({weight: 4});
+          if (l.getBounds) bounds.extend(l.getBounds());
+          if (l.bringToFront) l.bringToFront();
         });
-        if (win.leafletMap && bounds.isValid()) {
-          win.leafletMap.fitBounds(bounds, { maxZoom: 17 });
+        if (bounds.isValid()) {
+          skipFetch = true;
+          map.once('moveend', () => {
+            skipFetch = false;
+            (dateLayers[date] || []).forEach(l => l.openPopup());
+          });
+          map.fitBounds(bounds, { maxZoom: 17 });
+        } else {
+          (dateLayers[date] || []).forEach(l => l.openPopup());
         }
       }
+    }
+
+    function fetchData() {
+      const b = map.getBounds();
+      const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
+      const zoom = map.getZoom();
+      fetch(`/equipment/${equipmentId}/zones.geojson?bbox=${bbox}&zoom=${zoom}`)
+        .then(r => r.json())
+        .then(data => {
+          zoneLayer.clearLayers();
+          zoneLayer.addData(data);
+          rebuildDateLayers();
+        });
+      fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
+        .then(r => r.json())
+        .then(data => {
+          pointLayer.clearLayers();
+          pointLayer.addData(data);
+        });
+    }
+
+    function setupMap() {
+      map = L.map('map-container');
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+      zoneLayer = L.geoJSON(null, {
+        style: f => {
+          const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
+          const count = f.properties.count || 1;
+          const col = colors[Math.min(count - 1, colors.length - 1)];
+          return { color: 'black', weight: 1, fillColor: col, fillOpacity: 0.6 };
+        },
+        onEachFeature: (feature, layer) => {
+          const c = feature.properties.count || 1;
+          const area = feature.properties.surface_ha || 0;
+          const dates = feature.properties.dates.join(', ');
+          let html = `<b>Passages:</b> ${c}<br><b>Surface:</b> ${area.toFixed(2)} ha`;
+          if (dates) html += `<br><b>Dates:</b> ${dates}`;
+          layer.bindPopup(html);
+          layer.on('click', () => highlightDate(feature.properties.dates[0]));
+        }
+      }).addTo(map);
+      pointLayer = L.geoJSON(null, {
+        pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 })
+      }).addTo(map);
+      map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
+      if (initialBounds) {
+        const b = L.latLngBounds(
+          [initialBounds[1], initialBounds[0]],
+          [initialBounds[3], initialBounds[2]]
+        );
+        map.fitBounds(b);
+      } else {
+        map.setView([0, 0], 5);
+      }
+      fetchData();
     }
 
     function setupInteractions() {
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', () => highlightDate(row.dataset.date));
       });
-
-      const iframe = document.querySelector('#map-container iframe');
-      if (!iframe) return;
-      iframe.addEventListener('load', () => {
-        const win = iframe.contentWindow;
-        if (!win) return;
-        for (const key of Object.keys(win)) {
-          const obj = win[key];
-          if (obj && obj instanceof win.L.Map) {
-            win.leafletMap = obj;
-          }
-        }
-        win.dateLayers = {};
-        for (const key of Object.keys(win)) {
-          const obj = win[key];
-          if (obj && obj instanceof win.L.GeoJSON) {
-            obj.eachLayer(layer => {
-              const props = layer.feature && layer.feature.properties;
-              if (props && props.dates) {
-                props.dates.forEach(d => {
-                  win.dateLayers[d] = win.dateLayers[d] || [];
-                  win.dateLayers[d].push(layer);
-                });
-                layer.on('click', () => {
-                  if (window.highlightDate) window.highlightDate(props.dates[0]);
-                });
-              }
-            });
-          }
-        }
-      });
+      setupMap();
     }
 
     window.addEventListener('DOMContentLoaded', setupInteractions);

@@ -13,6 +13,7 @@ from sklearn.cluster import DBSCAN
 import folium
 from geopandas import GeoDataFrame
 
+from typing import Dict, List
 from models import db, Equipment, Position, DailyZone, Config
 
 # Ignorer avertissements GEOS
@@ -56,6 +57,61 @@ _transformer = pyproj.Transformer.from_crs(
     4326,
     always_xy=True,
 ).transform
+# Transformation inverse WGS84 -> Web Mercator
+_to_webmerc = pyproj.Transformer.from_crs(
+    4326,
+    3857,
+    always_xy=True,
+).transform
+
+# Cache pour les zones agrégées
+_AGG_CACHE: Dict[int, List[dict]] = {}
+
+
+def invalidate_cache(equipment_id: int) -> None:
+    """Supprime les zones agrégées en cache pour l'équipement."""
+    _AGG_CACHE.pop(equipment_id, None)
+
+
+def get_aggregated_zones(equipment_id: int):
+    """Retourne les zones agrégées pour un équipement, en cache."""
+    if equipment_id not in _AGG_CACHE:
+        from shapely import wkt
+
+        zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+        daily = [
+            {"geometry": wkt.loads(z.polygon_wkt), "dates": [str(z.date)]}
+            for z in zones
+            if z.polygon_wkt
+        ]
+        _AGG_CACHE[equipment_id] = aggregate_overlapping_zones(daily)
+    return _AGG_CACHE[equipment_id]
+
+
+def get_bounds_for_equipment(equipment_id: int):
+    """Return bounding box for aggregated zones in WGS84.
+
+    The return format is ``(west, south, east, north)`` or ``None`` if no
+    geometry is available.
+    """
+    agg = get_aggregated_zones(equipment_id)
+    if not agg:
+        return None
+
+    from shapely.ops import unary_union
+
+    union = unary_union([z["geometry"] for z in agg])
+    if union.is_empty:
+        return None
+
+    union_wgs = shp_transform(_transformer, union)
+    return union_wgs.bounds
+
+
+def simplify_for_zoom(geom, zoom: int):
+    """Simplifie la géométrie en fonction du niveau de zoom."""
+    tolerance = max(1, 19 - int(zoom)) * 2  # en mètres
+    return geom.simplify(tolerance, preserve_topology=True)
 
 
 def fetch_devices():
@@ -407,6 +463,7 @@ def process_equipment(eq, since=None):
     )
 
     db.session.commit()
+    invalidate_cache(eq.id)
 
 
 # ✅ NOUVELLE FONCTION : Recalculer proprement les hectares depuis la base
@@ -480,6 +537,7 @@ def recalculate_hectares_from_positions(equipment_id, since_date=None):
     eq.total_hectares = total
 
     db.session.commit()
+    invalidate_cache(equipment_id)
     return total
 
 
