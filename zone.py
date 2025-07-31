@@ -94,6 +94,7 @@ def get_aggregated_zones(equipment_id: int):
             {
                 "geometry": wkt.loads(z.polygon_wkt),
                 "dates": [str(z.date)] * (z.pass_count or 1),
+                "ids": [z.id],
             }
             for z in zones
             if z.polygon_wkt
@@ -229,29 +230,45 @@ def aggregate_overlapping_zones(daily_zones):
     """Découpe et comptabilise les passages sur zones chevauchantes."""
     if not daily_zones:
         return []
-    final = [daily_zones[0]]
+    first = {
+        'geometry': daily_zones[0]['geometry'],
+        'dates': daily_zones[0]['dates'],
+    }
+    if 'ids' in daily_zones[0]:
+        first['ids'] = daily_zones[0]['ids']
+    final = [first]
     for zone in daily_zones[1:]:
         to_add_geom = zone['geometry']
         to_add_dates = zone['dates']
+        to_add_ids = zone.get('ids')
         next_final = []
         for existing in final:
             ex_geom = existing['geometry']
             diff = ex_geom.difference(to_add_geom)
             inter = ex_geom.intersection(to_add_geom)
             if not diff.is_empty:
-                next_final.append(
-                    {'geometry': diff, 'dates': existing['dates']}
-                )
+                entry = {'geometry': diff, 'dates': existing['dates']}
+                if 'ids' in existing:
+                    entry['ids'] = existing['ids']
+                next_final.append(entry)
             if not inter.is_empty:
-                next_final.append(
-                    {
-                        'geometry': inter,
-                        'dates': existing['dates'] + to_add_dates,
-                    }
-                )
+                entry = {
+                    'geometry': inter,
+                    'dates': existing['dates'] + to_add_dates,
+                }
+                if 'ids' in existing or to_add_ids:
+                    entry['ids'] = []
+                    if 'ids' in existing:
+                        entry['ids'].extend(existing['ids'])
+                    if to_add_ids:
+                        entry['ids'].extend(to_add_ids)
+                next_final.append(entry)
             to_add_geom = to_add_geom.difference(ex_geom)
         if not to_add_geom.is_empty:
-            next_final.append({'geometry': to_add_geom, 'dates': to_add_dates})
+            entry = {'geometry': to_add_geom, 'dates': to_add_dates}
+            if to_add_ids:
+                entry['ids'] = to_add_ids
+            next_final.append(entry)
         final = next_final
     return final
 

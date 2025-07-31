@@ -435,6 +435,7 @@ def create_app():
                 'id': str(idx),
                 'properties': {
                     'dates': z['dates'],
+                    'dz_ids': z.get('ids', []),
                     'count': len(z['dates']),
                     'surface_ha': round(geom.area / 1e4, 2),
                 },
