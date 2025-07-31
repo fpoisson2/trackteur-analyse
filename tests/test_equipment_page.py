@@ -88,6 +88,7 @@ def test_zones_geojson_endpoint():
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["features"]
+    assert "surface_ha" in data["features"][0]["properties"]
 
 
 def test_points_geojson_endpoint():

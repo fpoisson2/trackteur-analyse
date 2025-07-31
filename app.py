@@ -12,7 +12,6 @@ from flask_login import (
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from models import db, User, Equipment, Position, DailyZone, Config
-from shapely.geometry import Point
 import zone
 
 from datetime import datetime
@@ -369,8 +368,9 @@ def create_app():
             .order_by(DailyZone.date.desc())
             .all()
         )
+        bounds = zone.get_bounds_for_equipment(equipment_id)
         return render_template(
-            'equipment.html', equipment=eq, zones=zones
+            'equipment.html', equipment=eq, zones=zones, bounds=bounds
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')
@@ -387,7 +387,10 @@ def create_app():
         bbox_geom = None
         if bbox:
             west, south, east, north = [float(x) for x in bbox.split(',')]
-            bbox_geom = shp_transform(zone._to_webmerc, box(west, south, east, north))
+            bbox_geom = shp_transform(
+                zone._to_webmerc,
+                box(west, south, east, north)
+            )
 
         features = []
         for idx, z in enumerate(agg):
@@ -404,6 +407,7 @@ def create_app():
                 'properties': {
                     'dates': z['dates'],
                     'count': len(z['dates']),
+                    'surface_ha': round(geom.area / 1e4, 2),
                 },
                 'geometry': geom_wgs.__geo_interface__,
             })
@@ -419,16 +423,17 @@ def create_app():
         west = south = east = north = None
         if bbox:
             west, south, east, north = [float(x) for x in bbox.split(',')]
-        query = (
-            Position.query
-            .filter_by(equipment_id=equipment_id)
-            .order_by(Position.timestamp.desc())
-            .limit(limit)
-        )
+        query = Position.query.filter_by(equipment_id=equipment_id)
+        if bbox:
+            query = query.filter(
+                Position.longitude >= west,
+                Position.longitude <= east,
+                Position.latitude >= south,
+                Position.latitude <= north,
+            )
+        query = query.order_by(Position.timestamp.desc()).limit(limit)
         features = []
         for p in query:
-            if bbox and not (west <= p.longitude <= east and south <= p.latitude <= north):
-                continue
             features.append({
                 'type': 'Feature',
                 'id': str(p.id),

@@ -88,6 +88,26 @@ def get_aggregated_zones(equipment_id: int):
     return _AGG_CACHE[equipment_id]
 
 
+def get_bounds_for_equipment(equipment_id: int):
+    """Return bounding box for aggregated zones in WGS84.
+
+    The return format is ``(west, south, east, north)`` or ``None`` if no
+    geometry is available.
+    """
+    agg = get_aggregated_zones(equipment_id)
+    if not agg:
+        return None
+
+    from shapely.ops import unary_union
+
+    union = unary_union([z["geometry"] for z in agg])
+    if union.is_empty:
+        return None
+
+    union_wgs = shp_transform(_transformer, union)
+    return union_wgs.bounds
+
+
 def simplify_for_zoom(geom, zoom: int):
     """Simplifie la géométrie en fonction du niveau de zoom."""
     tolerance = max(1, 19 - int(zoom)) * 2  # en mètres
