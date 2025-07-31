@@ -561,12 +561,12 @@ def _simplify_tolerance(zoom: int) -> float:
     if zoom >= 16:
         return 0.5
     if zoom >= 14:
-        return 2.0
+        return 5.0
     if zoom >= 12:
-        return 10.0
+        return 20.0
     if zoom >= 10:
-        return 30.0
-    return 100.0
+        return 60.0
+    return 200.0
 
 
 def zones_geojson(equipment_id: int, bbox=None, zoom: int = 12):
@@ -586,10 +586,7 @@ def zones_geojson(equipment_id: int, bbox=None, zoom: int = 12):
         geom = wkt.loads(dz.polygon_wkt)
         if bbox_poly and not geom.intersects(bbox_poly):
             continue
-        if bbox_poly:
-            geom = geom.intersection(bbox_poly)
-            if geom.is_empty:
-                continue
+        # Do not clip geometry so that full zones remain visible
         daily.append({"geometry": geom, "dates": [str(dz.date)]})
 
     aggregated = aggregate_overlapping_zones(daily)

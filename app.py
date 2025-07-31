@@ -366,14 +366,24 @@ def create_app():
             .all()
         )
         center = [46.0, 2.0]
+        bounds = None
         if zones:
             from shapely import wkt
+            from shapely.ops import unary_union
 
-            first_geom = wkt.loads(zones[0].polygon_wkt)
-            ctr = zone.shp_transform(zone._transformer, first_geom.centroid)
+            geoms = [wkt.loads(z.polygon_wkt) for z in zones]
+            union = unary_union(geoms)
+            ctr = zone.shp_transform(zone._transformer, union.centroid)
             center = [ctr.y, ctr.x]
+            union_wgs = zone.shp_transform(zone._transformer, union)
+            minx, miny, maxx, maxy = union_wgs.bounds
+            bounds = [[miny, minx], [maxy, maxx]]
         return render_template(
-            'equipment.html', equipment=eq, zones=zones, center=center
+            'equipment.html',
+            equipment=eq,
+            zones=zones,
+            center=center,
+            bounds=bounds,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')

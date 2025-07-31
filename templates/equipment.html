@@ -54,6 +54,7 @@
     let zoneLayer;
     let pointsLayer;
     let dateLayers = {};
+    let suppressReload = false;
 
     function highlightDate(date) {
       document.querySelectorAll('.zone-row').forEach(r => {
@@ -68,6 +69,8 @@
           l.bringToFront();
         });
         if (bounds.isValid()) {
+          suppressReload = true;
+          map.once('moveend', () => { suppressReload = false; });
           map.fitBounds(bounds, { maxZoom: 17 });
         }
         if (dateLayers[date][0]) {
@@ -117,10 +120,15 @@
     }
 
     function setupMap() {
-      map = L.map('map').setView([{{ center[0] }}, {{ center[1] }}], 12);
+      map = L.map('map');
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
+      {% if bounds %}
+      map.fitBounds({{ bounds | tojson }});
+      {% else %}
+      map.setView([{{ center[0] }}, {{ center[1] }}], 12);
+      {% endif %}
       const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
       function styleFeature(f) {
         const count = f.properties.dates.length;
@@ -134,7 +142,7 @@
       }
       zoneLayer = L.geoJSON(null, { style: styleFeature }).addTo(map);
       pointsLayer = L.layerGroup().addTo(map);
-      map.on('moveend', () => { loadZones(); loadPoints(); });
+      map.on('moveend', () => { if (!suppressReload) { loadZones(); loadPoints(); } });
       loadZones();
       loadPoints();
     }

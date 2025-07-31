@@ -129,3 +129,18 @@ def test_zones_geojson_groups_overlaps():
     assert len(data["features"]) == 1
     props = data["features"][0]["properties"]
     assert props["pass_count"] == 2
+
+
+def test_zones_geojson_partial_intersection():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+    resp = client.get(
+        f"/equipment/{eq.id}/zones.geojson?bbox=-0.5,-0.5,0.5,0.5&zoom=12"
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["features"]
