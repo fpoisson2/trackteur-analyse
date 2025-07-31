@@ -52,6 +52,7 @@
   <script>
     let map;
     let zoneLayer;
+    let pointsLayer;
     let dateLayers = {};
 
     function highlightDate(date) {
@@ -93,6 +94,20 @@
         });
     }
 
+    function loadPoints() {
+      const b = map.getBounds();
+      const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
+      const url = "{{ url_for('equipment_points_geojson', equipment_id=equipment.id) }}" + `?bbox=${bbox}`;
+      fetch(url)
+        .then(r => r.json())
+        .then(data => {
+          pointsLayer.clearLayers();
+          L.geoJSON(data, {
+            pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2, color: '#555', weight: 1 })
+          }).addTo(pointsLayer);
+        });
+    }
+
     function setupMap() {
       map = L.map('map').setView([{{ center[0] }}, {{ center[1] }}], 12);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -110,8 +125,10 @@
         };
       }
       zoneLayer = L.geoJSON(null, { style: styleFeature }).addTo(map);
-      map.on('moveend', loadZones);
+      pointsLayer = L.layerGroup().addTo(map);
+      map.on('moveend', () => { loadZones(); loadPoints(); });
       loadZones();
+      loadPoints();
     }
 
     document.addEventListener('DOMContentLoaded', () => {

@@ -394,6 +394,23 @@ def create_app():
         data = zone.zones_geojson(equipment_id, bbox=bbox, zoom=zoom)
         return jsonify(data)
 
+    @app.route('/equipment/<int:equipment_id>/points.geojson')
+    @login_required
+    def equipment_points_geojson(equipment_id):
+        Equipment.query.get_or_404(equipment_id)
+        bbox_param = request.args.get('bbox')
+        bbox = None
+        if bbox_param:
+            parts = [p.strip() for p in bbox_param.split(',')]
+            if len(parts) != 4:
+                abort(400)
+            try:
+                bbox = [float(x) for x in parts]
+            except ValueError:
+                abort(400)
+        data = zone.positions_geojson(equipment_id, bbox=bbox)
+        return jsonify(data)
+
     # Planification de la tâche quotidienne à 2h du matin
     scheduler = BackgroundScheduler()
 

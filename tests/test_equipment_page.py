@@ -87,3 +87,18 @@ def test_zones_geojson_api_returns_features():
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["features"]
+
+
+def test_points_geojson_api_returns_features():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+    resp = client.get(
+        f"/equipment/{eq.id}/points.geojson?bbox=-1,-1,1,1"
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["features"]
