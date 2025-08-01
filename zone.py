@@ -84,6 +84,14 @@ def wkt_bounds(polygon_wkt: str):
     return geom_wgs.bounds
 
 
+def geom_bounds(geom):
+    """Return bounding box (west, south, east, north) for a geometry."""
+    if geom is None or geom.is_empty:
+        return None
+    geom_wgs = shp_transform(_transformer, geom)
+    return geom_wgs.bounds
+
+
 def get_aggregated_zones(equipment_id: int):
     """Retourne les zones agrégées pour un équipement, en cache."""
     if equipment_id not in _AGG_CACHE:

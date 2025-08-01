@@ -16,3 +16,4 @@ flake8
 pytest-cov
 pytest
 mypy
+beautifulsoup4

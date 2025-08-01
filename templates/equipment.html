@@ -36,8 +36,8 @@
           </thead>
           <tbody>
             {% for z in zones %}
-            <tr class="zone-row" data-date="{{ z.date }}" data-zone-id="{{ z.id }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
-              <td>{{ z.date }}</td>
+            <tr class="zone-row" data-zone-id="{{ z.id }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
+              <td>{{ z.dates }}</td>
               <td>{{ z.pass_count }}</td>
               <td>{{ z.surface_ha|round(2) }}</td>
             </tr>
@@ -62,7 +62,6 @@
     let zoneLayer;
     let pointLayer;
     let dateLayers = {};
-    let dzIdLayers = {};
     let featureLayers = {};
     let skipFetch = false;
     const equipmentId = {{ equipment.id }};
@@ -71,19 +70,13 @@
 
     function rebuildDateLayers() {
       dateLayers = {};
-      dzIdLayers = {};
       featureLayers = {};
       zoneLayer.eachLayer(layer => {
         const dates = layer.feature.properties.dates;
-        const ids = layer.feature.properties.dz_ids || [];
         featureLayers[layer.feature.id] = layer;
         dates.forEach(d => {
           dateLayers[d] = dateLayers[d] || [];
           dateLayers[d].push(layer);
-        });
-        ids.forEach(i => {
-          dzIdLayers[i] = dzIdLayers[i] || [];
-          dzIdLayers[i].push(layer);
         });
       });
     }
@@ -166,14 +159,9 @@
           if (dates) html += `<br><b>Dates:</b> ${dates}`;
           layer.bindPopup(html);
           layer.on('click', () => {
-            const ids = feature.properties.dz_ids || [];
-            const zoneIds = [];
-            ids.forEach(zid => {
-              const layers = dzIdLayers[zid] || [];
-              layers.forEach(l => zoneIds.push(l.feature.id));
-            });
-            highlightRows(ids.map(i => parseInt(i)));
-            highlightZone(zoneIds.length ? zoneIds : feature.id);
+            const zoneId = parseInt(feature.id);
+            highlightRows([zoneId]);
+            highlightZone(zoneId);
           });
         }
       }).addTo(map);
@@ -211,10 +199,9 @@
         row.addEventListener('click', () => {
           const zoneId = parseInt(row.dataset.zoneId);
           highlightRows([zoneId]);
-          const layers = dzIdLayers[zoneId] || [];
-          if (layers.length) {
-            const ids = layers.map(l => l.feature.id);
-            highlightZone(ids);
+          const layer = featureLayers[zoneId];
+          if (layer) {
+            highlightZone(zoneId);
           } else if (row.dataset.bounds) {
             const b = JSON.parse(row.dataset.bounds);
             const bounds = L.latLngBounds(
@@ -225,10 +212,8 @@
             map.once('moveend', () => {
               skipFetch = false;
               fetchData().then(() => {
-                const newLayers = dzIdLayers[zoneId] || [];
-                const ids = newLayers.map(l => l.feature.id);
                 highlightRows([zoneId]);
-                if (ids.length) highlightZone(ids);
+                if (featureLayers[zoneId]) highlightZone(zoneId);
               });
             });
             map.fitBounds(bounds, { maxZoom: 17 });
