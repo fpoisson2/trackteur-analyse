@@ -157,3 +157,17 @@ def test_zone_rows_have_ids():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert 'data-zone-id="' in html
+
+
+def test_equipment_table_columns():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "Date(s)" in html
+    assert "Passages" in html
+    assert "Hectares travaillés" in html
