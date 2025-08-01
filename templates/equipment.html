@@ -20,7 +20,11 @@
     {% if zones %}
     <style>
       .zone-row { cursor: pointer; }
-      #map-container { height: 70vh; }
+      #map-container {
+        height: 70vh;
+        /* Permet de capturer correctement les gestes tactiles */
+        touch-action: none;
+      }
       .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
       .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
     </style>
@@ -121,7 +125,13 @@
 
     function fetchData() {
       const b = map.getBounds();
-      const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
+      const pad = 0.001; // marge pour inclure les zones en bord de vue
+      const bbox = [
+        b.getWest() - pad,
+        b.getSouth() - pad,
+        b.getEast() + pad,
+        b.getNorth() + pad
+      ].join(',');
       const zoom = map.getZoom();
       const zonesPromise = fetch(`/equipment/${equipmentId}/zones.geojson?bbox=${bbox}&zoom=${zoom}`)
         .then(r => r.json())
@@ -140,7 +150,10 @@
     }
 
     function setupMap() {
-      map = L.map('map-container');
+      map = L.map('map-container', {
+        dragging: true,
+        tap: false
+      });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
