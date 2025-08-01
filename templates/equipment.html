@@ -112,7 +112,7 @@
             }
           });
         });
-        map.fitBounds(bounds, { maxZoom: 17 });
+        map.fitBounds(bounds, { maxZoom: 19 });
       } else if (ids.length === 1 && featureLayers[ids[0]]) {
         featureLayers[ids[0]].openPopup();
       }
@@ -216,14 +216,18 @@
                 if (featureLayers[zoneId]) highlightZone(zoneId);
               });
             });
-            map.fitBounds(bounds, { maxZoom: 17 });
+            map.fitBounds(bounds, { maxZoom: 19 });
           }
         });
       });
       setupMap();
     }
 
-    window.addEventListener('DOMContentLoaded', setupInteractions);
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', setupInteractions);
+    } else {
+      setupInteractions();
+    }
   </script>
 </body>
 </html>
