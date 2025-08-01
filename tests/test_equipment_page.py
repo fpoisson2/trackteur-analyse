@@ -35,13 +35,19 @@ def make_app():
         db.session.add(eq)
         db.session.commit()
 
-        dz = DailyZone(
+        dz1 = DailyZone(
             equipment_id=eq.id,
             date=date.today(),
             surface_ha=1.0,
             polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
         )
-        db.session.add(dz)
+        dz2 = DailyZone(
+            equipment_id=eq.id,
+            date=date.today(),
+            surface_ha=1.0,
+            polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
+        )
+        db.session.add_all([dz1, dz2])
         for i in range(3):
             db.session.add(
                 Position(
@@ -101,6 +107,7 @@ def test_zones_geojson_endpoint():
     data = resp.get_json()
     assert data["features"]
     assert "surface_ha" in data["features"][0]["properties"]
+    assert "dz_ids" in data["features"][0]["properties"]
 
 
 def test_points_geojson_endpoint():
@@ -128,3 +135,63 @@ def test_equipment_page_contains_highlight_zone():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert "function highlightZone" in html
+    start = html.find("function highlightZone")
+    end = html.find("function fetchData")
+    snippet = html[start:end] if end != -1 else html[start:]
+    assert "fetchData()" in snippet
+
+
+def test_equipment_page_contains_highlight_rows():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "function highlightRows" in html
+
+
+def test_zone_rows_have_ids():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert 'data-zone-id="' in html
+
+
+def test_equipment_table_columns():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "Date(s)" in html
+    assert "Passages" in html
+    assert "Hectares travaillés" in html
+
+
+def test_table_shows_aggregated_pass_count():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert rows
+    cells = rows[0].find_all("td")
+    assert cells[1].text.strip() == "2"

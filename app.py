@@ -11,7 +11,7 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, DailyZone, Config
+from models import db, User, Equipment, Position, Config
 import zone
 
 from datetime import datetime
@@ -382,15 +382,24 @@ def create_app():
     @login_required
     def equipment_detail(equipment_id):
         eq = Equipment.query.get_or_404(equipment_id)
-        zones = (
-            DailyZone.query
-            .filter_by(equipment_id=equipment_id)
-            .order_by(DailyZone.date.desc())
-            .all()
-        )
+        agg = zone.get_aggregated_zones(equipment_id)
+        zones = []
+        zone_bounds = {}
+        for idx, z in enumerate(agg):
+            zones.append({
+                "id": idx,
+                "dates": ", ".join(sorted(set(z["dates"]))),
+                "pass_count": len(z["dates"]),
+                "surface_ha": z["geometry"].area / 1e4,
+            })
+            zone_bounds[idx] = zone.geom_bounds(z["geometry"])
         bounds = zone.get_bounds_for_equipment(equipment_id)
         return render_template(
-            'equipment.html', equipment=eq, zones=zones, bounds=bounds
+            'equipment.html',
+            equipment=eq,
+            zones=zones,
+            bounds=bounds,
+            zone_bounds=zone_bounds,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')
@@ -426,6 +435,7 @@ def create_app():
                 'id': str(idx),
                 'properties': {
                     'dates': z['dates'],
+                    'dz_ids': z.get('ids', []),
                     'count': len(z['dates']),
                     'surface_ha': round(geom.area / 1e4, 2),
                 },
