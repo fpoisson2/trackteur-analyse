@@ -28,12 +28,17 @@
       <div class="col-md-4 mb-4">
         <table id="zones-table" class="table table-striped">
           <thead>
-            <tr><th>Date</th><th>Surface (ha)</th></tr>
+            <tr>
+              <th>Date(s)</th>
+              <th>Passages</th>
+              <th>Hectares travaillés</th>
+            </tr>
           </thead>
           <tbody>
             {% for z in zones %}
             <tr class="zone-row" data-date="{{ z.date }}" data-zone-id="{{ z.id }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
               <td>{{ z.date }}</td>
+              <td>{{ z.pass_count }}</td>
               <td>{{ z.surface_ha|round(2) }}</td>
             </tr>
             {% endfor %}
