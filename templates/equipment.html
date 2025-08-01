@@ -118,6 +118,16 @@
       }
     }
 
+    function loadZone(id) {
+      fetch(`/equipment/${equipmentId}/zones/${id}.geojson`)
+        .then(r => r.json())
+        .then(feature => {
+          zoneLayer.addData(feature);
+          rebuildDateLayers();
+          highlightZone(id);
+        });
+    }
+
 
     function fetchData() {
       const b = map.getBounds();
@@ -202,7 +212,7 @@
           const layer = featureLayers[zoneId];
           if (layer) {
             highlightZone(zoneId);
-          } else if (row.dataset.bounds) {
+          } else if (row.dataset.bounds && row.dataset.bounds !== 'null') {
             const b = JSON.parse(row.dataset.bounds);
             const bounds = L.latLngBounds(
               [b[1], b[0]],
@@ -213,10 +223,16 @@
               skipFetch = false;
               fetchData().then(() => {
                 highlightRows([zoneId]);
-                if (featureLayers[zoneId]) highlightZone(zoneId);
+                if (featureLayers[zoneId]) {
+                  highlightZone(zoneId);
+                } else {
+                  loadZone(zoneId);
+                }
               });
             });
             map.fitBounds(bounds, { maxZoom: 19 });
+          } else {
+            loadZone(zoneId);
           }
         });
       });

@@ -1,7 +1,7 @@
 import os
 import logging
 
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, abort
 from flask_login import (
     LoginManager,
     login_user,
@@ -443,6 +443,33 @@ def create_app():
             })
 
         return {'type': 'FeatureCollection', 'features': features}
+
+    @app.route('/equipment/<int:equipment_id>/zones/<int:zone_idx>.geojson')
+    @login_required
+    def equipment_single_zone_geojson(equipment_id, zone_idx):
+        """Return geometry for a single aggregated zone."""
+        Equipment.query.get_or_404(equipment_id)
+        agg = zone.get_aggregated_zones(equipment_id)
+        if zone_idx < 0 or zone_idx >= len(agg):
+            abort(404)
+
+        from shapely.ops import transform as shp_transform
+
+        z = agg[zone_idx]
+        geom = z['geometry']
+        geom_wgs = shp_transform(zone._transformer, geom)
+        feature = {
+            'type': 'Feature',
+            'id': str(zone_idx),
+            'properties': {
+                'dates': z['dates'],
+                'dz_ids': z.get('ids', []),
+                'count': len(z['dates']),
+                'surface_ha': round(geom.area / 1e4, 2),
+            },
+            'geometry': geom_wgs.__geo_interface__,
+        }
+        return feature
 
     @app.route('/equipment/<int:equipment_id>/points.geojson')
     @login_required

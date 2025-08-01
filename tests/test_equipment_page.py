@@ -110,6 +110,20 @@ def test_zones_geojson_endpoint():
     assert "dz_ids" in data["features"][0]["properties"]
 
 
+def test_single_zone_geojson_endpoint():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}/zones/0.geojson")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["type"] == "Feature"
+    assert data["id"] == "0"
+
+
 def test_points_geojson_endpoint():
     app = make_app()
     client = app.test_client()
@@ -163,6 +177,25 @@ def test_zone_rows_have_ids():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert 'data-zone-id="' in html
+
+
+def test_zone_rows_have_bounds():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert rows
+    for row in rows:
+        bounds = row.get("data-bounds")
+        assert bounds and bounds != "null"
 
 
 def test_equipment_table_columns():
