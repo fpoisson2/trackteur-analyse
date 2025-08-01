@@ -178,6 +178,31 @@ def test_row_click_uses_instant_zoom():
     assert "moveend" in html
 
 
+def test_row_click_enforces_min_zoom():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "setZoom(17" in html
+
+
+def test_highlight_zone_skip_zoom_parameter():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "skipZoom" in html
+    assert "highlightZone(zoneId, true)" in html
+
+
 def test_zone_rows_have_ids():
     app = make_app()
     client = app.test_client()

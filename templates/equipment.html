@@ -91,7 +91,7 @@
       });
     }
 
-    function highlightZone(ids) {
+    function highlightZone(ids, skipZoom = false) {
       zoneLayer.eachLayer(l => l.setStyle({ weight: 1 }));
       ids = Array.isArray(ids) ? ids : [ids];
       let bounds;
@@ -99,13 +99,13 @@
         const layer = featureLayers[id];
         if (layer) {
           layer.setStyle({ weight: 4 });
-          if (layer.getBounds && layer.getBounds().isValid()) {
+          if (!skipZoom && layer.getBounds && layer.getBounds().isValid()) {
             const b = layer.getBounds();
             bounds = bounds ? bounds.extend(b) : b.clone();
           }
         }
       });
-      if (bounds) {
+      if (bounds && !skipZoom) {
         skipFetch = true;
         map.once('moveend', () => {
           skipFetch = false;
@@ -213,13 +213,16 @@
             );
             skipFetch = true;
             map.once('moveend', () => {
+              if (map.getZoom() < 17) {
+                map.setZoom(17, { animate: false });
+              }
               skipFetch = false;
               fetchData().then(() => {
                 highlightRows([zoneId]);
-                if (featureLayers[zoneId]) highlightZone(zoneId);
+                if (featureLayers[zoneId]) highlightZone(zoneId, true);
               });
             });
-            map.fitBounds(bounds, { maxZoom: 17, animate: false });
+            map.fitBounds(bounds, { animate: false });
           }
         });
       });
