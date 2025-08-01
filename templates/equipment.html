@@ -212,12 +212,14 @@
               [b[3], b[2]]
             );
             skipFetch = true;
-            map.fitBounds(bounds, { maxZoom: 17, animate: false });
-            fetchData().then(() => {
+            map.once('moveend', () => {
               skipFetch = false;
-              highlightRows([zoneId]);
-              if (featureLayers[zoneId]) highlightZone(zoneId);
+              fetchData().then(() => {
+                highlightRows([zoneId]);
+                if (featureLayers[zoneId]) highlightZone(zoneId);
+              });
             });
+            map.fitBounds(bounds, { maxZoom: 17, animate: false });
           }
         });
       });

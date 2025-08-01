@@ -175,6 +175,7 @@ def test_row_click_uses_instant_zoom():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert "animate: false" in html
+    assert "moveend" in html
 
 
 def test_zone_rows_have_ids():
