@@ -153,6 +153,30 @@ def test_equipment_page_contains_highlight_rows():
     assert "function highlightRows" in html
 
 
+def test_map_container_has_touch_action():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "touch-action: none" in html
+
+
+def test_row_click_uses_instant_zoom():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "animate: false" in html
+
+
 def test_zone_rows_have_ids():
     app = make_app()
     client = app.test_client()

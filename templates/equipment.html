@@ -20,7 +20,10 @@
     {% if zones %}
     <style>
       .zone-row { cursor: pointer; }
-      #map-container { height: 70vh; }
+      #map-container {
+        height: 70vh;
+        touch-action: none;
+      }
       .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
       .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
     </style>
@@ -209,14 +212,12 @@
               [b[3], b[2]]
             );
             skipFetch = true;
-            map.once('moveend', () => {
+            map.fitBounds(bounds, { maxZoom: 17, animate: false });
+            fetchData().then(() => {
               skipFetch = false;
-              fetchData().then(() => {
-                highlightRows([zoneId]);
-                if (featureLayers[zoneId]) highlightZone(zoneId);
-              });
+              highlightRows([zoneId]);
+              if (featureLayers[zoneId]) highlightZone(zoneId);
             });
-            map.fitBounds(bounds, { maxZoom: 17 });
           }
         });
       });
