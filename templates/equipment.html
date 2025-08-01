@@ -218,8 +218,8 @@
               [b[1], b[0]],
               [b[3], b[2]]
             );
-            skipFetch = true;
-            map.once('moveend', () => {
+
+            const afterMove = () => {
               skipFetch = false;
               fetchData().then(() => {
                 highlightRows([zoneId]);
@@ -229,8 +229,17 @@
                   loadZone(zoneId);
                 }
               });
-            });
-            map.fitBounds(bounds, { maxZoom: 19 });
+            };
+
+            const needMove =
+              !map.getBounds().contains(bounds) || map.getZoom() < 19;
+            if (needMove) {
+              skipFetch = true;
+              map.once('moveend', afterMove);
+              map.fitBounds(bounds, { maxZoom: 19 });
+            } else {
+              afterMove();
+            }
           } else {
             loadZone(zoneId);
           }

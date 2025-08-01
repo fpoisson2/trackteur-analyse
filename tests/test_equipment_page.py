@@ -198,6 +198,18 @@ def test_zone_rows_have_bounds():
         assert bounds and bounds != "null"
 
 
+def test_row_click_checks_map_bounds():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "map.getBounds().contains" in html
+
+
 def test_equipment_table_columns():
     app = make_app()
     client = app.test_client()
