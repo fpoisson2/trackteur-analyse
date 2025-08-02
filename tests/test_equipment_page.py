@@ -273,3 +273,17 @@ def test_fetch_data_uses_token():
     html = resp.data.decode()
     assert "let fetchToken" in html
     assert "token !== fetchToken" in html
+
+
+def test_zones_loaded_once_on_page_load():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "zonesLoaded" in html
+    assert "if (!zonesLoaded)" in html
+    assert "zones.geojson?zoom=17" in html
