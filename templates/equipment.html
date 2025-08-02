@@ -212,15 +212,20 @@
               [b[3], b[2]]
             );
             skipFetch = true;
-            map.once('moveend', () => {
-              if (map.getZoom() < 17) {
-                map.setZoom(17, { animate: false });
-              }
+            const finish = () => {
               skipFetch = false;
               fetchData().then(() => {
                 highlightRows([zoneId]);
                 if (featureLayers[zoneId]) highlightZone(zoneId, true);
               });
+            };
+            map.once('moveend', () => {
+              if (map.getZoom() < 17) {
+                map.once('moveend', finish);
+                map.setZoom(17, { animate: false });
+              } else {
+                finish();
+              }
             });
             map.fitBounds(bounds, { animate: false });
           }
