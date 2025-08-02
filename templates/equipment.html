@@ -20,7 +20,10 @@
     {% if zones %}
     <style>
       .zone-row { cursor: pointer; }
-      #map-container { height: 70vh; }
+      #map-container {
+        height: 70vh;
+        touch-action: none;
+      }
       .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
       .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
     </style>
@@ -64,6 +67,8 @@
     let dateLayers = {};
     let featureLayers = {};
     let skipFetch = false;
+    let fetchToken = 0;
+    let zonesLoaded = false;
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
     const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
@@ -88,7 +93,7 @@
       });
     }
 
-    function highlightZone(ids) {
+    function highlightZone(ids, skipZoom = false) {
       zoneLayer.eachLayer(l => l.setStyle({ weight: 1 }));
       ids = Array.isArray(ids) ? ids : [ids];
       let bounds;
@@ -96,23 +101,44 @@
         const layer = featureLayers[id];
         if (layer) {
           layer.setStyle({ weight: 4 });
-          if (layer.getBounds && layer.getBounds().isValid()) {
+          if (!skipZoom && layer.getBounds && layer.getBounds().isValid()) {
             const b = layer.getBounds();
-            bounds = bounds ? bounds.extend(b) : b.clone();
+            bounds = bounds
+              ? bounds.extend(b)
+              : L.latLngBounds(b.getSouthWest(), b.getNorthEast());
           }
         }
       });
-      if (bounds) {
+      if (bounds && !skipZoom) {
         skipFetch = true;
-        map.once('moveend', () => {
+        const finish = () => {
           skipFetch = false;
           fetchData().then(() => {
             if (ids.length === 1 && featureLayers[ids[0]]) {
               featureLayers[ids[0]].openPopup();
             }
           });
-        });
-        map.fitBounds(bounds, { maxZoom: 17 });
+        };
+        const ensureZoom = () => {
+          if (map.getZoom() < 17) {
+            map.once('zoomend', finish);
+            map.setZoom(17, { animate: false });
+          } else {
+            finish();
+          }
+        };
+        const center = bounds.getCenter();
+        if (map.getBounds().contains(bounds)) {
+          if (map.getCenter().equals(center)) {
+            ensureZoom();
+          } else {
+            map.once('moveend', ensureZoom);
+            map.panTo(center, { animate: false });
+          }
+        } else {
+          map.once('moveend', ensureZoom);
+          map.fitBounds(bounds, { animate: false });
+        }
       } else if (ids.length === 1 && featureLayers[ids[0]]) {
         featureLayers[ids[0]].openPopup();
       }
@@ -120,23 +146,31 @@
 
 
     function fetchData() {
+      const token = ++fetchToken;
+      const promises = [];
+      if (!zonesLoaded) {
+        const zp = fetch(`/equipment/${equipmentId}/zones.geojson?zoom=17`)
+          .then(r => r.json())
+          .then(zoneData => {
+            if (token !== fetchToken) return;
+            zoneLayer.clearLayers();
+            zoneLayer.addData(zoneData);
+            rebuildDateLayers();
+            zonesLoaded = true;
+          });
+        promises.push(zp);
+      }
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
-      const zoom = map.getZoom();
-      const zonesPromise = fetch(`/equipment/${equipmentId}/zones.geojson?bbox=${bbox}&zoom=${zoom}`)
+      const pp = fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
         .then(r => r.json())
-        .then(data => {
-          zoneLayer.clearLayers();
-          zoneLayer.addData(data);
-          rebuildDateLayers();
-        });
-      const pointsPromise = fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
-        .then(r => r.json())
-        .then(data => {
+        .then(pointData => {
+          if (token !== fetchToken) return;
           pointLayer.clearLayers();
-          pointLayer.addData(data);
+          pointLayer.addData(pointData);
         });
-      return Promise.all([zonesPromise, pointsPromise]);
+      promises.push(pp);
+      return Promise.all(promises);
     }
 
     function setupMap() {
@@ -209,14 +243,33 @@
               [b[3], b[2]]
             );
             skipFetch = true;
-            map.once('moveend', () => {
+            const finish = () => {
               skipFetch = false;
               fetchData().then(() => {
                 highlightRows([zoneId]);
-                if (featureLayers[zoneId]) highlightZone(zoneId);
+                if (featureLayers[zoneId]) highlightZone(zoneId, true);
               });
-            });
-            map.fitBounds(bounds, { maxZoom: 17 });
+            };
+            const ensureZoom = () => {
+              if (map.getZoom() < 17) {
+                map.once('zoomend', finish);
+                map.setZoom(17, { animate: false });
+              } else {
+                finish();
+              }
+            };
+            const center = bounds.getCenter();
+            if (map.getBounds().contains(bounds)) {
+              if (map.getCenter().equals(center)) {
+                ensureZoom();
+              } else {
+                map.once('moveend', ensureZoom);
+                map.panTo(center, { animate: false });
+              }
+            } else {
+              map.once('moveend', ensureZoom);
+              map.fitBounds(bounds, { animate: false });
+            }
           }
         });
       });
