@@ -181,6 +181,18 @@ def test_row_click_uses_instant_zoom():
     assert "fetchData().then" in html
 
 
+def test_row_click_recenters_when_visible():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "panTo(center, { animate: false" in html
+
+
 def test_row_click_enforces_min_zoom():
     app = make_app()
     client = app.test_client()
