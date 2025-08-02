@@ -107,15 +107,23 @@
       });
       if (bounds && !skipZoom) {
         skipFetch = true;
-        map.once('moveend', () => {
+        const finish = () => {
           skipFetch = false;
           fetchData().then(() => {
             if (ids.length === 1 && featureLayers[ids[0]]) {
               featureLayers[ids[0]].openPopup();
             }
           });
+        };
+        map.once('moveend', () => {
+          if (map.getZoom() < 17) {
+            map.once('moveend', finish);
+            map.setZoom(17, { animate: false });
+          } else {
+            finish();
+          }
         });
-        map.fitBounds(bounds, { maxZoom: 17 });
+        map.fitBounds(bounds, { animate: false });
       } else if (ids.length === 1 && featureLayers[ids[0]]) {
         featureLayers[ids[0]].openPopup();
       }
