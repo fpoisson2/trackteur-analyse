@@ -18,7 +18,8 @@ Trackteur Analyse interroge l'API Traccar, agrège les positions par jour et cal
 - Authentification avec gestion d'un utilisateur administrateur
 - Récupération des positions via l'API REST Traccar
 - Génération de zones journalières (DBSCAN + alphashape)
-- Visualisation cartographique interactive (Folium)
+- Visualisation cartographique dynamique (Leaflet) avec affichage interactif des zones
+- Menu de navigation mois/année pour parcourir les analyses
 - Analyse planifiée chaque nuit grâce à APScheduler
 - Stockage des données dans `instance/trackteur.db`
 
@@ -64,8 +65,8 @@ Accédez à [http://localhost:5000](http://localhost:5000). La page d'accueil li
 app.py         - Application Flask et routes principales
 models.py      - Modèles SQLAlchemy
 zone.py        - Récupération et traitement des positions
-templates/     - Gabarits HTML (Bootstrap)
-static/        - Ressources statiques (ex. carte générée)
+templates/     - Gabarits HTML (index, login, administration, équipement, assistant)
+static/        - Export de carte Leaflet `carte_passages.html`
 ```
 
 ## Contribution
