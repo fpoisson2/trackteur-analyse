@@ -73,17 +73,6 @@ def invalidate_cache(equipment_id: int) -> None:
     _AGG_CACHE.pop(equipment_id, None)
 
 
-def wkt_bounds(polygon_wkt: str):
-    """Return bounding box (west, south, east, north) for a WKT polygon."""
-    from shapely import wkt
-
-    if not polygon_wkt:
-        return None
-    geom = wkt.loads(polygon_wkt)
-    geom_wgs = shp_transform(_transformer, geom)
-    return geom_wgs.bounds
-
-
 def geom_bounds(geom):
     """Return bounding box (west, south, east, north) for a geometry."""
     if geom is None or geom.is_empty:
