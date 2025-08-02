@@ -153,6 +153,83 @@ def test_equipment_page_contains_highlight_rows():
     assert "function highlightRows" in html
 
 
+def test_map_container_has_touch_action():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "touch-action: none" in html
+
+
+def test_row_click_uses_instant_zoom():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "animate: false" in html
+    assert "fitBounds(bounds, { animate: false" in html
+    assert "once('moveend', ensureZoom" in html
+    assert "once('zoomend', finish" in html
+    assert "fetchData().then" in html
+
+
+def test_row_click_recenters_when_visible():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "panTo(center, { animate: false" in html
+
+
+def test_row_click_enforces_min_zoom():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "setZoom(17" in html
+
+
+def test_highlight_zone_skip_zoom_parameter():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "skipZoom" in html
+    assert "highlightZone(zoneId, true)" in html
+
+
+def test_bounds_check_before_zooming():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "getBounds().contains" in html
+
+
 def test_zone_rows_have_ids():
     app = make_app()
     client = app.test_client()
@@ -195,3 +272,30 @@ def test_table_shows_aggregated_pass_count():
     assert rows
     cells = rows[0].find_all("td")
     assert cells[1].text.strip() == "2"
+
+
+def test_fetch_data_uses_token():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "let fetchToken" in html
+    assert "token !== fetchToken" in html
+
+
+def test_zones_loaded_once_on_page_load():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "zonesLoaded" in html
+    assert "if (!zonesLoaded)" in html
+    assert "zones.geojson?zoom=17" in html
