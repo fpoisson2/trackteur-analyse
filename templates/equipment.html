@@ -128,8 +128,8 @@
         if (map.getBounds().contains(bounds)) {
           doZoom();
         } else {
-          map.once('moveend', doZoom);
           map.fitBounds(bounds, { animate: false });
+          doZoom();
         }
       } else if (ids.length === 1 && featureLayers[ids[0]]) {
         featureLayers[ids[0]].openPopup();
@@ -245,8 +245,8 @@
             if (map.getBounds().contains(bounds)) {
               doZoom();
             } else {
-              map.once('moveend', doZoom);
               map.fitBounds(bounds, { animate: false });
+              doZoom();
             }
           }
         });

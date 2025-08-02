@@ -175,8 +175,9 @@ def test_row_click_uses_instant_zoom():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert "animate: false" in html
-    assert "moveend" in html
+    assert "fitBounds(bounds, { animate: false" in html
     assert "once('zoomend', finish" in html
+    assert "fetchData().then" in html
 
 
 def test_row_click_enforces_min_zoom():
