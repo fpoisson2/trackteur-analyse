@@ -176,6 +176,7 @@ def test_row_click_uses_instant_zoom():
     html = resp.data.decode()
     assert "animate: false" in html
     assert "moveend" in html
+    assert "once('zoomend', finish" in html
 
 
 def test_row_click_enforces_min_zoom():

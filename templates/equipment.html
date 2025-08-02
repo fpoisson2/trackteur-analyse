@@ -101,7 +101,9 @@
           layer.setStyle({ weight: 4 });
           if (!skipZoom && layer.getBounds && layer.getBounds().isValid()) {
             const b = layer.getBounds();
-            bounds = bounds ? bounds.extend(b) : b.clone();
+            bounds = bounds
+              ? bounds.extend(b)
+              : L.latLngBounds(b.getSouthWest(), b.getNorthEast());
           }
         }
       });
@@ -117,7 +119,7 @@
         };
         const doZoom = () => {
           if (map.getZoom() < 17) {
-            map.once('moveend', finish);
+            map.once('zoomend', finish);
             map.setZoom(17, { animate: false });
           } else {
             finish();
@@ -234,7 +236,7 @@
             };
             const doZoom = () => {
               if (map.getZoom() < 17) {
-                map.once('moveend', finish);
+                map.once('zoomend', finish);
                 map.setZoom(17, { animate: false });
               } else {
                 finish();
