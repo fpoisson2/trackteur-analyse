@@ -203,6 +203,18 @@ def test_highlight_zone_skip_zoom_parameter():
     assert "highlightZone(zoneId, true)" in html
 
 
+def test_bounds_check_before_zooming():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "getBounds().contains" in html
+
+
 def test_zone_rows_have_ids():
     app = make_app()
     client = app.test_client()

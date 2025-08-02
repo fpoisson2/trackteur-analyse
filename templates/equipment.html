@@ -115,15 +115,20 @@
             }
           });
         };
-        map.once('moveend', () => {
+        const doZoom = () => {
           if (map.getZoom() < 17) {
             map.once('moveend', finish);
             map.setZoom(17, { animate: false });
           } else {
             finish();
           }
-        });
-        map.fitBounds(bounds, { animate: false });
+        };
+        if (map.getBounds().contains(bounds)) {
+          doZoom();
+        } else {
+          map.once('moveend', doZoom);
+          map.fitBounds(bounds, { animate: false });
+        }
       } else if (ids.length === 1 && featureLayers[ids[0]]) {
         featureLayers[ids[0]].openPopup();
       }
@@ -227,15 +232,20 @@
                 if (featureLayers[zoneId]) highlightZone(zoneId, true);
               });
             };
-            map.once('moveend', () => {
+            const doZoom = () => {
               if (map.getZoom() < 17) {
                 map.once('moveend', finish);
                 map.setZoom(17, { animate: false });
               } else {
                 finish();
               }
-            });
-            map.fitBounds(bounds, { animate: false });
+            };
+            if (map.getBounds().contains(bounds)) {
+              doZoom();
+            } else {
+              map.once('moveend', doZoom);
+              map.fitBounds(bounds, { animate: false });
+            }
           }
         });
       });
