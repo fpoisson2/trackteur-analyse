@@ -46,7 +46,6 @@ def _auth_header():
 
 
 # 📥 Paramètres d’analyse
-DAYS = 60
 EPS_METERS = 25
 MIN_SURFACE_HA = 0.1  # ha
 ALPHA = 0.02
