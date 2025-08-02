@@ -67,6 +67,7 @@
     let dateLayers = {};
     let featureLayers = {};
     let skipFetch = false;
+    let fetchToken = 0;
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
     const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
@@ -138,23 +139,22 @@
 
 
     function fetchData() {
+      const token = ++fetchToken;
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
       const zoom = map.getZoom();
       const zonesPromise = fetch(`/equipment/${equipmentId}/zones.geojson?bbox=${bbox}&zoom=${zoom}`)
-        .then(r => r.json())
-        .then(data => {
-          zoneLayer.clearLayers();
-          zoneLayer.addData(data);
-          rebuildDateLayers();
-        });
+        .then(r => r.json());
       const pointsPromise = fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
-        .then(r => r.json())
-        .then(data => {
-          pointLayer.clearLayers();
-          pointLayer.addData(data);
-        });
-      return Promise.all([zonesPromise, pointsPromise]);
+        .then(r => r.json());
+      return Promise.all([zonesPromise, pointsPromise]).then(([zoneData, pointData]) => {
+        if (token !== fetchToken) return;
+        zoneLayer.clearLayers();
+        zoneLayer.addData(zoneData);
+        rebuildDateLayers();
+        pointLayer.clearLayers();
+        pointLayer.addData(pointData);
+      });
     }
 
     function setupMap() {

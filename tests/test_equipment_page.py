@@ -260,3 +260,16 @@ def test_table_shows_aggregated_pass_count():
     assert rows
     cells = rows[0].find_all("td")
     assert cells[1].text.strip() == "2"
+
+
+def test_fetch_data_uses_token():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "let fetchToken" in html
+    assert "token !== fetchToken" in html
