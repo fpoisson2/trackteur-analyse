@@ -176,6 +176,7 @@ def test_row_click_uses_instant_zoom():
     html = resp.data.decode()
     assert "animate: false" in html
     assert "fitBounds(bounds, { animate: false" in html
+    assert "once('moveend', ensureZoom" in html
     assert "once('zoomend', finish" in html
     assert "fetchData().then" in html
 
