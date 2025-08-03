@@ -27,46 +27,44 @@
       .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
       .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
     </style>
-    <div class="row">
-      <div class="col-md-4 mb-4">
-        <div class="d-flex mb-2">
-          <select id="year-select" class="form-select form-select-sm me-2">
-            <option value="">Toutes les années</option>
-            {% for y in years %}
-            <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
-            {% endfor %}
-          </select>
-          <select id="month-select" class="form-select form-select-sm">
-            <option value="">Tous les mois</option>
-            {% for m in months %}
-            <option value="{{ m }}" {% if month == m %}selected{% endif %}>{{ '%02d' % m }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <table id="zones-table" class="table table-striped">
-          <thead>
-            <tr>
-              <th>Date(s)</th>
-              <th>Passages</th>
-              <th>Hectares travaillés</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for z in zones %}
-            <tr class="zone-row" data-zone-id="{{ z.id }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
-              <td>{{ z.dates }}</td>
-              <td>{{ z.pass_count }}</td>
-              <td>{{ z.surface_ha|round(2) }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    <div class="w-100 mb-4">
+      <h2>Carte des passages</h2>
+      <p class="text-muted">Les couleurs indiquent le nombre de passages sur chaque zone.</p>
+      <div id="map-container" class="w-100"></div>
+    </div>
+    <div>
+      <div class="d-flex mb-2">
+        <select id="year-select" class="form-select form-select-sm me-2">
+          <option value="">Toutes les années</option>
+          {% for y in years %}
+          <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+        <select id="month-select" class="form-select form-select-sm">
+          <option value="">Tous les mois</option>
+          {% for m in months %}
+          <option value="{{ m }}" {% if month == m %}selected{% endif %}>{{ '%02d' % m }}</option>
+          {% endfor %}
+        </select>
       </div>
-      <div class="col-md-8">
-        <h2>Carte des passages</h2>
-        <p class="text-muted">Les couleurs indiquent le nombre de passages sur chaque zone.</p>
-        <div id="map-container"></div>
-      </div>
+      <table id="zones-table" class="table table-striped">
+        <thead>
+          <tr>
+            <th>Date(s)</th>
+            <th>Passages</th>
+            <th>Hectares travaillés</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for z in zones %}
+          <tr class="zone-row" data-zone-id="{{ z.id }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
+            <td>{{ z.dates }}</td>
+            <td>{{ z.pass_count }}</td>
+            <td>{{ z.surface_ha|round(2) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
     {% else %}
     <p>Aucune donnée disponible pour cet équipement.</p>
