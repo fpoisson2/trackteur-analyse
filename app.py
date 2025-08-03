@@ -11,7 +11,7 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, Config
+from models import db, User, Equipment, Position, DailyZone, Config
 import zone
 
 from datetime import datetime
@@ -382,24 +382,66 @@ def create_app():
     @login_required
     def equipment_detail(equipment_id):
         eq = Equipment.query.get_or_404(equipment_id)
-        agg = zone.get_aggregated_zones(equipment_id)
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+        # Les zones sont agrégées globalement pour conserver des identifiants
+        # stables entre la carte (non filtrée) et le tableau (filtré).
+        agg_all = zone.get_aggregated_zones(equipment_id)
+        if year is not None or month is not None:
+            agg_period = zone.get_aggregated_zones(
+                equipment_id, year=year, month=month
+            )
+        else:
+            agg_period = agg_all
+
         zones = []
         zone_bounds = {}
-        for idx, z in enumerate(agg):
-            zones.append({
-                "id": idx,
-                "dates": ", ".join(sorted(set(z["dates"]))),
-                "pass_count": len(z["dates"]),
-                "surface_ha": z["geometry"].area / 1e4,
-            })
-            zone_bounds[idx] = zone.geom_bounds(z["geometry"])
+        for z in agg_period:
+            full_idx = next(
+                (
+                    i
+                    for i, full in enumerate(agg_all)
+                    if set(z.get("ids", [])) <= set(full.get("ids", []))
+                ),
+                None,
+            )
+            if full_idx is None:
+                continue
+            zones.append(
+                {
+                    "id": full_idx,
+                    "dates": ", ".join(sorted(set(z["dates"]))),
+                    "pass_count": len(z["dates"]),
+                    "surface_ha": z["geometry"].area / 1e4,
+                }
+            )
+            zone_bounds[full_idx] = zone.geom_bounds(
+                agg_all[full_idx]["geometry"]
+            )
+
         bounds = zone.get_bounds_for_equipment(equipment_id)
+
+        dates = [
+            dz.date
+            for dz in DailyZone.query.filter_by(
+                equipment_id=equipment_id
+            ).all()
+        ]
+        years = sorted({d.year for d in dates})
+        months = sorted(
+            {d.month for d in dates if year is None or d.year == year}
+        )
+
         return render_template(
             'equipment.html',
             equipment=eq,
             zones=zones,
             bounds=bounds,
             zone_bounds=zone_bounds,
+            years=years,
+            months=months,
+            year=year,
+            month=month,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')

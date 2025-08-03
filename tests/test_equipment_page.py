@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
@@ -35,28 +35,59 @@ def make_app():
         db.session.add(eq)
         db.session.commit()
 
+        today = date.today()
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        prev_year = today - timedelta(days=365)
         dz1 = DailyZone(
             equipment_id=eq.id,
-            date=date.today(),
+            date=today,
             surface_ha=1.0,
             polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
         )
         dz2 = DailyZone(
             equipment_id=eq.id,
-            date=date.today(),
+            date=today,
             surface_ha=1.0,
             polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
         )
-        db.session.add_all([dz1, dz2])
+        dz_prev_month = DailyZone(
+            equipment_id=eq.id,
+            date=prev_month,
+            surface_ha=1.0,
+            polygon_wkt='POLYGON((2 0,3 0,3 1,2 1,2 0))',
+        )
+        dz_prev_year = DailyZone(
+            equipment_id=eq.id,
+            date=prev_year,
+            surface_ha=1.0,
+            polygon_wkt='POLYGON((4 0,5 0,5 1,4 1,4 0))',
+        )
+        db.session.add_all([dz1, dz2, dz_prev_month, dz_prev_year])
         for i in range(3):
             db.session.add(
                 Position(
                     equipment_id=eq.id,
                     latitude=0.0,
                     longitude=0.0,
-                    timestamp=date.today(),
+                    timestamp=today,
                 )
             )
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=2.0,
+                longitude=0.0,
+                timestamp=prev_month,
+            )
+        )
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=4.0,
+                longitude=0.0,
+                timestamp=prev_year,
+            )
+        )
         db.session.commit()
     return app
 
@@ -299,3 +330,77 @@ def test_zones_loaded_once_on_page_load():
     assert "zonesLoaded" in html
     assert "if (!zonesLoaded)" in html
     assert "zones.geojson?zoom=17" in html
+
+
+def test_equipment_page_has_period_selectors():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert 'id="year-select"' in html
+    assert 'id="month-select"' in html
+
+
+def test_zones_geojson_ignores_period():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        prev_month = (
+            date.today().replace(day=1) - timedelta(days=1)
+        ).replace(day=1)
+        resp = client.get(
+            f"/equipment/{eq.id}/zones.geojson?"
+            f"year={prev_month.year}&month={prev_month.month}&zoom=12"
+        )
+    data = resp.get_json()
+    # Les paramètres de période sont ignorés : toutes les zones sont renvoyées
+    assert len(data["features"]) == 3
+    dates = [d for f in data["features"] for d in f["properties"]["dates"]]
+    assert str(prev_month) in dates
+
+
+def test_points_geojson_ignores_period():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        prev_year = date.today() - timedelta(days=365)
+        resp = client.get(
+            f"/equipment/{eq.id}/points.geojson?"
+            f"year={prev_year.year}&month={prev_year.month}&limit=100"
+        )
+    data = resp.get_json()
+    # L'échantillon contient toutes les positions malgré le filtre
+    assert len(data["features"]) == 5
+
+
+def test_equipment_detail_filters_by_period():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        prev_month = (
+            date.today().replace(day=1) - timedelta(days=1)
+        ).replace(day=1)
+        resp = client.get(
+            f"/equipment/{eq.id}?year={prev_month.year}"
+            f"&month={prev_month.month}"
+        )
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert len(rows) == 1
+    assert prev_month.isoformat() in rows[0].find_all("td")[0].text
