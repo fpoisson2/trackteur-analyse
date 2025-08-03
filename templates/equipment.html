@@ -29,6 +29,20 @@
     </style>
     <div class="row">
       <div class="col-md-4 mb-4">
+        <div class="d-flex mb-2">
+          <select id="year-select" class="form-select form-select-sm me-2">
+            <option value="">Toutes les années</option>
+            {% for y in years %}
+            <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+          </select>
+          <select id="month-select" class="form-select form-select-sm">
+            <option value="">Tous les mois</option>
+            {% for m in months %}
+            <option value="{{ m }}" {% if month == m %}selected{% endif %}>{{ '%02d' % m }}</option>
+            {% endfor %}
+          </select>
+        </div>
         <table id="zones-table" class="table table-striped">
           <thead>
             <tr>
@@ -228,6 +242,19 @@
       fetchData();
     }
 
+    function setupPeriodSelectors() {
+      const yearSel = document.getElementById('year-select');
+      const monthSel = document.getElementById('month-select');
+      function updatePeriod() {
+        const params = new URLSearchParams(window.location.search);
+        if (yearSel.value) params.set('year', yearSel.value); else params.delete('year');
+        if (monthSel.value) params.set('month', monthSel.value); else params.delete('month');
+        window.location.search = params.toString();
+      }
+      yearSel.addEventListener('change', updatePeriod);
+      monthSel.addEventListener('change', updatePeriod);
+    }
+
     function setupInteractions() {
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', () => {
@@ -276,7 +303,10 @@
       setupMap();
     }
 
-    window.addEventListener('DOMContentLoaded', setupInteractions);
+    window.addEventListener('DOMContentLoaded', () => {
+      setupPeriodSelectors();
+      setupInteractions();
+    });
   </script>
 </body>
 </html>

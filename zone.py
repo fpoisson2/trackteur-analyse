@@ -13,7 +13,7 @@ from sklearn.cluster import DBSCAN
 import folium
 from geopandas import GeoDataFrame
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 from models import db, Equipment, Position, DailyZone, Config
 
 # Ignorer avertissements GEOS
@@ -64,12 +64,15 @@ _to_webmerc = pyproj.Transformer.from_crs(
 ).transform
 
 # Cache pour les zones agrégées
-_AGG_CACHE: Dict[int, List[dict]] = {}
+# Clé: (equipment_id, year, month)
+_AGG_CACHE: Dict[Tuple[int, Optional[int], Optional[int]], List[dict]] = {}
 
 
 def invalidate_cache(equipment_id: int) -> None:
     """Supprime les zones agrégées en cache pour l'équipement."""
-    _AGG_CACHE.pop(equipment_id, None)
+    keys = [k for k in _AGG_CACHE if k[0] == equipment_id]
+    for k in keys:
+        _AGG_CACHE.pop(k, None)
 
 
 def geom_bounds(geom):
@@ -80,12 +83,36 @@ def geom_bounds(geom):
     return geom_wgs.bounds
 
 
-def get_aggregated_zones(equipment_id: int):
-    """Retourne les zones agrégées pour un équipement, en cache."""
-    if equipment_id not in _AGG_CACHE:
-        from shapely import wkt
+def get_aggregated_zones(
+    equipment_id: int, year: Optional[int] = None, month: Optional[int] = None
+):
+    """Retourne les zones agrégées pour un équipement, en cache.
 
-        zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+    Les paramètres ``year`` et ``month`` permettent de filtrer les zones
+    journalières avant agrégation. Le cache est segmenté par période afin de
+    conserver des performances acceptables même en cas de navigation
+    temporelle.
+    """
+
+    key = (equipment_id, year, month)
+    if key not in _AGG_CACHE:
+        from shapely import wkt
+        from datetime import date
+
+        query = DailyZone.query.filter_by(equipment_id=equipment_id)
+        if year is not None:
+            if month is not None:
+                start = date(year, month, 1)
+                if month == 12:
+                    end = date(year + 1, 1, 1)
+                else:
+                    end = date(year, month + 1, 1)
+            else:
+                start = date(year, 1, 1)
+                end = date(year + 1, 1, 1)
+            query = query.filter(DailyZone.date >= start, DailyZone.date < end)
+
+        zones = query.all()
         daily = [
             {
                 "geometry": wkt.loads(z.polygon_wkt),
@@ -95,17 +122,19 @@ def get_aggregated_zones(equipment_id: int):
             for z in zones
             if z.polygon_wkt
         ]
-        _AGG_CACHE[equipment_id] = aggregate_overlapping_zones(daily)
-    return _AGG_CACHE[equipment_id]
+        _AGG_CACHE[key] = aggregate_overlapping_zones(daily)
+    return _AGG_CACHE[key]
 
 
-def get_bounds_for_equipment(equipment_id: int):
+def get_bounds_for_equipment(
+    equipment_id: int, year: Optional[int] = None, month: Optional[int] = None
+):
     """Return bounding box for aggregated zones in WGS84.
 
     The return format is ``(west, south, east, north)`` or ``None`` if no
     geometry is available.
     """
-    agg = get_aggregated_zones(equipment_id)
+    agg = get_aggregated_zones(equipment_id, year=year, month=month)
     if not agg:
         return None
 
