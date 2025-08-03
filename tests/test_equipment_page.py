@@ -110,6 +110,8 @@ def test_equipment_detail_page_loads():
     assert resp.status_code == 200
     html = resp.data.decode()
     assert "map-container" in html
+    assert "zones-table" in html
+    assert html.find('id="map-container"') < html.find('id="zones-table"')
 
 
 def test_equipment_page_shows_legend():
