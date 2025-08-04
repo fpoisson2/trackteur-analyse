@@ -76,6 +76,49 @@ def test_schema_upgrade_adds_pass_count(tmp_path):
     assert "pass_count" in cols
 
 
+def test_schema_upgrade_adds_tracks(tmp_path):
+    """Old databases are upgraded with track table and link."""
+    db_file = tmp_path / "old2.db"
+    from sqlalchemy import create_engine, text, inspect
+
+    engine = create_engine(f"sqlite:///{db_file}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE equipment (\n"
+                "id INTEGER PRIMARY KEY,\n"
+                "id_traccar INTEGER NOT NULL,\n"
+                "name VARCHAR NOT NULL\n"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE position (\n"
+                "id INTEGER PRIMARY KEY,\n"
+                "equipment_id INTEGER NOT NULL,\n"
+                "latitude FLOAT,\n"
+                "longitude FLOAT,\n"
+                "timestamp DATETIME,\n"
+                "FOREIGN KEY(equipment_id) REFERENCES equipment(id)\n"
+                ")"
+            )
+        )
+
+    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
+    app = create_app()
+    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_file}"
+    client = app.test_client()
+    client.get("/setup")
+
+    with app.app_context():
+        insp = inspect(db.engine)
+        assert "track" in insp.get_table_names()
+        cols = [c["name"] for c in insp.get_columns("position")]
+        assert "track_id" in cols
+
+
 def test_initial_analysis_upgrades_before_processing(tmp_path, monkeypatch):
     """initial_analysis should run after upgrade_db."""
     inst = tmp_path / "inst"

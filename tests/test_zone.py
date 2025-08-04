@@ -132,10 +132,11 @@ def test_cluster_positions_returns_zones():
     old_min = zone.MIN_SURFACE_HA
     zone.MIN_SURFACE_HA = 0
     try:
-        zones = zone.cluster_positions(positions)
+        zones, noise = zone.cluster_positions(positions)
     finally:
         zone.MIN_SURFACE_HA = old_min
     assert zones
+    assert not noise
     assert all("geometry" in z and "dates" in z for z in zones)
 
 
@@ -238,12 +239,17 @@ def test_process_equipment(monkeypatch):
             monkeypatch.setattr(
                 zone,
                 "cluster_positions",
-                lambda pos: [
-                    {
-                        "geometry": Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
-                        "dates": ["2023-01-01"],
-                    }
-                ],
+                lambda pos: (
+                    [
+                        {
+                            "geometry": Polygon(
+                                [(0, 0), (1, 0), (1, 1), (0, 1)]
+                            ),
+                            "dates": ["2023-01-01"],
+                        }
+                    ],
+                    {},
+                ),
             )
             monkeypatch.setattr(
                 zone,
@@ -257,6 +263,58 @@ def test_process_equipment(monkeypatch):
             assert dz is not None
             assert dz.surface_ha > 0
             assert eq.total_hectares == dz.surface_ha
+
+
+def test_process_equipment_creates_tracks(monkeypatch):
+    for app in setup_db():
+        with app.app_context():
+            eq = zone.Equipment(id_traccar=1, name="eq1")
+            zone.db.session.add(eq)
+            zone.db.session.commit()
+
+            positions = [
+                {
+                    "latitude": 0,
+                    "longitude": 0,
+                    "deviceTime": "2023-01-01T00:00:00Z",
+                },
+                {
+                    "latitude": 0.001,
+                    "longitude": 0.001,
+                    "deviceTime": "2023-01-01T00:10:00Z",
+                },
+            ]
+
+            monkeypatch.setattr(
+                zone,
+                "fetch_positions",
+                lambda *a, **k: positions,
+            )
+
+            from datetime import datetime as dt
+
+            def fake_cluster(pos):
+                return [], {
+                    "2023-01-01": [
+                        (0, 0, dt(2023, 1, 1, 0, 0, 0)),
+                        (0.001, 0.001, dt(2023, 1, 1, 0, 10, 0)),
+                    ]
+                }
+
+            monkeypatch.setattr(zone, "cluster_positions", fake_cluster)
+            monkeypatch.setattr(
+                zone, "aggregate_overlapping_zones", lambda z: z
+            )
+
+            zone.process_equipment(eq)
+
+            assert zone.Track.query.count() == 1
+            track = zone.Track.query.first()
+            assert track and track.line_wkt.startswith("LINESTRING")
+            positions_db = zone.Position.query.filter_by(
+                equipment_id=eq.id
+            ).all()
+            assert all(p.track_id == track.id for p in positions_db)
 
 
 # ---------- recalculate_hectares_from_positions ----------
@@ -297,14 +355,17 @@ def test_recalculate_hectares_from_positions(monkeypatch):
             monkeypatch.setattr(
                 zone,
                 "cluster_positions",
-                lambda pos: [
-                    {
-                        "geometry": Polygon(
-                            [(0, 0), (1, 0), (1, 1), (0, 1)]
-                        ),
-                        "dates": ["2023-01-01"],
-                    }
-                ],
+                lambda pos: (
+                    [
+                        {
+                            "geometry": Polygon(
+                                [(0, 0), (1, 0), (1, 1), (0, 1)]
+                            ),
+                            "dates": ["2023-01-01"],
+                        }
+                    ],
+                    {},
+                ),
             )
             monkeypatch.setattr(
                 zone,
@@ -393,20 +454,33 @@ def test_distance_between_zones_calculation(monkeypatch):
             )
 
             def fake_cluster(pos):
-                return [
-                    {
-                        "geometry": Polygon(
-                            [(0, 0), (100, 0), (100, 100), (0, 100)]
-                        ),
-                        "dates": ["2023-01-01"],
-                    },
-                    {
-                        "geometry": Polygon(
-                            [(1000, 0), (1100, 0), (1100, 100), (1000, 100)]
-                        ),
-                        "dates": ["2023-01-02"],
-                    },
-                ]
+                return (
+                    [
+                        {
+                            "geometry": Polygon(
+                                [
+                                    (0, 0),
+                                    (100, 0),
+                                    (100, 100),
+                                    (0, 100),
+                                ]
+                            ),
+                            "dates": ["2023-01-01"],
+                        },
+                        {
+                            "geometry": Polygon(
+                                [
+                                    (1000, 0),
+                                    (1100, 0),
+                                    (1100, 100),
+                                    (1000, 100),
+                                ]
+                            ),
+                            "dates": ["2023-01-02"],
+                        },
+                    ],
+                    {},
+                )
 
             monkeypatch.setattr(
                 zone,
@@ -438,10 +512,13 @@ def test_zones_split_by_pass_count(monkeypatch):
             monkeypatch.setattr(
                 zone,
                 "cluster_positions",
-                lambda pos: [
-                    {"geometry": poly1, "dates": ["2023-01-01"]},
-                    {"geometry": poly2, "dates": ["2023-01-01"]},
-                ],
+                lambda pos: (
+                    [
+                        {"geometry": poly1, "dates": ["2023-01-01"]},
+                        {"geometry": poly2, "dates": ["2023-01-01"]},
+                    ],
+                    {},
+                ),
             )
 
             zone.process_equipment(eq, since=datetime(2023, 1, 1))
