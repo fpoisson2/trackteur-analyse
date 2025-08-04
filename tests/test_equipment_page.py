@@ -524,6 +524,27 @@ def test_zones_geojson_filters_by_day():
         assert all(d == today.isoformat() for d in feat["properties"]["dates"])
 
 
+def test_zones_geojson_filters_by_range():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        resp = client.get(
+            f"/equipment/{eq.id}/zones.geojson?start={prev_month.isoformat()}&"
+            f"end={today.isoformat()}&zoom=12"
+        )
+
+    data = resp.get_json()
+    for feat in data["features"]:
+        for d in feat["properties"]["dates"]:
+            dd = date.fromisoformat(d)
+            assert prev_month <= dd <= today
+
+
 def test_points_geojson_filters_by_day():
     app = make_app()
     client = app.test_client()

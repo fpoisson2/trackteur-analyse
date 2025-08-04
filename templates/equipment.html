@@ -310,7 +310,11 @@
           dateFormat: 'Y-m-d',
           defaultDate: dateSel.value ? dateSel.value.split(' to ') : null,
           allowInput: true,
-          onChange: (_, dateStr) => updatePeriod(dateStr)
+          onChange: (selectedDates, dateStr) => {
+            if (selectedDates.length === 2 || selectedDates.length === 0) {
+              updatePeriod(dateStr);
+            }
+          }
         });
       }
       const prevBtn = document.getElementById('prev-day');

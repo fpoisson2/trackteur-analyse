@@ -71,7 +71,9 @@ _to_webmerc = pyproj.Transformer.from_crs(
 
 # Cache pour les zones agrégées
 # Clé: (equipment_id, start_date, end_date)
-_AGG_CACHE: Dict[Tuple[int, Optional[dt_date], Optional[dt_date]], List[dict]] = {}
+_AGG_CACHE: Dict[
+    Tuple[int, Optional[dt_date], Optional[dt_date]], List[dict]
+] = {}
 
 
 def invalidate_cache(equipment_id: int) -> None:
