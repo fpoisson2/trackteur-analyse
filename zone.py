@@ -5,7 +5,13 @@ import pandas as pd
 import numpy as np
 import warnings
 from datetime import datetime, timedelta
-from shapely.geometry import Point, Polygon, MultiPolygon, GeometryCollection
+from shapely.geometry import (
+    Point,
+    Polygon,
+    MultiPolygon,
+    GeometryCollection,
+    LineString,
+)
 from shapely.ops import transform as shp_transform
 import pyproj
 import alphashape
@@ -14,7 +20,7 @@ import folium
 from geopandas import GeoDataFrame
 
 from typing import Dict, List, Optional, Tuple
-from models import db, Equipment, Position, DailyZone, Config
+from models import db, Equipment, Position, DailyZone, Config, Trace
 
 # Ignorer avertissements GEOS
 warnings.filterwarnings("ignore", "GEOS messages", UserWarning)
@@ -450,6 +456,21 @@ def process_equipment(eq, since=None):
             eq.last_position = latest_naive
 
     db.session.commit()
+
+    # 1b) Construire les tracés à partir des positions
+    traces_by_date = {}
+    for p in positions:
+        ts = datetime.fromisoformat(p['deviceTime'].replace('Z', '+00:00'))
+        date_obj = ts.date()
+        coord = (p['longitude'], p['latitude'])
+        traces_by_date.setdefault(date_obj, []).append(coord)
+    for date_obj, coords in traces_by_date.items():
+        Trace.query.filter_by(equipment_id=eq.id, date=date_obj).delete()
+        if len(coords) >= 2:
+            line = LineString(coords)
+            db.session.add(
+                Trace(equipment_id=eq.id, date=date_obj, line_wkt=line.wkt)
+            )
 
     # 2) Créer les clusters et zones
     daily = cluster_positions(positions)

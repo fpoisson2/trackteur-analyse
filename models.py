@@ -37,6 +37,7 @@ class Equipment(db.Model):  # type: ignore[name-defined]
 
     positions = db.relationship('Position', backref='equipment', lazy=True)
     daily_zones = db.relationship('DailyZone', backref='equipment', lazy=True)
+    traces = db.relationship('Trace', backref='equipment', lazy=True)
 
 
 class Position(db.Model):  # type: ignore[name-defined]
@@ -58,3 +59,14 @@ class DailyZone(db.Model):  # type: ignore[name-defined]
     surface_ha = db.Column(db.Float)
     polygon_wkt = db.Column(db.Text)
     pass_count = db.Column(db.Integer, default=1)
+
+
+class Trace(db.Model):  # type: ignore[name-defined]
+    """Représente un tracé construit à partir de points GPS."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    equipment_id = db.Column(
+        db.Integer, db.ForeignKey('equipment.id'), nullable=False
+    )
+    date = db.Column(db.Date)
+    line_wkt = db.Column(db.Text, nullable=False)

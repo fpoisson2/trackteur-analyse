@@ -11,7 +11,7 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, DailyZone, Config
+from models import db, User, Equipment, Position, DailyZone, Config, Trace
 import zone
 
 from datetime import datetime
@@ -482,6 +482,37 @@ def create_app():
                     'surface_ha': round(geom.area / 1e4, 2),
                 },
                 'geometry': geom_wgs.__geo_interface__,
+            })
+
+        return {'type': 'FeatureCollection', 'features': features}
+
+    @app.route('/equipment/<int:equipment_id>/traces.geojson')
+    @login_required
+    def equipment_traces_geojson(equipment_id):
+        """Return stored traces as GeoJSON LineStrings."""
+        Equipment.query.get_or_404(equipment_id)
+        bbox = request.args.get('bbox')
+        query = Trace.query.filter_by(equipment_id=equipment_id)
+        bbox_geom = None
+        if bbox:
+            west, south, east, north = [float(x) for x in bbox.split(',')]
+            from shapely.geometry import box
+            bbox_geom = box(west, south, east, north)
+        from shapely import wkt
+        features = []
+        for t in query:
+            line = wkt.loads(t.line_wkt)
+            if bbox_geom and not line.intersects(bbox_geom):
+                continue
+            if bbox_geom:
+                line = line.intersection(bbox_geom)
+            features.append({
+                'type': 'Feature',
+                'id': str(t.id),
+                'properties': {
+                    'date': t.date.isoformat() if t.date else None,
+                },
+                'geometry': line.__geo_interface__,
             })
 
         return {'type': 'FeatureCollection', 'features': features}

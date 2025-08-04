@@ -31,6 +31,10 @@
       <h2>Carte des passages</h2>
       <p class="text-muted">Les couleurs indiquent le nombre de passages sur chaque zone.</p>
       <div id="map-container" class="w-100"></div>
+      <div class="form-check mt-2">
+        <input class="form-check-input" type="checkbox" id="points-toggle">
+        <label class="form-check-label" for="points-toggle">Afficher les points GPS</label>
+      </div>
     </div>
     <div>
       <div class="d-flex mb-2">
@@ -76,11 +80,13 @@
     let map;
     let zoneLayer;
     let pointLayer;
+    let traceLayer;
     let dateLayers = {};
     let featureLayers = {};
     let skipFetch = false;
     let fetchToken = 0;
     let zonesLoaded = false;
+    let showPoints = false;
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
     const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
@@ -174,14 +180,26 @@
       }
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
-      const pp = fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
+      const tp = fetch(`/equipment/${equipmentId}/traces.geojson?bbox=${bbox}`)
         .then(r => r.json())
-        .then(pointData => {
+        .then(traceData => {
           if (token !== fetchToken) return;
-          pointLayer.clearLayers();
-          pointLayer.addData(pointData);
+          traceLayer.clearLayers();
+          traceLayer.addData(traceData);
         });
-      promises.push(pp);
+      promises.push(tp);
+      if (showPoints) {
+        const pp = fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
+          .then(r => r.json())
+          .then(pointData => {
+            if (token !== fetchToken) return;
+            pointLayer.clearLayers();
+            pointLayer.addData(pointData);
+          });
+        promises.push(pp);
+      } else {
+        pointLayer.clearLayers();
+      }
       return Promise.all(promises);
     }
 
@@ -211,9 +229,10 @@
           });
         }
       }).addTo(map);
+      traceLayer = L.geoJSON(null, { style: { color: 'blue', weight: 2 } }).addTo(map);
       pointLayer = L.geoJSON(null, {
         pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 })
-      }).addTo(map);
+      });
       const legend = L.control({ position: 'bottomright' });
       legend.onAdd = () => {
         const div = L.DomUtil.create('div', 'legend');
@@ -299,6 +318,18 @@
         });
       });
       setupMap();
+      const toggle = document.getElementById('points-toggle');
+      if (toggle) {
+        toggle.addEventListener('change', () => {
+          showPoints = toggle.checked;
+          if (showPoints) {
+            pointLayer.addTo(map);
+          } else {
+            map.removeLayer(pointLayer);
+          }
+          fetchData();
+        });
+      }
     }
 
     window.addEventListener('DOMContentLoaded', () => {

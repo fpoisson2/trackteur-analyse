@@ -11,7 +11,7 @@ os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 from app import create_app  # noqa: E402
 from models import db, User, Equipment, Position  # noqa: E402
-from models import DailyZone, Config  # noqa: E402
+from models import DailyZone, Config, Trace  # noqa: E402
 
 
 def make_app():
@@ -88,6 +88,13 @@ def make_app():
                 timestamp=prev_year,
             )
         )
+        db.session.add(
+            Trace(
+                equipment_id=eq.id,
+                date=today,
+                line_wkt="LINESTRING(0 0,1 1)",
+            )
+        )
         db.session.commit()
     return app
 
@@ -156,6 +163,34 @@ def test_points_geojson_endpoint():
     assert resp.status_code == 200
     data = resp.get_json()
     assert len(data["features"]) <= 2
+
+
+def test_traces_geojson_endpoint():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(
+            f"/equipment/{eq.id}/traces.geojson?bbox=-180,-90,180,90"
+        )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["features"]
+    assert data["features"][0]["geometry"]["type"] == "LineString"
+
+
+def test_equipment_page_has_points_toggle():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "points-toggle" in html
 
 
 def test_equipment_page_contains_highlight_zone():
