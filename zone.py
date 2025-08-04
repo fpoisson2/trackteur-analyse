@@ -419,6 +419,34 @@ def calculate_distance_between_zones(polygons):
     return float(total)
 
 
+def _boundary_intersection(
+    inner: Tuple[float, float],
+    outer: Tuple[float, float],
+    polygons: List[Polygon],
+):
+    """Return intersection point on zone boundary between two coordinates.
+
+    ``inner`` should lie inside one of the ``polygons`` and ``outer`` outside
+    of it. The function returns the intersection point between the line segment
+    joining them and the matching polygon's exterior. If no intersection is
+    found, ``None`` is returned.
+    """
+    if not polygons:
+        return None
+    line = LineString([inner, outer])
+    pt = Point(inner)
+    for poly in polygons:
+        if poly.contains(pt):
+            inter = line.intersection(poly.exterior)
+            if inter.is_empty:
+                continue
+            if isinstance(inter, Point):
+                return inter
+            if hasattr(inter, "geoms"):
+                return list(inter.geoms)[0]
+    return None
+
+
 def process_equipment(eq, since=None):
     """Analyse et enregistre les zones journalières de l'équipement."""
     to_dt = datetime.utcnow()
@@ -539,14 +567,44 @@ def process_equipment(eq, since=None):
             )
             coords: List[tuple] = []
             if prev_pos:
-                coords.append(
-                    (prev_pos.longitude, prev_pos.latitude, prev_pos.timestamp)
+                prev_polys = zones_by_date.get(
+                    prev_pos.timestamp.date().isoformat(), []
                 )
+                start = _boundary_intersection(
+                    (prev_pos.longitude, prev_pos.latitude),
+                    (seg[0][0], seg[0][1]),
+                    prev_polys,
+                )
+                if start:
+                    coords.append((start.x, start.y, prev_pos.timestamp))
+                else:
+                    coords.append(
+                        (
+                            prev_pos.longitude,
+                            prev_pos.latitude,
+                            prev_pos.timestamp,
+                        )
+                    )
             coords.extend(seg)
             if next_pos:
-                coords.append(
-                    (next_pos.longitude, next_pos.latitude, next_pos.timestamp)
+                next_polys = zones_by_date.get(
+                    next_pos.timestamp.date().isoformat(), []
                 )
+                end = _boundary_intersection(
+                    (next_pos.longitude, next_pos.latitude),
+                    (seg[-1][0], seg[-1][1]),
+                    next_polys,
+                )
+                if end:
+                    coords.append((end.x, end.y, next_pos.timestamp))
+                else:
+                    coords.append(
+                        (
+                            next_pos.longitude,
+                            next_pos.latitude,
+                            next_pos.timestamp,
+                        )
+                    )
             if len(coords) < 2:
                 continue
             line = LineString([(x, y) for x, y, _ in coords])

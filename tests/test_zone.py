@@ -4,7 +4,7 @@ import types
 from datetime import datetime
 
 import pytest
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon, Point, LineString
 
 # S'assurer que le dossier racine est dans sys.path pour l'import de zone
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -371,6 +371,89 @@ def test_track_includes_zone_endpoints(monkeypatch):
             assert coords[0] == (0.0, 0.0)
             assert coords[1] == (0.0005, 0.0005)
             assert coords[-1] == (0.001, 0.001)
+
+
+# ---------- track boundary clipping ----------
+
+def test_track_clipped_to_zone_boundaries(monkeypatch):
+    for app in setup_db():
+        with app.app_context():
+            eq = zone.Equipment(id_traccar=1, name="eq1")
+            zone.db.session.add(eq)
+            zone.db.session.commit()
+
+            positions = [
+                {
+                    "latitude": 0,
+                    "longitude": 0,
+                    "deviceTime": "2023-01-01T00:00:00Z",
+                },
+                {
+                    "latitude": 0.0003,
+                    "longitude": 0.0003,
+                    "deviceTime": "2023-01-01T00:05:00Z",
+                },
+                {
+                    "latitude": 0.0007,
+                    "longitude": 0.0007,
+                    "deviceTime": "2023-01-01T00:07:00Z",
+                },
+                {
+                    "latitude": 0.001,
+                    "longitude": 0.001,
+                    "deviceTime": "2023-01-01T00:10:00Z",
+                },
+            ]
+
+            monkeypatch.setattr(
+                zone, "fetch_positions", lambda *a, **k: positions
+            )
+
+            from datetime import datetime as dt
+
+            zone1 = Point(0, 0).buffer(0.0002)
+            zone2 = Point(0.001, 0.001).buffer(0.0002)
+
+            def fake_cluster(pos):
+                return (
+                    [
+                        {"geometry": zone1, "dates": ["2023-01-01"]},
+                        {"geometry": zone2, "dates": ["2023-01-01"]},
+                    ],
+                    {
+                        "2023-01-01": [
+                            (0.0003, 0.0003, dt(2023, 1, 1, 0, 5)),
+                            (0.0007, 0.0007, dt(2023, 1, 1, 0, 7)),
+                        ]
+                    },
+                )
+
+            monkeypatch.setattr(zone, "cluster_positions", fake_cluster)
+            monkeypatch.setattr(
+                zone, "aggregate_overlapping_zones", lambda z: z
+            )
+
+            zone.process_equipment(eq)
+
+            track = zone.Track.query.first()
+            from shapely import wkt
+
+            coords = list(wkt.loads(track.line_wkt).coords)
+            assert len(coords) == 4
+
+            start_expected = LineString([
+                (0, 0),
+                (0.0003, 0.0003),
+            ]).intersection(zone1.exterior)
+            end_expected = LineString([
+                (0.001, 0.001),
+                (0.0007, 0.0007),
+            ]).intersection(zone2.exterior)
+
+            assert coords[0][0] == pytest.approx(start_expected.x)
+            assert coords[0][1] == pytest.approx(start_expected.y)
+            assert coords[-1][0] == pytest.approx(end_expected.x)
+            assert coords[-1][1] == pytest.approx(end_expected.y)
 
 
 # ---------- recalculate_hectares_from_positions ----------
