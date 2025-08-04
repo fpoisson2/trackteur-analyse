@@ -6,6 +6,7 @@
   <title>{{ equipment.name }} - Détails</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
 </head>
 <body class="p-4">
   <div class="container">
@@ -39,9 +40,8 @@
       <div class="d-flex mb-2 align-items-center">
         <div class="input-group input-group-sm" style="width: auto;">
           <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
-          <input type="date" id="date-select" class="form-control" {% if not available_dates %}disabled{% endif %}
-                 value="{{ '%04d-%02d-%02d' % (year, month, day) if year is not none and month is not none and day is not none else '' }}"
-                 {% if available_dates %}min="{{ available_dates[0] }}" max="{{ available_dates[-1] }}"{% endif %}>
+          <input type="text" id="date-select" class="form-control" {% if not available_dates %}disabled{% endif %}
+                 value="{{ '%04d-%02d-%02d' % (year, month, day) if year is not none and month is not none and day is not none else '' }}">
           <button id="next-day" class="btn btn-outline-secondary" {% if not next_day_url %}disabled{% endif %} data-url="{{ next_day_url or '' }}">&gt;</button>
         </div>
       </div>
@@ -70,6 +70,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script>
     let map;
     let zoneLayer;
@@ -277,11 +278,10 @@
 
     function setupPeriodSelectors() {
       const dateSel = document.getElementById('date-select');
-      function updatePeriod() {
+      function updatePeriod(val) {
         const params = new URLSearchParams(window.location.search);
-        if (dateSel.value) {
-          if (!availableDates.includes(dateSel.value)) return;
-          const [y, m, d] = dateSel.value.split('-');
+        if (val) {
+          const [y, m, d] = val.split('-');
           params.set('year', y);
           params.set('month', m);
           params.set('day', d);
@@ -294,7 +294,15 @@
         }
         window.location.search = params.toString();
       }
-      if (dateSel) dateSel.addEventListener('change', updatePeriod);
+      if (dateSel && availableDates.length) {
+        flatpickr(dateSel, {
+          enable: availableDates,
+          dateFormat: 'Y-m-d',
+          defaultDate: dateSel.value || null,
+          allowInput: true,
+          onChange: (_, dateStr) => updatePeriod(dateStr)
+        });
+      }
       const prevBtn = document.getElementById('prev-day');
       const nextBtn = document.getElementById('next-day');
       if (prevBtn) prevBtn.addEventListener('click', () => {

@@ -465,7 +465,13 @@ def create_app():
                 }
             )
 
-        bounds = zone.get_bounds_for_equipment(equipment_id)
+        from shapely.ops import unary_union
+
+        bounds = (
+            zone.geom_bounds(unary_union([z["geometry"] for z in agg_period]))
+            if agg_period
+            else None
+        )
 
         sorted_dates = sorted(dates)
         available_dates = [d.isoformat() for d in sorted_dates]

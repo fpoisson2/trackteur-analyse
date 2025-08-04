@@ -1,6 +1,10 @@
 import os
 import sys
+import json
+import re
 from datetime import date, timedelta, datetime
+
+from pytest import approx
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
@@ -109,6 +113,12 @@ def login(client):
     )
 
 
+def get_js_array(html: str, var_name: str):
+    match = re.search(rf"const {var_name} = (\[.*?\]);", html)
+    assert match, f"{var_name} not found"
+    return json.loads(match.group(1))
+
+
 def test_equipment_detail_page_loads():
     app = make_app()
     client = app.test_client()
@@ -166,7 +176,8 @@ def test_day_menu_excludes_days_without_zones():
             f"/equipment/{eq.id}?year={nz.year}&month={nz.month}"
         )
     html = resp.data.decode()
-    assert nz.isoformat() not in html
+    dates = get_js_array(html, "availableDates")
+    assert nz.isoformat() not in dates
 
 
 def test_equipment_page_has_day_navigation():
@@ -618,3 +629,28 @@ def test_equipment_detail_filters_by_day():
     rows = soup.select("#zones-table tbody tr")
     assert len(rows) == 1
     assert today.isoformat() in rows[0].find_all("td")[0].text
+
+
+def test_initial_bounds_reflect_selected_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp_all = client.get(f"/equipment/{eq.id}?show=all")
+        resp_day = client.get(
+            f"/equipment/{eq.id}?year={today.year}"
+            f"&month={today.month}&day={today.day}"
+        )
+
+    bounds_all = get_js_array(resp_all.data.decode(), "initialBounds")
+    bounds_day = get_js_array(resp_day.data.decode(), "initialBounds")
+
+    width_all = bounds_all[2] - bounds_all[0]
+    width_day = bounds_day[2] - bounds_day[0]
+
+    assert width_all == approx(5 * width_day, rel=0.1)
+    assert bounds_day[0] == approx(bounds_all[0])
+    assert bounds_day[1] == approx(bounds_all[1])
