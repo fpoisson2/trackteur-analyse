@@ -27,6 +27,7 @@
       transform: translateY(calc(100% - 3rem));
       transition: transform .3s ease-in-out;
       z-index: 1000;
+      overflow-y: auto;
     }
     .bottom-sheet.open { transform: translateY(0); }
     .bottom-sheet .drag-handle {
@@ -36,7 +37,7 @@
       border-radius: 3px;
       margin: 8px auto;
       cursor: grab;
-      touch-action: pan-x;
+      touch-action: none;
     }
   </style>
 </head>

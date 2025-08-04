@@ -373,7 +373,10 @@ def test_map_container_allows_touch():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "touch-action: none" not in html
+    start = html.find('<div id="map-container"')
+    end = html.find('>', start)
+    tag = html[start:end]
+    assert "touch-action: none" not in tag
 
 
 def test_row_click_uses_instant_zoom():
