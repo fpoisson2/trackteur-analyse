@@ -14,6 +14,28 @@
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
     .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
     #date-nav button { min-width: 3rem; }
+    .bottom-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 50vh;
+      background: #fff;
+      border-top-left-radius: 1rem;
+      border-top-right-radius: 1rem;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.2);
+      transform: translateY(calc(100% - 3rem));
+      transition: transform .3s ease-in-out;
+      z-index: 1000;
+    }
+    .bottom-sheet.open { transform: translateY(0); }
+    .bottom-sheet .drag-handle {
+      width: 50px;
+      height: 5px;
+      background: #ccc;
+      border-radius: 3px;
+      margin: 8px auto;
+    }
   </style>
 </head>
 <body class="m-0">
@@ -24,14 +46,10 @@
   </div>
 
   {% if zones %}
-  <button class="btn btn-primary position-fixed bottom-0 start-50 translate-middle-x mb-3" type="button" data-bs-toggle="offcanvas" data-bs-target="#infoSheet">Détails</button>
-
-  <div class="offcanvas offcanvas-bottom h-50" tabindex="-1" id="infoSheet">
-    <div class="offcanvas-header">
-      <h5 class="offcanvas-title">{{ equipment.name }}</h5>
-      <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
-    </div>
-    <div class="offcanvas-body">
+  <div id="info-sheet" class="bottom-sheet">
+    <div class="drag-handle"></div>
+    <div class="p-3">
+      <h5 class="mb-3">{{ equipment.name }}</h5>
       <div id="date-nav" class="input-group mb-3">
         <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
         <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
@@ -405,9 +423,52 @@
       });
     }
 
+    function setupBottomSheet() {
+      const sheet = document.getElementById('info-sheet');
+      if (!sheet) return;
+      const handle = sheet.querySelector('.drag-handle');
+      const collapsed = sheet.offsetHeight - 48;
+      let current = collapsed;
+      sheet.style.transform = `translateY(${current}px)`;
+      const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
+      let startY = 0;
+      let start = 0;
+
+      function onDown(e) {
+        startY = e.clientY;
+        start = current;
+        sheet.style.transition = 'none';
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      }
+
+      function onMove(e) {
+        const dy = e.clientY - startY;
+        current = clamp(start + dy, 0, collapsed);
+        sheet.style.transform = `translateY(${current}px)`;
+      }
+
+      function onUp() {
+        sheet.style.transition = '';
+        if (current < collapsed / 2) {
+          current = 0;
+          sheet.classList.add('open');
+        } else {
+          current = collapsed;
+          sheet.classList.remove('open');
+        }
+        sheet.style.transform = `translateY(${current}px)`;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      }
+
+      handle.addEventListener('pointerdown', onDown);
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       setupPeriodSelectors();
       setupInteractions();
+      setupBottomSheet();
     });
   </script>
 </body>
