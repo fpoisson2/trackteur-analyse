@@ -654,3 +654,49 @@ def test_initial_bounds_reflect_selected_day():
     assert width_all == approx(5 * width_day, rel=0.1)
     assert bounds_day[0] == approx(bounds_all[0])
     assert bounds_day[1] == approx(bounds_all[1])
+
+
+def test_equipment_detail_filters_by_range():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        resp = client.get(
+            f"/equipment/{eq.id}?start={prev_month.isoformat()}&"
+            f"end={today.isoformat()}"
+        )
+
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert len(rows) == 2
+    dates = [r.find_all("td")[0].text for r in rows]
+    assert any(prev_month.isoformat() in d for d in dates)
+    assert any(today.isoformat() in d for d in dates)
+
+
+def test_initial_bounds_include_tracks():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        track = Track(
+            equipment_id=eq.id,
+            start_time=date.today(),
+            end_time=date.today(),
+            line_wkt="LINESTRING(10 0,11 0)",
+        )
+        db.session.add(track)
+        db.session.commit()
+        resp = client.get(f"/equipment/{eq.id}?show=all")
+
+    bounds = get_js_array(resp.data.decode(), "initialBounds")
+    assert bounds[2] > 9

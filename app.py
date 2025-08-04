@@ -408,6 +408,10 @@ def create_app():
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
         day = request.args.get('day', type=int)
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
+        start_date = date.fromisoformat(start_str) if start_str else None
+        end_date = date.fromisoformat(end_str) if end_str else None
         show_all = request.args.get('show') == 'all'
 
         agg_all = zone.get_aggregated_zones(equipment_id)
@@ -419,19 +423,32 @@ def create_app():
 
         if (
             not show_all
+            and start_date is None
+            and end_date is None
             and year is None
             and month is None
             and day is None
             and dates
         ):
             last = max(dates)
-            year, month, day = last.year, last.month, last.day
+            start_date = end_date = last
 
-        if show_all or (year is None and month is None and day is None):
+        if show_all or (
+            start_date is None
+            and end_date is None
+            and year is None
+            and month is None
+            and day is None
+        ):
             agg_period = agg_all
         else:
             agg_period = zone.get_aggregated_zones(
-                equipment_id, year=year, month=month, day=day
+                equipment_id,
+                year=year,
+                month=month,
+                day=day,
+                start=start_date,
+                end=end_date,
             )
 
         zones: list = []
@@ -466,19 +483,52 @@ def create_app():
             )
 
         from shapely.ops import unary_union
+        from shapely import wkt
 
-        bounds = (
-            zone.geom_bounds(unary_union([z["geometry"] for z in agg_period]))
+        zone_union = (
+            unary_union([z["geometry"] for z in agg_period])
             if agg_period
             else None
         )
+        bounds = (
+            zone.geom_bounds(zone_union) if zone_union is not None else None
+        )
+
+        track_query = Track.query.filter_by(equipment_id=equipment_id)
+        if start_date is not None:
+            start_dt = datetime.combine(start_date, datetime.min.time())
+            track_query = track_query.filter(Track.end_time >= start_dt)
+        if end_date is not None:
+            end_dt = datetime.combine(
+                end_date + timedelta(days=1), datetime.min.time()
+            )
+            track_query = track_query.filter(Track.start_time < end_dt)
+        tracks = [
+            wkt.loads(t.line_wkt) for t in track_query.all() if t.line_wkt
+        ]
+        if tracks:
+            track_union = unary_union(tracks)
+            tb = track_union.bounds
+            if bounds:
+                bounds = (
+                    min(bounds[0], tb[0]),
+                    min(bounds[1], tb[1]),
+                    max(bounds[2], tb[2]),
+                    max(bounds[3], tb[3]),
+                )
+            else:
+                bounds = tb
 
         sorted_dates = sorted(dates)
         available_dates = [d.isoformat() for d in sorted_dates]
 
         prev_day_url = next_day_url = None
-        if year is not None and month is not None and day is not None:
-            current = date(year, month, day)
+        if (
+            start_date is not None
+            and end_date is not None
+            and start_date == end_date
+        ):
+            current = start_date
             if current in sorted_dates:
                 idx = sorted_dates.index(current)
                 if idx > 0:
@@ -500,6 +550,15 @@ def create_app():
                         day=nd.day,
                     )
 
+        date_value = ""
+        if start_date and end_date:
+            if start_date == end_date:
+                date_value = start_date.isoformat()
+            else:
+                date_value = (
+                    f"{start_date.isoformat()} to {end_date.isoformat()}"
+                )
+
         return render_template(
             'equipment.html',
             equipment=eq,
@@ -510,6 +569,9 @@ def create_app():
             year=year,
             month=month,
             day=day,
+            start=start_date.isoformat() if start_date else None,
+            end=end_date.isoformat() if end_date else None,
+            date_value=date_value,
             prev_day_url=prev_day_url,
             next_day_url=next_day_url,
             show_all=show_all,
@@ -524,8 +586,17 @@ def create_app():
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
         day = request.args.get('day', type=int)
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
+        start = date.fromisoformat(start_str) if start_str else None
+        end = date.fromisoformat(end_str) if end_str else None
         agg = zone.get_aggregated_zones(
-            equipment_id, year=year, month=month, day=day
+            equipment_id,
+            year=year,
+            month=month,
+            day=day,
+            start=start,
+            end=end,
         )
 
         from shapely.geometry import box
@@ -579,21 +650,34 @@ def create_app():
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
         day = request.args.get('day', type=int)
-        if year is not None:
-            start = datetime(year, 1, 1)
-            end = datetime(year + 1, 1, 1)
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
+        if start_str or end_str:
+            start_d = date.fromisoformat(start_str) if start_str else None
+            end_d = date.fromisoformat(end_str) if end_str else None
+            if start_d:
+                start_dt = datetime.combine(start_d, datetime.min.time())
+                query = query.filter(Position.timestamp >= start_dt)
+            if end_d:
+                end_dt = datetime.combine(
+                    end_d + timedelta(days=1), datetime.min.time()
+                )
+                query = query.filter(Position.timestamp < end_dt)
+        elif year is not None:
+            start_dt = datetime(year, 1, 1)
+            end_dt = datetime(year + 1, 1, 1)
             if month is not None:
-                start = datetime(year, month, 1)
-                end = (
+                start_dt = datetime(year, month, 1)
+                end_dt = (
                     datetime(year + 1, 1, 1)
                     if month == 12
                     else datetime(year, month + 1, 1)
                 )
                 if day is not None:
-                    start = datetime(year, month, day)
-                    end = start + timedelta(days=1)
+                    start_dt = datetime(year, month, day)
+                    end_dt = start_dt + timedelta(days=1)
             query = query.filter(
-                Position.timestamp >= start, Position.timestamp < end
+                Position.timestamp >= start_dt, Position.timestamp < end_dt
             )
         if bbox:
             query = query.filter(
@@ -632,6 +716,8 @@ def create_app():
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
         day = request.args.get('day', type=int)
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
         from shapely import wkt
         from shapely.geometry import box
         bbox_geom = None
@@ -640,21 +726,32 @@ def create_app():
             bbox_geom = box(west, south, east, north)
         features = []
         query = Track.query.filter_by(equipment_id=equipment_id)
-        if year is not None:
-            start = datetime(year, 1, 1)
-            end = datetime(year + 1, 1, 1)
+        if start_str or end_str:
+            start_d = date.fromisoformat(start_str) if start_str else None
+            end_d = date.fromisoformat(end_str) if end_str else None
+            if start_d is not None:
+                start_dt = datetime.combine(start_d, datetime.min.time())
+                query = query.filter(Track.end_time >= start_dt)
+            if end_d is not None:
+                end_dt = datetime.combine(
+                    end_d + timedelta(days=1), datetime.min.time()
+                )
+                query = query.filter(Track.start_time < end_dt)
+        elif year is not None:
+            start_dt = datetime(year, 1, 1)
+            end_dt = datetime(year + 1, 1, 1)
             if month is not None:
-                start = datetime(year, month, 1)
-                end = (
+                start_dt = datetime(year, month, 1)
+                end_dt = (
                     datetime(year + 1, 1, 1)
                     if month == 12
                     else datetime(year, month + 1, 1)
                 )
                 if day is not None:
-                    start = datetime(year, month, day)
-                    end = start + timedelta(days=1)
+                    start_dt = datetime(year, month, day)
+                    end_dt = start_dt + timedelta(days=1)
             query = query.filter(
-                Track.start_time < end, Track.end_time >= start
+                Track.start_time < end_dt, Track.end_time >= start_dt
             )
         tracks = query.all()
         for t in tracks:

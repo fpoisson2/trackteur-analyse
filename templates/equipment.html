@@ -41,7 +41,7 @@
         <div class="input-group input-group-sm" style="width: auto;">
           <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
           <input type="text" id="date-select" class="form-control" {% if not available_dates %}disabled{% endif %}
-                 value="{{ '%04d-%02d-%02d' % (year, month, day) if year is not none and month is not none and day is not none else '' }}">
+                 value="{{ date_value or '' }}">
           <button id="next-day" class="btn btn-outline-secondary" {% if not next_day_url %}disabled{% endif %} data-url="{{ next_day_url or '' }}">&gt;</button>
         </div>
       </div>
@@ -84,9 +84,8 @@
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
     const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
-    const currentYear = {{ year if year is not none else 'null' }};
-    const currentMonth = {{ month if month is not none else 'null' }};
-    const currentDay = {{ day if day is not none else 'null' }};
+    const startDate = {{ start|tojson if start else 'null' }};
+    const endDate = {{ end|tojson if end else 'null' }};
     const showAll = {{ 'true' if show_all else 'false' }};
     const availableDates = {{ available_dates|tojson }};
 
@@ -168,9 +167,8 @@
       if (!zonesLoaded) {
         const params = new URLSearchParams();
         params.set('zoom', 17);
-        if (currentYear !== null) params.set('year', currentYear);
-        if (currentMonth !== null) params.set('month', currentMonth);
-        if (currentDay !== null) params.set('day', currentDay);
+        if (startDate !== null) params.set('start', startDate);
+        if (endDate !== null) params.set('end', endDate);
         const zp = fetch(`/equipment/${equipmentId}/zones.geojson?${params.toString()}`)
           .then(r => r.json())
           .then(zoneData => {
@@ -186,9 +184,8 @@
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
       const trackParams = new URLSearchParams();
       trackParams.set('bbox', bbox);
-      if (currentYear !== null) trackParams.set('year', currentYear);
-      if (currentMonth !== null) trackParams.set('month', currentMonth);
-      if (currentDay !== null) trackParams.set('day', currentDay);
+      if (startDate !== null) trackParams.set('start', startDate);
+      if (endDate !== null) trackParams.set('end', endDate);
       const tp = fetch(`/equipment/${equipmentId}/tracks.geojson?${trackParams.toString()}`)
         .then(r => r.json())
         .then(trackData => {
@@ -201,9 +198,8 @@
         const pointParams = new URLSearchParams();
         pointParams.set('bbox', bbox);
         pointParams.set('all', '1');
-        if (currentYear !== null) pointParams.set('year', currentYear);
-        if (currentMonth !== null) pointParams.set('month', currentMonth);
-        if (currentDay !== null) pointParams.set('day', currentDay);
+        if (startDate !== null) pointParams.set('start', startDate);
+        if (endDate !== null) pointParams.set('end', endDate);
         const pp = fetch(`/equipment/${equipmentId}/points.geojson?${pointParams.toString()}`)
           .then(r => r.json())
           .then(pointData => {
@@ -281,24 +277,38 @@
       function updatePeriod(val) {
         const params = new URLSearchParams(window.location.search);
         if (val) {
-          const [y, m, d] = val.split('-');
-          params.set('year', y);
-          params.set('month', m);
-          params.set('day', d);
+          if (val.includes(' to ')) {
+            const [s, e] = val.split(' to ');
+            params.set('start', s);
+            params.set('end', e);
+            params.delete('year');
+            params.delete('month');
+            params.delete('day');
+          } else {
+            const [y, m, d] = val.split('-');
+            params.set('year', y);
+            params.set('month', m);
+            params.set('day', d);
+            params.delete('start');
+            params.delete('end');
+          }
           params.delete('show');
         } else {
           params.delete('year');
           params.delete('month');
           params.delete('day');
+          params.delete('start');
+          params.delete('end');
           params.set('show', 'all');
         }
         window.location.search = params.toString();
       }
       if (dateSel && availableDates.length) {
         flatpickr(dateSel, {
+          mode: 'range',
           enable: availableDates,
           dateFormat: 'Y-m-d',
-          defaultDate: dateSel.value || null,
+          defaultDate: dateSel.value ? dateSel.value.split(' to ') : null,
           allowInput: true,
           onChange: (_, dateStr) => updatePeriod(dateStr)
         });
