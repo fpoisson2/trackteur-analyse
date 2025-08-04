@@ -26,6 +26,15 @@
       }
       .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
       .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
+      #date-nav {
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        background: #fff;
+      }
+      #date-nav button {
+        min-width: 3rem;
+      }
     </style>
       <div class="w-100 mb-4">
         <h2>Carte des passages</h2>
@@ -37,14 +46,13 @@
         <div id="map-container" class="w-100"></div>
       </div>
     <div>
-      <div class="d-flex mb-2 align-items-center">
-        <div class="input-group input-group-sm" style="width: auto;">
-          <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
-          <input type="text" id="date-select" class="form-control" {% if not available_dates %}disabled{% endif %}
-                 value="{{ date_value or '' }}">
-          <button id="next-day" class="btn btn-outline-secondary" {% if not next_day_url %}disabled{% endif %} data-url="{{ next_day_url or '' }}">&gt;</button>
-        </div>
+      <div id="date-nav" class="input-group mb-2">
+        <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
+        <input type="text" id="date-select" class="form-control text-center" {% if not available_dates %}disabled{% endif %}
+               value="{{ date_value or '' }}">
+        <button id="next-day" class="btn btn-outline-secondary" {% if not next_day_url %}disabled{% endif %} data-url="{{ next_day_url or '' }}">&gt;</button>
       </div>
+      <div class="table-responsive">
       <table id="zones-table" class="table table-striped">
         <thead>
           <tr>
@@ -63,6 +71,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </div>
     {% else %}
     <p>Aucune donnée disponible pour cet équipement.</p>
