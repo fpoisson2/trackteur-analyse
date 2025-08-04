@@ -379,6 +379,23 @@ def test_map_container_allows_touch():
     assert "touch-action: none" not in tag
 
 
+def test_bottom_sheet_blocks_scroll_until_open():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert ".bottom-sheet {" in html
+    assert "overflow-y: hidden" in html
+    assert "touch-action: none" in html
+    assert ".bottom-sheet.open {" in html
+    assert "overflow-y: auto" in html
+    assert "touch-action: pan-y" in html
+
+
 def test_row_click_uses_instant_zoom():
     app = make_app()
     client = app.test_client()

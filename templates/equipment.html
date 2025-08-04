@@ -27,9 +27,14 @@
       transform: translateY(calc(100% - 3rem));
       transition: transform .3s ease-in-out;
       z-index: 1000;
-      overflow-y: auto;
+      overflow-y: hidden;
+      touch-action: none;
     }
-    .bottom-sheet.open { transform: translateY(0); }
+    .bottom-sheet.open {
+      transform: translateY(0);
+      overflow-y: auto;
+      touch-action: pan-y;
+    }
     .bottom-sheet .drag-handle {
       width: 50px;
       height: 5px;
@@ -444,7 +449,6 @@
         start = current;
         sheet.style.transition = 'none';
         dragging = true;
-        handle.setPointerCapture(e.pointerId);
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
       }
@@ -460,7 +464,6 @@
       function onUp(e) {
         if (!dragging) return;
         sheet.style.transition = '';
-        handle.releasePointerCapture(e.pointerId);
         if (current < collapsed / 2) {
           current = 0;
           sheet.classList.add('open');
@@ -474,8 +477,27 @@
         window.removeEventListener('pointerup', onUp);
       }
 
-      handle.addEventListener('pointerdown', onDown);
-      handle.addEventListener('click', () => {
+      sheet.addEventListener('pointerdown', e => {
+        if (sheet.classList.contains('open')) return;
+        onDown(e);
+      });
+
+      handle.addEventListener('pointerdown', e => {
+        e.stopPropagation();
+        onDown(e);
+      });
+
+      sheet.addEventListener('click', () => {
+        if (dragging) return;
+        if (!sheet.classList.contains('open')) {
+          current = 0;
+          sheet.classList.add('open');
+          sheet.style.transform = `translateY(${current}px)`;
+        }
+      });
+
+      handle.addEventListener('click', e => {
+        e.stopPropagation();
         if (dragging) return;
         current = current === 0 ? collapsed : 0;
         sheet.classList.toggle('open');
