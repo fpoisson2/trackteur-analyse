@@ -43,6 +43,7 @@ def make_app():
         today = date.today()
         prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
         prev_year = today - timedelta(days=365)
+        yesterday = today - timedelta(days=1)
         dz1 = DailyZone(
             equipment_id=eq.id,
             date=today,
@@ -55,11 +56,17 @@ def make_app():
             surface_ha=1.0,
             polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
         )
+        dz_yesterday = DailyZone(
+            equipment_id=eq.id,
+            date=yesterday,
+            surface_ha=1.0,
+            polygon_wkt='POLYGON((2 0,3 0,3 1,2 1,2 0))',
+        )
         dz_prev_month = DailyZone(
             equipment_id=eq.id,
             date=prev_month,
             surface_ha=1.0,
-            polygon_wkt='POLYGON((2 0,3 0,3 1,2 1,2 0))',
+            polygon_wkt='POLYGON((2 2,3 2,3 3,2 3,2 2))',
         )
         dz_prev_year = DailyZone(
             equipment_id=eq.id,
@@ -67,7 +74,9 @@ def make_app():
             surface_ha=1.0,
             polygon_wkt='POLYGON((4 0,5 0,5 1,4 1,4 0))',
         )
-        db.session.add_all([dz1, dz2, dz_prev_month, dz_prev_year])
+        db.session.add_all(
+            [dz1, dz2, dz_yesterday, dz_prev_month, dz_prev_year]
+        )
         for i in range(3):
             db.session.add(
                 Position(
@@ -80,8 +89,16 @@ def make_app():
         db.session.add(
             Position(
                 equipment_id=eq.id,
-                latitude=2.0,
-                longitude=0.0,
+                latitude=0.5,
+                longitude=2.5,
+                timestamp=yesterday,
+            )
+        )
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=2.5,
+                longitude=2.5,
                 timestamp=prev_month,
             )
         )
@@ -532,17 +549,34 @@ def test_zones_geojson_filters_by_range():
     with app.app_context():
         eq = Equipment.query.first()
         today = date.today()
-        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        yesterday = today - timedelta(days=1)
         resp = client.get(
-            f"/equipment/{eq.id}/zones.geojson?start={prev_month.isoformat()}&"
-            f"end={today.isoformat()}&zoom=12"
+            f"/equipment/{eq.id}/zones.geojson?start={yesterday.isoformat()}&"
+            f"end={today.isoformat()}&zoom=12",
         )
 
     data = resp.get_json()
     for feat in data["features"]:
         for d in feat["properties"]["dates"]:
             dd = date.fromisoformat(d)
-            assert prev_month <= dd <= today
+            assert yesterday <= dd <= today
+
+
+def test_zones_geojson_range_with_gap_returns_404():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        resp = client.get(
+            f"/equipment/{eq.id}/zones.geojson?start={prev_month.isoformat()}&"
+            f"end={today.isoformat()}&zoom=12",
+        )
+
+    assert resp.status_code == 404
 
 
 def test_points_geojson_filters_by_day():
@@ -685,9 +719,9 @@ def test_equipment_detail_filters_by_range():
     with app.app_context():
         eq = Equipment.query.first()
         today = date.today()
-        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        yesterday = today - timedelta(days=1)
         resp = client.get(
-            f"/equipment/{eq.id}?start={prev_month.isoformat()}&"
+            f"/equipment/{eq.id}?start={yesterday.isoformat()}&"
             f"end={today.isoformat()}"
         )
 
@@ -698,8 +732,25 @@ def test_equipment_detail_filters_by_range():
     rows = soup.select("#zones-table tbody tr")
     assert len(rows) == 2
     dates = [r.find_all("td")[0].text for r in rows]
-    assert any(prev_month.isoformat() in d for d in dates)
+    assert any(yesterday.isoformat() in d for d in dates)
     assert any(today.isoformat() in d for d in dates)
+
+
+def test_equipment_detail_range_with_gap_returns_404():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        resp = client.get(
+            f"/equipment/{eq.id}?start={prev_month.isoformat()}&"
+            f"end={today.isoformat()}"
+        )
+
+    assert resp.status_code == 404
 
 
 def test_initial_bounds_include_tracks():
