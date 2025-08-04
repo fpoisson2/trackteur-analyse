@@ -35,6 +35,8 @@
       background: #ccc;
       border-radius: 3px;
       margin: 8px auto;
+      cursor: grab;
+      touch-action: pan-x;
     }
   </style>
 </head>
@@ -433,23 +435,31 @@
       const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
       let startY = 0;
       let start = 0;
+      let dragging = false;
 
       function onDown(e) {
+        e.preventDefault();
         startY = e.clientY;
         start = current;
         sheet.style.transition = 'none';
+        dragging = true;
+        handle.setPointerCapture(e.pointerId);
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
       }
 
       function onMove(e) {
+        if (!dragging) return;
+        e.preventDefault();
         const dy = e.clientY - startY;
         current = clamp(start + dy, 0, collapsed);
         sheet.style.transform = `translateY(${current}px)`;
       }
 
-      function onUp() {
+      function onUp(e) {
+        if (!dragging) return;
         sheet.style.transition = '';
+        handle.releasePointerCapture(e.pointerId);
         if (current < collapsed / 2) {
           current = 0;
           sheet.classList.add('open');
@@ -458,11 +468,18 @@
           sheet.classList.remove('open');
         }
         sheet.style.transform = `translateY(${current}px)`;
+        dragging = false;
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
       }
 
       handle.addEventListener('pointerdown', onDown);
+      handle.addEventListener('click', () => {
+        if (dragging) return;
+        current = current === 0 ? collapsed : 0;
+        sheet.classList.toggle('open');
+        sheet.style.transform = `translateY(${current}px)`;
+      });
     }
 
     window.addEventListener('DOMContentLoaded', () => {
