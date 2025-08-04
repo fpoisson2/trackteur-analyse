@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
@@ -113,6 +113,32 @@ def test_equipment_detail_page_loads():
     assert "map-container" in html
     assert "zones-table" in html
     assert html.find('id="map-container"') < html.find('id="zones-table"')
+
+
+def test_equipment_defaults_to_last_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert f'<option value="{today.day}" selected' in html
+
+
+def test_equipment_page_has_day_navigation():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert 'id="prev-day"' in html
+    assert 'id="next-day"' in html
 
 
 def test_tracks_and_points_geojson():
@@ -414,7 +440,7 @@ def test_zones_loaded_once_on_page_load():
     html = resp.data.decode()
     assert "zonesLoaded" in html
     assert "if (!zonesLoaded)" in html
-    assert "zones.geojson?zoom=17" in html
+    assert "zones.geojson" in html
 
 
 def test_equipment_page_has_period_selectors():
@@ -431,29 +457,24 @@ def test_equipment_page_has_period_selectors():
     assert 'id="day-select"' in html
 
 
-def test_zones_geojson_ignores_period():
+def test_zones_geojson_filters_by_day():
     app = make_app()
     client = app.test_client()
     login(client)
 
     with app.app_context():
         eq = Equipment.query.first()
-        prev_month = (
-            date.today().replace(day=1) - timedelta(days=1)
-        ).replace(day=1)
+        today = date.today()
         resp = client.get(
-            f"/equipment/{eq.id}/zones.geojson?"
-            f"year={prev_month.year}&month={prev_month.month}"
-            f"&day={prev_month.day}&zoom=12"
+            f"/equipment/{eq.id}/zones.geojson?year={today.year}"
+            f"&month={today.month}&day={today.day}&zoom=12"
         )
     data = resp.get_json()
-    # Les paramètres de période sont ignorés : toutes les zones sont renvoyées
-    assert len(data["features"]) == 3
-    dates = [d for f in data["features"] for d in f["properties"]["dates"]]
-    assert str(prev_month) in dates
+    for feat in data["features"]:
+        assert all(d == today.isoformat() for d in feat["properties"]["dates"])
 
 
-def test_points_geojson_ignores_period():
+def test_points_geojson_filters_by_day():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -467,8 +488,53 @@ def test_points_geojson_ignores_period():
             f"&day={prev_year.day}&limit=100"
         )
     data = resp.get_json()
-    # L'échantillon contient toutes les positions malgré le filtre
-    assert len(data["features"]) == 5
+    assert len(data["features"]) == 1
+
+
+def test_tracks_geojson_filters_cross_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        Track.query.delete()
+        db.session.commit()
+        start = (
+            datetime.combine(
+                date.today() - timedelta(days=1), datetime.min.time()
+            )
+            + timedelta(hours=23)
+        )
+        end = (
+            datetime.combine(date.today(), datetime.min.time())
+            + timedelta(hours=1)
+        )
+        tr = Track(
+            equipment_id=eq.id,
+            start_time=start,
+            end_time=end,
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        db.session.add(tr)
+        db.session.commit()
+        eqid = eq.id
+        today = date.today()
+        prev = today - timedelta(days=1)
+
+    resp = client.get(
+        f"/equipment/{eqid}/tracks.geojson?"
+        f"year={today.year}&month={today.month}&day={today.day}"
+    )
+    data = resp.get_json()
+    assert len(data["features"]) == 1
+
+    resp = client.get(
+        f"/equipment/{eqid}/tracks.geojson?"
+        f"year={prev.year}&month={prev.month}&day={prev.day}"
+    )
+    data = resp.get_json()
+    assert len(data["features"]) == 1
 
 
 def test_equipment_detail_filters_by_period():
