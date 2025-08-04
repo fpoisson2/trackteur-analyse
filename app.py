@@ -11,7 +11,7 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, DailyZone, Config
+from models import db, User, Equipment, Position, DailyZone, Config, Track
 import zone
 
 from datetime import datetime
@@ -46,18 +46,41 @@ def create_app():
         from sqlalchemy import inspect, text
 
         inspector = inspect(db.engine)
-        try:
+        tables = inspector.get_table_names()
+        if "daily_zone" in tables:
             cols = [c["name"] for c in inspector.get_columns("daily_zone")]
-        except Exception:
-            return
-        if "pass_count" not in cols:
+            if "pass_count" not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE daily_zone ADD COLUMN pass_count "
+                            "INTEGER DEFAULT 1"
+                        )
+                    )
+        if "track" not in tables:
             with db.engine.begin() as conn:
                 conn.execute(
                     text(
-                        "ALTER TABLE daily_zone ADD COLUMN pass_count "
-                        "INTEGER DEFAULT 1"
+                        "CREATE TABLE track ("
+                        "id INTEGER PRIMARY KEY,"
+                        "equipment_id INTEGER NOT NULL,"
+                        "start_time DATETIME,"
+                        "end_time DATETIME,"
+                        "line_wkt TEXT,"
+                        "FOREIGN KEY(equipment_id) REFERENCES equipment(id)"
+                        ")"
                     )
                 )
+        if "position" in tables:
+            cols = [c["name"] for c in inspector.get_columns("position")]
+            if "track_id" not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE position ADD COLUMN track_id "
+                            "INTEGER REFERENCES track(id)"
+                        )
+                    )
 
     if hasattr(app, "before_first_request"):
         @app.before_first_request
@@ -493,10 +516,13 @@ def create_app():
         Equipment.query.get_or_404(equipment_id)
         bbox = request.args.get('bbox')
         limit = int(request.args.get('limit', 5000))
+        include_all = request.args.get('all') == '1'
         west = south = east = north = None
         if bbox:
             west, south, east, north = [float(x) for x in bbox.split(',')]
         query = Position.query.filter_by(equipment_id=equipment_id)
+        if not include_all:
+            query = query.filter(Position.track_id.is_(None))
         if bbox:
             query = query.filter(
                 Position.longitude >= west,
@@ -504,9 +530,12 @@ def create_app():
                 Position.latitude >= south,
                 Position.latitude <= north,
             )
-        query = query.order_by(db.func.random()).limit(limit)
+        if include_all:
+            points = query.all()
+        else:
+            points = query.order_by(db.func.random()).limit(limit).all()
         features = []
-        for p in query:
+        for p in points:
             features.append({
                 'type': 'Feature',
                 'id': str(p.id),
@@ -519,6 +548,40 @@ def create_app():
                 },
             })
 
+        return {'type': 'FeatureCollection', 'features': features}
+
+    @app.route('/equipment/<int:equipment_id>/tracks.geojson')
+    @login_required
+    def equipment_tracks_geojson(equipment_id):
+        eq = Equipment.query.get_or_404(equipment_id)
+        if Track.query.filter_by(equipment_id=equipment_id).count() == 0:
+            zone.process_equipment(eq)
+        bbox = request.args.get('bbox')
+        from shapely import wkt
+        from shapely.geometry import box
+        bbox_geom = None
+        if bbox:
+            west, south, east, north = [float(x) for x in bbox.split(',')]
+            bbox_geom = box(west, south, east, north)
+        features = []
+        tracks = Track.query.filter_by(equipment_id=equipment_id).all()
+        for t in tracks:
+            geom = wkt.loads(t.line_wkt)
+            if bbox_geom and not geom.intersects(bbox_geom):
+                continue
+            features.append({
+                'type': 'Feature',
+                'id': str(t.id),
+                'properties': {
+                    'start_time': (
+                        t.start_time.isoformat() if t.start_time else None
+                    ),
+                    'end_time': (
+                        t.end_time.isoformat() if t.end_time else None
+                    ),
+                },
+                'geometry': geom.__geo_interface__,
+            })
         return {'type': 'FeatureCollection', 'features': features}
 
     # Planification de la tâche quotidienne à 2h du matin

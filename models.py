@@ -37,6 +37,20 @@ class Equipment(db.Model):  # type: ignore[name-defined]
 
     positions = db.relationship('Position', backref='equipment', lazy=True)
     daily_zones = db.relationship('DailyZone', backref='equipment', lazy=True)
+    tracks = db.relationship('Track', backref='equipment', lazy=True)
+
+
+class Track(db.Model):  # type: ignore[name-defined]
+    """Segment de trajet entre deux zones."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    equipment_id = db.Column(
+        db.Integer, db.ForeignKey('equipment.id'), nullable=False
+    )
+    start_time = db.Column(db.DateTime)
+    end_time = db.Column(db.DateTime)
+    line_wkt = db.Column(db.Text)
+    positions = db.relationship('Position', backref='track', lazy=True)
 
 
 class Position(db.Model):  # type: ignore[name-defined]
@@ -44,6 +58,7 @@ class Position(db.Model):  # type: ignore[name-defined]
     equipment_id = db.Column(
         db.Integer, db.ForeignKey('equipment.id'), nullable=False
     )
+    track_id = db.Column(db.Integer, db.ForeignKey('track.id'), nullable=True)
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
     timestamp = db.Column(db.DateTime)

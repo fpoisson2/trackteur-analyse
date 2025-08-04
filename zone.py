@@ -5,7 +5,13 @@ import pandas as pd
 import numpy as np
 import warnings
 from datetime import datetime, timedelta
-from shapely.geometry import Point, Polygon, MultiPolygon, GeometryCollection
+from shapely.geometry import (
+    Point,
+    Polygon,
+    MultiPolygon,
+    GeometryCollection,
+    LineString,
+)
 from shapely.ops import transform as shp_transform
 import pyproj
 import alphashape
@@ -14,7 +20,7 @@ import folium
 from geopandas import GeoDataFrame
 
 from typing import Dict, List, Optional, Tuple
-from models import db, Equipment, Position, DailyZone, Config
+from models import db, Equipment, Position, DailyZone, Config, Track
 
 # Ignorer avertissements GEOS
 warnings.filterwarnings("ignore", "GEOS messages", UserWarning)
@@ -217,22 +223,35 @@ def add_joggle(points, noise_scale=1e-6):
 def cluster_positions(positions):
     """Regroupe les points par jour et clusterise en zones de travail."""
     coords = [
-        (p['latitude'], p['longitude'], p['deviceTime'][:10])
+        (
+            p['latitude'],
+            p['longitude'],
+            p['deviceTime'][:10],
+            p['deviceTime'],
+        )
         for p in positions
     ]
-    df = pd.DataFrame(coords, columns=['lat', 'lon', 'date'])
+    df = pd.DataFrame(coords, columns=['lat', 'lon', 'date', 'timestamp'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
     df['geometry'] = df.apply(lambda r: Point(r.lon, r.lat), axis=1)
     gdf = (
         GeoDataFrame(df, geometry='geometry', crs='EPSG:4326')
         .to_crs(epsg=3857)
     )
     zones = []
+    noise_by_date = {}
     for date, group in gdf.groupby('date'):
         if len(group) < 3:
             continue
         X = np.vstack([group.geometry.x, group.geometry.y]).T
         labels = DBSCAN(eps=EPS_METERS, min_samples=3).fit_predict(X)
         group['cluster'] = labels
+        noise = group[group.cluster == -1].sort_values('timestamp')
+        if not noise.empty:
+            noise_by_date[date] = [
+                (row.lon, row.lat, row.timestamp.to_pydatetime())
+                for _, row in noise.iterrows()
+            ]
         for lbl in set(labels):
             if lbl == -1:
                 continue
@@ -248,7 +267,7 @@ def cluster_positions(positions):
                     sub = sub.buffer(0)
                     if sub.area / 1e4 >= MIN_SURFACE_HA:
                         zones.append({'geometry': sub, 'dates': [date]})
-    return zones
+    return zones, noise_by_date
 
 
 def aggregate_overlapping_zones(daily_zones):
@@ -400,6 +419,34 @@ def calculate_distance_between_zones(polygons):
     return float(total)
 
 
+def _boundary_intersection(
+    inner: Tuple[float, float],
+    outer: Tuple[float, float],
+    polygons: List[Polygon],
+):
+    """Return intersection point on zone boundary between two coordinates.
+
+    ``inner`` should lie inside one of the ``polygons`` and ``outer`` outside
+    of it. The function returns the intersection point between the line segment
+    joining them and the matching polygon's exterior. If no intersection is
+    found, ``None`` is returned.
+    """
+    if not polygons:
+        return None
+    line = LineString([inner, outer])
+    pt = Point(inner)
+    for poly in polygons:
+        if poly.contains(pt):
+            inter = line.intersection(poly.exterior)
+            if inter.is_empty:
+                continue
+            if isinstance(inter, Point):
+                return inter
+            if hasattr(inter, "geoms"):
+                return list(inter.geoms)[0]
+    return None
+
+
 def process_equipment(eq, since=None):
     """Analyse et enregistre les zones journalières de l'équipement."""
     to_dt = datetime.utcnow()
@@ -452,7 +499,7 @@ def process_equipment(eq, since=None):
     db.session.commit()
 
     # 2) Créer les clusters et zones
-    daily = cluster_positions(positions)
+    daily, noise_points = cluster_positions(positions)
     zones_by_date = {}
     for z in daily:
         date_str = z['dates'][0]
@@ -482,6 +529,102 @@ def process_equipment(eq, since=None):
                     pass_count=len(part['dates']),
                 )
                 db.session.add(dz)
+
+    # Créer les tracés à partir des points bruts hors zones
+    for date_str, pts in noise_points.items():
+        Track.query.filter(
+            Track.equipment_id == eq.id,
+            db.func.date(Track.start_time) == date_str,
+        ).delete(synchronize_session=False)
+        segments: List[List[tuple]] = []
+        current: List[tuple] = []
+        prev = None
+        for lon, lat, ts in pts:
+            if prev and (ts - prev).total_seconds() > 600:
+                if current:
+                    segments.append(current)
+                current = []
+            current.append((lon, lat, ts))
+            prev = ts
+        if current:
+            segments.append(current)
+        for seg in segments:
+            prev_pos = (
+                Position.query.filter(
+                    Position.equipment_id == eq.id,
+                    Position.timestamp < seg[0][2],
+                )
+                .order_by(Position.timestamp.desc())
+                .first()
+            )
+            next_pos = (
+                Position.query.filter(
+                    Position.equipment_id == eq.id,
+                    Position.timestamp > seg[-1][2],
+                )
+                .order_by(Position.timestamp)
+                .first()
+            )
+            coords: List[tuple] = []
+            if prev_pos:
+                prev_polys = zones_by_date.get(
+                    prev_pos.timestamp.date().isoformat(), []
+                )
+                start = _boundary_intersection(
+                    (prev_pos.longitude, prev_pos.latitude),
+                    (seg[0][0], seg[0][1]),
+                    prev_polys,
+                )
+                if start:
+                    coords.append((start.x, start.y, prev_pos.timestamp))
+                else:
+                    coords.append(
+                        (
+                            prev_pos.longitude,
+                            prev_pos.latitude,
+                            prev_pos.timestamp,
+                        )
+                    )
+            coords.extend(seg)
+            if next_pos:
+                next_polys = zones_by_date.get(
+                    next_pos.timestamp.date().isoformat(), []
+                )
+                end = _boundary_intersection(
+                    (next_pos.longitude, next_pos.latitude),
+                    (seg[-1][0], seg[-1][1]),
+                    next_polys,
+                )
+                if end:
+                    coords.append((end.x, end.y, next_pos.timestamp))
+                else:
+                    coords.append(
+                        (
+                            next_pos.longitude,
+                            next_pos.latitude,
+                            next_pos.timestamp,
+                        )
+                    )
+            if len(coords) < 2:
+                continue
+            line = LineString([(x, y) for x, y, _ in coords])
+            tr = Track(
+                equipment_id=eq.id,
+                start_time=coords[0][2],
+                end_time=coords[-1][2],
+                line_wkt=line.wkt,
+            )
+            db.session.add(tr)
+            db.session.flush()
+            for lon, lat, ts in seg:
+                pos = Position.query.filter_by(
+                    equipment_id=eq.id,
+                    latitude=lat,
+                    longitude=lon,
+                    timestamp=ts,
+                ).first()
+                if pos:
+                    pos.track_id = tr.id
 
     # 4) ✅ FIX : Recalculer le total sur TOUTES les zones existantes
     all_zones = (
@@ -549,7 +692,7 @@ def recalculate_hectares_from_positions(equipment_id, since_date=None):
         })
 
     # Recalculer les zones
-    daily = cluster_positions(positions_formatted)
+    daily, _ = cluster_positions(positions_formatted)
     zones_by_date = {}
     for z in daily:
         date_str = z['dates'][0]

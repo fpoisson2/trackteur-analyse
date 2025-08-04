@@ -10,8 +10,9 @@ os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 from app import create_app  # noqa: E402
-from models import db, User, Equipment, Position  # noqa: E402
+from models import db, User, Equipment, Position, Track  # noqa: E402
 from models import DailyZone, Config  # noqa: E402
+import zone  # noqa: E402
 
 
 def make_app():
@@ -114,6 +115,88 @@ def test_equipment_detail_page_loads():
     assert html.find('id="map-container"') < html.find('id="zones-table"')
 
 
+def test_tracks_and_points_geojson():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        Position.query.delete()
+        db.session.commit()
+        track = Track(
+            equipment_id=eq.id,
+            start_time=date.today(),
+            end_time=date.today(),
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        db.session.add(track)
+        db.session.flush()
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=0,
+                longitude=0,
+                timestamp=date.today(),
+                track_id=track.id,
+            )
+        )
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=1,
+                longitude=1,
+                timestamp=date.today(),
+                track_id=track.id,
+            )
+        )
+        db.session.commit()
+        eqid = eq.id
+
+    resp = client.get(f"/equipment/{eqid}/points.geojson")
+    data = resp.get_json()
+    assert data["features"] == []
+    resp = client.get(f"/equipment/{eqid}/points.geojson?all=1")
+    data = resp.get_json()
+    assert len(data["features"]) == 2
+    resp = client.get(f"/equipment/{eqid}/tracks.geojson")
+    data = resp.get_json()
+    assert len(data["features"]) == 1
+    assert data["features"][0]["geometry"]["type"] == "LineString"
+
+
+def test_tracks_endpoint_triggers_analysis(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        Track.query.delete()
+        db.session.commit()
+
+        called = {"count": 0}
+
+        def fake_process(equipment, since=None):
+            called["count"] += 1
+            tr = Track(
+                equipment_id=equipment.id,
+                start_time=date.today(),
+                end_time=date.today(),
+                line_wkt="LINESTRING(0 0,1 1)",
+            )
+            db.session.add(tr)
+            db.session.commit()
+
+        monkeypatch.setattr(zone, "process_equipment", fake_process)
+        eqid = eq.id
+
+    resp = client.get(f"/equipment/{eqid}/tracks.geojson")
+    data = resp.get_json()
+    assert called["count"] == 1
+    assert len(data["features"]) == 1
+
+
 def test_equipment_page_shows_legend():
     app = make_app()
     client = app.test_client()
@@ -186,7 +269,7 @@ def test_equipment_page_contains_highlight_rows():
     assert "function highlightRows" in html
 
 
-def test_map_container_has_touch_action():
+def test_map_container_allows_touch():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -195,7 +278,7 @@ def test_map_container_has_touch_action():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "touch-action: none" in html
+    assert "touch-action: none" not in html
 
 
 def test_row_click_uses_instant_zoom():
