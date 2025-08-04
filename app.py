@@ -553,7 +553,9 @@ def create_app():
     @app.route('/equipment/<int:equipment_id>/tracks.geojson')
     @login_required
     def equipment_tracks_geojson(equipment_id):
-        Equipment.query.get_or_404(equipment_id)
+        eq = Equipment.query.get_or_404(equipment_id)
+        if Track.query.filter_by(equipment_id=equipment_id).count() == 0:
+            zone.process_equipment(eq)
         bbox = request.args.get('bbox')
         from shapely import wkt
         from shapely.geometry import box

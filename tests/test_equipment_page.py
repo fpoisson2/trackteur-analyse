@@ -12,6 +12,7 @@ os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 from app import create_app  # noqa: E402
 from models import db, User, Equipment, Position, Track  # noqa: E402
 from models import DailyZone, Config  # noqa: E402
+import zone  # noqa: E402
 
 
 def make_app():
@@ -162,6 +163,38 @@ def test_tracks_and_points_geojson():
     data = resp.get_json()
     assert len(data["features"]) == 1
     assert data["features"][0]["geometry"]["type"] == "LineString"
+
+
+def test_tracks_endpoint_triggers_analysis(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        Track.query.delete()
+        db.session.commit()
+
+        called = {"count": 0}
+
+        def fake_process(equipment, since=None):
+            called["count"] += 1
+            tr = Track(
+                equipment_id=equipment.id,
+                start_time=date.today(),
+                end_time=date.today(),
+                line_wkt="LINESTRING(0 0,1 1)",
+            )
+            db.session.add(tr)
+            db.session.commit()
+
+        monkeypatch.setattr(zone, "process_equipment", fake_process)
+        eqid = eq.id
+
+    resp = client.get(f"/equipment/{eqid}/tracks.geojson")
+    data = resp.get_json()
+    assert called["count"] == 1
+    assert len(data["features"]) == 1
 
 
 def test_equipment_page_shows_legend():
