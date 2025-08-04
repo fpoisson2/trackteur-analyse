@@ -4,7 +4,7 @@ import requests  # type: ignore
 import pandas as pd
 import numpy as np
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as dt_date
 from shapely.geometry import (
     Point,
     Polygon,
@@ -70,8 +70,10 @@ _to_webmerc = pyproj.Transformer.from_crs(
 ).transform
 
 # Cache pour les zones agrégées
-# Clé: (equipment_id, year, month)
-_AGG_CACHE: Dict[Tuple[int, Optional[int], Optional[int]], List[dict]] = {}
+# Clé: (equipment_id, start_date, end_date)
+_AGG_CACHE: Dict[
+    Tuple[int, Optional[dt_date], Optional[dt_date]], List[dict]
+] = {}
 
 
 def invalidate_cache(equipment_id: int) -> None:
@@ -90,33 +92,51 @@ def geom_bounds(geom):
 
 
 def get_aggregated_zones(
-    equipment_id: int, year: Optional[int] = None, month: Optional[int] = None
+    equipment_id: int,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    day: Optional[int] = None,
+    start: Optional[dt_date] = None,
+    end: Optional[dt_date] = None,
 ):
     """Retourne les zones agrégées pour un équipement, en cache.
 
-    Les paramètres ``year`` et ``month`` permettent de filtrer les zones
-    journalières avant agrégation. Le cache est segmenté par période afin de
-    conserver des performances acceptables même en cas de navigation
-    temporelle.
+    Les paramètres ``year``, ``month`` et ``day`` ou ``start``/``end``
+    permettent de filtrer les zones journalières avant agrégation.
+    Le cache est segmenté par période afin de conserver des performances
+    acceptables même en cas de navigation temporelle.
     """
 
-    key = (equipment_id, year, month)
+    # Déterminer la période de filtrage
+    if start is not None or end is not None:
+        start_date = start
+        end_date = end
+    elif year is not None:
+        if month is not None:
+            if day is not None:
+                start_date = dt_date(year, month, day)
+                end_date = start_date
+            else:
+                start_date = dt_date(year, month, 1)
+                if month == 12:
+                    end_date = dt_date(year, 12, 31)
+                else:
+                    end_date = dt_date(year, month + 1, 1) - timedelta(days=1)
+        else:
+            start_date = dt_date(year, 1, 1)
+            end_date = dt_date(year, 12, 31)
+    else:
+        start_date = end_date = None
+
+    key = (equipment_id, start_date, end_date)
     if key not in _AGG_CACHE:
         from shapely import wkt
-        from datetime import date
 
         query = DailyZone.query.filter_by(equipment_id=equipment_id)
-        if year is not None:
-            if month is not None:
-                start = date(year, month, 1)
-                if month == 12:
-                    end = date(year + 1, 1, 1)
-                else:
-                    end = date(year, month + 1, 1)
-            else:
-                start = date(year, 1, 1)
-                end = date(year + 1, 1, 1)
-            query = query.filter(DailyZone.date >= start, DailyZone.date < end)
+        if start_date is not None:
+            query = query.filter(DailyZone.date >= start_date)
+        if end_date is not None:
+            query = query.filter(DailyZone.date <= end_date)
 
         zones = query.all()
         daily = [

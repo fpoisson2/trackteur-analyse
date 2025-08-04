@@ -11,10 +11,10 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, DailyZone, Config, Track
+from models import db, User, Equipment, Position, Config, Track
 import zone
 
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 
 def create_app():
@@ -407,18 +407,53 @@ def create_app():
         eq = Equipment.query.get_or_404(equipment_id)
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
-        # Les zones sont agrégées globalement pour conserver des identifiants
-        # stables entre la carte (non filtrée) et le tableau (filtré).
-        agg_all = zone.get_aggregated_zones(equipment_id)
-        if year is not None or month is not None:
-            agg_period = zone.get_aggregated_zones(
-                equipment_id, year=year, month=month
-            )
-        else:
-            agg_period = agg_all
+        day = request.args.get('day', type=int)
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
+        start_date = date.fromisoformat(start_str) if start_str else None
+        end_date = date.fromisoformat(end_str) if end_str else None
+        show_all = request.args.get('show') == 'all'
 
-        zones = []
+        agg_all = zone.get_aggregated_zones(equipment_id)
+        dates = {
+            date.fromisoformat(d)
+            for z in agg_all
+            for d in z.get("dates", [])
+        }
+
+        if (
+            not show_all
+            and start_date is None
+            and end_date is None
+            and year is None
+            and month is None
+            and day is None
+            and dates
+        ):
+            last = max(dates)
+            start_date = end_date = last
+
+        if show_all or (
+            start_date is None
+            and end_date is None
+            and year is None
+            and month is None
+            and day is None
+        ):
+            agg_period = agg_all
+        else:
+            agg_period = zone.get_aggregated_zones(
+                equipment_id,
+                year=year,
+                month=month,
+                day=day,
+                start=start_date,
+                end=end_date,
+            )
+
+        zones: list = []
         zone_bounds = {}
+        grouped: dict = {}
         for z in agg_period:
             full_idx = next(
                 (
@@ -430,30 +465,99 @@ def create_app():
             )
             if full_idx is None:
                 continue
-            zones.append(
-                {
-                    "id": full_idx,
-                    "dates": ", ".join(sorted(set(z["dates"]))),
-                    "pass_count": len(z["dates"]),
-                    "surface_ha": z["geometry"].area / 1e4,
-                }
-            )
+            info = grouped.setdefault(full_idx, {"dates": [], "surface": 0.0})
+            info["dates"].extend(z.get("dates", []))
+            info["surface"] += z["geometry"].area / 1e4
             zone_bounds[full_idx] = zone.geom_bounds(
                 agg_all[full_idx]["geometry"]
             )
 
-        bounds = zone.get_bounds_for_equipment(equipment_id)
+        for idx, info in grouped.items():
+            zones.append(
+                {
+                    "id": idx,
+                    "dates": ", ".join(sorted(set(info["dates"]))),
+                    "pass_count": len(info["dates"]),
+                    "surface_ha": info["surface"],
+                }
+            )
 
-        dates = [
-            dz.date
-            for dz in DailyZone.query.filter_by(
-                equipment_id=equipment_id
-            ).all()
-        ]
-        years = sorted({d.year for d in dates})
-        months = sorted(
-            {d.month for d in dates if year is None or d.year == year}
+        from shapely.ops import unary_union
+        from shapely import wkt
+
+        zone_union = (
+            unary_union([z["geometry"] for z in agg_period])
+            if agg_period
+            else None
         )
+        bounds = (
+            zone.geom_bounds(zone_union) if zone_union is not None else None
+        )
+
+        track_query = Track.query.filter_by(equipment_id=equipment_id)
+        if start_date is not None:
+            start_dt = datetime.combine(start_date, datetime.min.time())
+            track_query = track_query.filter(Track.end_time >= start_dt)
+        if end_date is not None:
+            end_dt = datetime.combine(
+                end_date + timedelta(days=1), datetime.min.time()
+            )
+            track_query = track_query.filter(Track.start_time < end_dt)
+        tracks = [
+            wkt.loads(t.line_wkt) for t in track_query.all() if t.line_wkt
+        ]
+        if tracks:
+            track_union = unary_union(tracks)
+            tb = track_union.bounds
+            if bounds:
+                bounds = (
+                    min(bounds[0], tb[0]),
+                    min(bounds[1], tb[1]),
+                    max(bounds[2], tb[2]),
+                    max(bounds[3], tb[3]),
+                )
+            else:
+                bounds = tb
+
+        sorted_dates = sorted(dates)
+        available_dates = [d.isoformat() for d in sorted_dates]
+
+        prev_day_url = next_day_url = None
+        if (
+            start_date is not None
+            and end_date is not None
+            and start_date == end_date
+        ):
+            current = start_date
+            if current in sorted_dates:
+                idx = sorted_dates.index(current)
+                if idx > 0:
+                    pd = sorted_dates[idx - 1]
+                    prev_day_url = url_for(
+                        'equipment_detail',
+                        equipment_id=equipment_id,
+                        year=pd.year,
+                        month=pd.month,
+                        day=pd.day,
+                    )
+                if idx + 1 < len(sorted_dates):
+                    nd = sorted_dates[idx + 1]
+                    next_day_url = url_for(
+                        'equipment_detail',
+                        equipment_id=equipment_id,
+                        year=nd.year,
+                        month=nd.month,
+                        day=nd.day,
+                    )
+
+        date_value = ""
+        if start_date and end_date:
+            if start_date == end_date:
+                date_value = start_date.isoformat()
+            else:
+                date_value = (
+                    f"{start_date.isoformat()} to {end_date.isoformat()}"
+                )
 
         return render_template(
             'equipment.html',
@@ -461,10 +565,16 @@ def create_app():
             zones=zones,
             bounds=bounds,
             zone_bounds=zone_bounds,
-            years=years,
-            months=months,
+            available_dates=available_dates,
             year=year,
             month=month,
+            day=day,
+            start=start_date.isoformat() if start_date else None,
+            end=end_date.isoformat() if end_date else None,
+            date_value=date_value,
+            prev_day_url=prev_day_url,
+            next_day_url=next_day_url,
+            show_all=show_all,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')
@@ -473,7 +583,21 @@ def create_app():
         Equipment.query.get_or_404(equipment_id)
         bbox = request.args.get('bbox')
         zoom = int(request.args.get('zoom', 12))
-        agg = zone.get_aggregated_zones(equipment_id)
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+        day = request.args.get('day', type=int)
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
+        start = date.fromisoformat(start_str) if start_str else None
+        end = date.fromisoformat(end_str) if end_str else None
+        agg = zone.get_aggregated_zones(
+            equipment_id,
+            year=year,
+            month=month,
+            day=day,
+            start=start,
+            end=end,
+        )
 
         from shapely.geometry import box
         from shapely.ops import transform as shp_transform
@@ -523,6 +647,38 @@ def create_app():
         query = Position.query.filter_by(equipment_id=equipment_id)
         if not include_all:
             query = query.filter(Position.track_id.is_(None))
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+        day = request.args.get('day', type=int)
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
+        if start_str or end_str:
+            start_d = date.fromisoformat(start_str) if start_str else None
+            end_d = date.fromisoformat(end_str) if end_str else None
+            if start_d:
+                start_dt = datetime.combine(start_d, datetime.min.time())
+                query = query.filter(Position.timestamp >= start_dt)
+            if end_d:
+                end_dt = datetime.combine(
+                    end_d + timedelta(days=1), datetime.min.time()
+                )
+                query = query.filter(Position.timestamp < end_dt)
+        elif year is not None:
+            start_dt = datetime(year, 1, 1)
+            end_dt = datetime(year + 1, 1, 1)
+            if month is not None:
+                start_dt = datetime(year, month, 1)
+                end_dt = (
+                    datetime(year + 1, 1, 1)
+                    if month == 12
+                    else datetime(year, month + 1, 1)
+                )
+                if day is not None:
+                    start_dt = datetime(year, month, day)
+                    end_dt = start_dt + timedelta(days=1)
+            query = query.filter(
+                Position.timestamp >= start_dt, Position.timestamp < end_dt
+            )
         if bbox:
             query = query.filter(
                 Position.longitude >= west,
@@ -557,6 +713,11 @@ def create_app():
         if Track.query.filter_by(equipment_id=equipment_id).count() == 0:
             zone.process_equipment(eq)
         bbox = request.args.get('bbox')
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+        day = request.args.get('day', type=int)
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
         from shapely import wkt
         from shapely.geometry import box
         bbox_geom = None
@@ -564,7 +725,35 @@ def create_app():
             west, south, east, north = [float(x) for x in bbox.split(',')]
             bbox_geom = box(west, south, east, north)
         features = []
-        tracks = Track.query.filter_by(equipment_id=equipment_id).all()
+        query = Track.query.filter_by(equipment_id=equipment_id)
+        if start_str or end_str:
+            start_d = date.fromisoformat(start_str) if start_str else None
+            end_d = date.fromisoformat(end_str) if end_str else None
+            if start_d is not None:
+                start_dt = datetime.combine(start_d, datetime.min.time())
+                query = query.filter(Track.end_time >= start_dt)
+            if end_d is not None:
+                end_dt = datetime.combine(
+                    end_d + timedelta(days=1), datetime.min.time()
+                )
+                query = query.filter(Track.start_time < end_dt)
+        elif year is not None:
+            start_dt = datetime(year, 1, 1)
+            end_dt = datetime(year + 1, 1, 1)
+            if month is not None:
+                start_dt = datetime(year, month, 1)
+                end_dt = (
+                    datetime(year + 1, 1, 1)
+                    if month == 12
+                    else datetime(year, month + 1, 1)
+                )
+                if day is not None:
+                    start_dt = datetime(year, month, day)
+                    end_dt = start_dt + timedelta(days=1)
+            query = query.filter(
+                Track.start_time < end_dt, Track.end_time >= start_dt
+            )
+        tracks = query.all()
         for t in tracks:
             geom = wkt.loads(t.line_wkt)
             if bbox_geom and not geom.intersects(bbox_geom):

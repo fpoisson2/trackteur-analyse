@@ -6,6 +6,7 @@
   <title>{{ equipment.name }} - Détails</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
 </head>
 <body class="p-4">
   <div class="container">
@@ -36,19 +37,13 @@
         <div id="map-container" class="w-100"></div>
       </div>
     <div>
-      <div class="d-flex mb-2">
-        <select id="year-select" class="form-select form-select-sm me-2">
-          <option value="">Toutes les années</option>
-          {% for y in years %}
-          <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
-          {% endfor %}
-        </select>
-        <select id="month-select" class="form-select form-select-sm">
-          <option value="">Tous les mois</option>
-          {% for m in months %}
-          <option value="{{ m }}" {% if month == m %}selected{% endif %}>{{ '%02d' % m }}</option>
-          {% endfor %}
-        </select>
+      <div class="d-flex mb-2 align-items-center">
+        <div class="input-group input-group-sm" style="width: auto;">
+          <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
+          <input type="text" id="date-select" class="form-control" {% if not available_dates %}disabled{% endif %}
+                 value="{{ date_value or '' }}">
+          <button id="next-day" class="btn btn-outline-secondary" {% if not next_day_url %}disabled{% endif %} data-url="{{ next_day_url or '' }}">&gt;</button>
+        </div>
       </div>
       <table id="zones-table" class="table table-striped">
         <thead>
@@ -75,6 +70,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script>
     let map;
     let zoneLayer;
@@ -88,6 +84,10 @@
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
     const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
+    const startDate = {{ start|tojson if start else 'null' }};
+    const endDate = {{ end|tojson if end else 'null' }};
+    const showAll = {{ 'true' if show_all else 'false' }};
+    const availableDates = {{ available_dates|tojson }};
 
     function rebuildDateLayers() {
       dateLayers = {};
@@ -165,7 +165,11 @@
       const token = ++fetchToken;
       const promises = [];
       if (!zonesLoaded) {
-        const zp = fetch(`/equipment/${equipmentId}/zones.geojson?zoom=17`)
+        const params = new URLSearchParams();
+        params.set('zoom', 17);
+        if (startDate !== null) params.set('start', startDate);
+        if (endDate !== null) params.set('end', endDate);
+        const zp = fetch(`/equipment/${equipmentId}/zones.geojson?${params.toString()}`)
           .then(r => r.json())
           .then(zoneData => {
             if (token !== fetchToken) return;
@@ -178,7 +182,11 @@
       }
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
-      const tp = fetch(`/equipment/${equipmentId}/tracks.geojson?bbox=${bbox}`)
+      const trackParams = new URLSearchParams();
+      trackParams.set('bbox', bbox);
+      if (startDate !== null) trackParams.set('start', startDate);
+      if (endDate !== null) trackParams.set('end', endDate);
+      const tp = fetch(`/equipment/${equipmentId}/tracks.geojson?${trackParams.toString()}`)
         .then(r => r.json())
         .then(trackData => {
           if (token !== fetchToken) return;
@@ -187,7 +195,12 @@
         });
       promises.push(tp);
       if (document.getElementById('show-points').checked) {
-        const pp = fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&all=1`)
+        const pointParams = new URLSearchParams();
+        pointParams.set('bbox', bbox);
+        pointParams.set('all', '1');
+        if (startDate !== null) pointParams.set('start', startDate);
+        if (endDate !== null) pointParams.set('end', endDate);
+        const pp = fetch(`/equipment/${equipmentId}/points.geojson?${pointParams.toString()}`)
           .then(r => r.json())
           .then(pointData => {
             if (token !== fetchToken) return;
@@ -260,16 +273,59 @@
     }
 
     function setupPeriodSelectors() {
-      const yearSel = document.getElementById('year-select');
-      const monthSel = document.getElementById('month-select');
-      function updatePeriod() {
+      const dateSel = document.getElementById('date-select');
+      function updatePeriod(val) {
         const params = new URLSearchParams(window.location.search);
-        if (yearSel.value) params.set('year', yearSel.value); else params.delete('year');
-        if (monthSel.value) params.set('month', monthSel.value); else params.delete('month');
+        if (val) {
+          if (val.includes(' to ')) {
+            const [s, e] = val.split(' to ');
+            params.set('start', s);
+            params.set('end', e);
+            params.delete('year');
+            params.delete('month');
+            params.delete('day');
+          } else {
+            const [y, m, d] = val.split('-');
+            params.set('year', y);
+            params.set('month', m);
+            params.set('day', d);
+            params.delete('start');
+            params.delete('end');
+          }
+          params.delete('show');
+        } else {
+          params.delete('year');
+          params.delete('month');
+          params.delete('day');
+          params.delete('start');
+          params.delete('end');
+          params.set('show', 'all');
+        }
         window.location.search = params.toString();
       }
-      yearSel.addEventListener('change', updatePeriod);
-      monthSel.addEventListener('change', updatePeriod);
+      if (dateSel) {
+        flatpickr(dateSel, {
+          mode: 'range',
+          dateFormat: 'Y-m-d',
+          defaultDate: dateSel.value ? dateSel.value.split(' to ') : null,
+          allowInput: true,
+          onChange: function(selectedDates, dateStr) {
+            if (selectedDates.length === 2 || selectedDates.length === 0) {
+              updatePeriod(dateStr);
+            }
+          }
+        });
+      }
+      const prevBtn = document.getElementById('prev-day');
+      const nextBtn = document.getElementById('next-day');
+      if (prevBtn) prevBtn.addEventListener('click', () => {
+        const url = prevBtn.dataset.url;
+        if (url) window.location.href = url;
+      });
+      if (nextBtn) nextBtn.addEventListener('click', () => {
+        const url = nextBtn.dataset.url;
+        if (url) window.location.href = url;
+      });
     }
 
     function setupInteractions() {

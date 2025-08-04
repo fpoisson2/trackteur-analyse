@@ -1,6 +1,10 @@
 import os
 import sys
-from datetime import date, timedelta
+import json
+import re
+from datetime import date, timedelta, datetime
+
+from pytest import approx
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
@@ -39,6 +43,7 @@ def make_app():
         today = date.today()
         prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
         prev_year = today - timedelta(days=365)
+        yesterday = today - timedelta(days=1)
         dz1 = DailyZone(
             equipment_id=eq.id,
             date=today,
@@ -51,11 +56,17 @@ def make_app():
             surface_ha=1.0,
             polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
         )
+        dz_yesterday = DailyZone(
+            equipment_id=eq.id,
+            date=yesterday,
+            surface_ha=1.0,
+            polygon_wkt='POLYGON((2 0,3 0,3 1,2 1,2 0))',
+        )
         dz_prev_month = DailyZone(
             equipment_id=eq.id,
             date=prev_month,
             surface_ha=1.0,
-            polygon_wkt='POLYGON((2 0,3 0,3 1,2 1,2 0))',
+            polygon_wkt='POLYGON((2 2,3 2,3 3,2 3,2 2))',
         )
         dz_prev_year = DailyZone(
             equipment_id=eq.id,
@@ -63,7 +74,9 @@ def make_app():
             surface_ha=1.0,
             polygon_wkt='POLYGON((4 0,5 0,5 1,4 1,4 0))',
         )
-        db.session.add_all([dz1, dz2, dz_prev_month, dz_prev_year])
+        db.session.add_all(
+            [dz1, dz2, dz_yesterday, dz_prev_month, dz_prev_year]
+        )
         for i in range(3):
             db.session.add(
                 Position(
@@ -76,8 +89,16 @@ def make_app():
         db.session.add(
             Position(
                 equipment_id=eq.id,
-                latitude=2.0,
-                longitude=0.0,
+                latitude=0.5,
+                longitude=2.5,
+                timestamp=yesterday,
+            )
+        )
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=2.5,
+                longitude=2.5,
                 timestamp=prev_month,
             )
         )
@@ -89,6 +110,15 @@ def make_app():
                 timestamp=prev_year,
             )
         )
+        nozone_day = today - timedelta(days=2)
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=6.0,
+                longitude=0.0,
+                timestamp=nozone_day,
+            )
+        )
         db.session.commit()
     return app
 
@@ -98,6 +128,12 @@ def login(client):
         "/login",
         data={"username": "admin", "password": "pass"},
     )
+
+
+def get_js_array(html: str, var_name: str):
+    match = re.search(rf"const {var_name} = (\[.*?\]);", html)
+    assert match, f"{var_name} not found"
+    return json.loads(match.group(1))
 
 
 def test_equipment_detail_page_loads():
@@ -113,6 +149,65 @@ def test_equipment_detail_page_loads():
     assert "map-container" in html
     assert "zones-table" in html
     assert html.find('id="map-container"') < html.find('id="zones-table"')
+
+
+def test_equipment_defaults_to_last_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert f'value="{today.isoformat()}"' in html
+
+
+def test_multi_pass_zone_included():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        url = (
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+        resp = client.get(url)
+    html = resp.data.decode()
+    assert '<td>2</td>' in html
+
+
+def test_day_menu_excludes_days_without_zones():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        nz = date.today() - timedelta(days=2)
+        resp = client.get(
+            f"/equipment/{eq.id}?year={nz.year}&month={nz.month}"
+        )
+    html = resp.data.decode()
+    dates = get_js_array(html, "availableDates")
+    assert nz.isoformat() not in dates
+
+
+def test_equipment_page_has_day_navigation():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert 'id="prev-day"' in html
+    assert 'id="next-day"' in html
 
 
 def test_tracks_and_points_geojson():
@@ -414,7 +509,7 @@ def test_zones_loaded_once_on_page_load():
     html = resp.data.decode()
     assert "zonesLoaded" in html
     assert "if (!zonesLoaded)" in html
-    assert "zones.geojson?zoom=17" in html
+    assert "zones.geojson" in html
 
 
 def test_equipment_page_has_period_selectors():
@@ -426,32 +521,71 @@ def test_equipment_page_has_period_selectors():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert 'id="year-select"' in html
-    assert 'id="month-select"' in html
+    assert 'id="date-select"' in html
 
 
-def test_zones_geojson_ignores_period():
+def test_zones_geojson_filters_by_day():
     app = make_app()
     client = app.test_client()
     login(client)
 
     with app.app_context():
         eq = Equipment.query.first()
-        prev_month = (
-            date.today().replace(day=1) - timedelta(days=1)
-        ).replace(day=1)
+        today = date.today()
         resp = client.get(
-            f"/equipment/{eq.id}/zones.geojson?"
-            f"year={prev_month.year}&month={prev_month.month}&zoom=12"
+            f"/equipment/{eq.id}/zones.geojson?year={today.year}"
+            f"&month={today.month}&day={today.day}&zoom=12"
         )
     data = resp.get_json()
-    # Les paramètres de période sont ignorés : toutes les zones sont renvoyées
-    assert len(data["features"]) == 3
-    dates = [d for f in data["features"] for d in f["properties"]["dates"]]
-    assert str(prev_month) in dates
+    for feat in data["features"]:
+        assert all(d == today.isoformat() for d in feat["properties"]["dates"])
 
 
-def test_points_geojson_ignores_period():
+def test_zones_geojson_filters_by_range():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        resp = client.get(
+            f"/equipment/{eq.id}/zones.geojson?start={yesterday.isoformat()}&"
+            f"end={today.isoformat()}&zoom=12",
+        )
+
+    data = resp.get_json()
+    for feat in data["features"]:
+        for d in feat["properties"]["dates"]:
+            dd = date.fromisoformat(d)
+            assert yesterday <= dd <= today
+
+
+def test_zones_geojson_range_with_gap():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        resp = client.get(
+            f"/equipment/{eq.id}/zones.geojson?start={prev_month.isoformat()}&"
+            f"end={today.isoformat()}&zoom=12",
+        )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    all_dates = []
+    for feat in data["features"]:
+        all_dates.extend(feat["properties"]["dates"])
+    assert today.isoformat() in all_dates
+    assert prev_month.isoformat() in all_dates
+
+
+def test_points_geojson_filters_by_day():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -461,11 +595,109 @@ def test_points_geojson_ignores_period():
         prev_year = date.today() - timedelta(days=365)
         resp = client.get(
             f"/equipment/{eq.id}/points.geojson?"
-            f"year={prev_year.year}&month={prev_year.month}&limit=100"
+            f"year={prev_year.year}&month={prev_year.month}"
+            f"&day={prev_year.day}&limit=100"
         )
     data = resp.get_json()
-    # L'échantillon contient toutes les positions malgré le filtre
-    assert len(data["features"]) == 5
+    assert len(data["features"]) == 1
+
+
+def test_points_geojson_range_with_gap():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        prev_year = today - timedelta(days=365)
+        resp = client.get(
+            f"/equipment/{eq.id}/points.geojson?start={prev_year.isoformat()}&"
+            f"end={today.isoformat()}"
+        )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["features"]
+
+
+def test_tracks_geojson_filters_cross_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        Track.query.delete()
+        db.session.commit()
+        start = (
+            datetime.combine(
+                date.today() - timedelta(days=1), datetime.min.time()
+            )
+            + timedelta(hours=23)
+        )
+        end = (
+            datetime.combine(date.today(), datetime.min.time())
+            + timedelta(hours=1)
+        )
+        tr = Track(
+            equipment_id=eq.id,
+            start_time=start,
+            end_time=end,
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        db.session.add(tr)
+        db.session.commit()
+        eqid = eq.id
+        today = date.today()
+        prev = today - timedelta(days=1)
+
+    resp = client.get(
+        f"/equipment/{eqid}/tracks.geojson?"
+        f"year={today.year}&month={today.month}&day={today.day}"
+    )
+    data = resp.get_json()
+    assert len(data["features"]) == 1
+
+    resp = client.get(
+        f"/equipment/{eqid}/tracks.geojson?"
+        f"year={prev.year}&month={prev.month}&day={prev.day}"
+    )
+    data = resp.get_json()
+    assert len(data["features"]) == 1
+
+
+def test_tracks_geojson_range_with_gap():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        Track.query.delete()
+        db.session.commit()
+        tr = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(date.today(), datetime.min.time()),
+            end_time=(
+                datetime.combine(date.today(), datetime.min.time())
+                + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        db.session.add(tr)
+        db.session.commit()
+        today = date.today()
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        url = (
+            f"/equipment/{eq.id}/tracks.geojson?"
+            f"start={prev_month.isoformat()}&end={today.isoformat()}"
+        )
+        resp = client.get(url)
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["features"]
 
 
 def test_equipment_detail_filters_by_period():
@@ -489,3 +721,121 @@ def test_equipment_detail_filters_by_period():
     rows = soup.select("#zones-table tbody tr")
     assert len(rows) == 1
     assert prev_month.isoformat() in rows[0].find_all("td")[0].text
+
+
+def test_equipment_detail_filters_by_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp = client.get(
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert len(rows) == 1
+    assert today.isoformat() in rows[0].find_all("td")[0].text
+
+
+def test_initial_bounds_reflect_selected_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp_all = client.get(f"/equipment/{eq.id}?show=all")
+        resp_day = client.get(
+            f"/equipment/{eq.id}?year={today.year}"
+            f"&month={today.month}&day={today.day}"
+        )
+
+    bounds_all = get_js_array(resp_all.data.decode(), "initialBounds")
+    bounds_day = get_js_array(resp_day.data.decode(), "initialBounds")
+
+    width_all = bounds_all[2] - bounds_all[0]
+    width_day = bounds_day[2] - bounds_day[0]
+
+    assert width_all == approx(5 * width_day, rel=0.1)
+    assert bounds_day[0] == approx(bounds_all[0])
+    assert bounds_day[1] == approx(bounds_all[1])
+
+
+def test_equipment_detail_filters_by_range():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        resp = client.get(
+            f"/equipment/{eq.id}?start={yesterday.isoformat()}&"
+            f"end={today.isoformat()}"
+        )
+
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert len(rows) == 2
+    dates = [r.find_all("td")[0].text for r in rows]
+    assert any(yesterday.isoformat() in d for d in dates)
+    assert any(today.isoformat() in d for d in dates)
+
+
+def test_equipment_detail_range_with_gap():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        resp = client.get(
+            f"/equipment/{eq.id}?start={prev_month.isoformat()}&"
+            f"end={today.isoformat()}"
+        )
+
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert rows
+    dates = [r.find_all("td")[0].text for r in rows]
+    assert any(prev_month.isoformat() in d for d in dates)
+    assert any(today.isoformat() in d for d in dates)
+
+
+def test_initial_bounds_include_tracks():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        track = Track(
+            equipment_id=eq.id,
+            start_time=date.today(),
+            end_time=date.today(),
+            line_wkt="LINESTRING(10 0,11 0)",
+        )
+        db.session.add(track)
+        db.session.commit()
+        resp = client.get(f"/equipment/{eq.id}?show=all")
+
+    bounds = get_js_array(resp.data.decode(), "initialBounds")
+    assert bounds[2] > 9
