@@ -467,20 +467,11 @@ def create_app():
 
         bounds = zone.get_bounds_for_equipment(equipment_id)
 
-        years = sorted({d.year for d in dates})
-        months = sorted(
-            {d.month for d in dates if year is None or d.year == year}
-        )
-        if year is not None and month is not None:
-            days = sorted(
-                {d.day for d in dates if d.year == year and d.month == month}
-            )
-        else:
-            days = []
+        sorted_dates = sorted(dates)
+        available_dates = [d.isoformat() for d in sorted_dates]
 
         prev_day_url = next_day_url = None
         if year is not None and month is not None and day is not None:
-            sorted_dates = sorted(dates)
             current = date(year, month, day)
             if current in sorted_dates:
                 idx = sorted_dates.index(current)
@@ -509,9 +500,7 @@ def create_app():
             zones=zones,
             bounds=bounds,
             zone_bounds=zone_bounds,
-            years=years,
-            months=months,
-            days=days,
+            available_dates=available_dates,
             year=year,
             month=month,
             day=day,

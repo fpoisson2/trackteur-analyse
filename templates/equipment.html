@@ -37,26 +37,11 @@
       </div>
     <div>
       <div class="d-flex mb-2 align-items-center">
-        <select id="year-select" class="form-select form-select-sm me-2">
-          <option value="">Toutes les années</option>
-          {% for y in years %}
-          <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
-          {% endfor %}
-        </select>
-        <select id="month-select" class="form-select form-select-sm me-2">
-          <option value="">Tous les mois</option>
-          {% for m in months %}
-          <option value="{{ m }}" {% if month == m %}selected{% endif %}>{{ '%02d' % m }}</option>
-          {% endfor %}
-        </select>
         <div class="input-group input-group-sm" style="width: auto;">
           <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
-          <select id="day-select" class="form-select" {% if not days %}disabled{% endif %}>
-            <option value="">Tous les jours</option>
-            {% for d in days %}
-            <option value="{{ d }}" {% if day == d %}selected{% endif %}>{{ '%02d' % d }}</option>
-            {% endfor %}
-          </select>
+          <input type="date" id="date-select" class="form-control" {% if not available_dates %}disabled{% endif %}
+                 value="{{ '%04d-%02d-%02d' % (year, month, day) if year is not none and month is not none and day is not none else '' }}"
+                 {% if available_dates %}min="{{ available_dates[0] }}" max="{{ available_dates[-1] }}"{% endif %}>
           <button id="next-day" class="btn btn-outline-secondary" {% if not next_day_url %}disabled{% endif %} data-url="{{ next_day_url or '' }}">&gt;</button>
         </div>
       </div>
@@ -102,6 +87,7 @@
     const currentMonth = {{ month if month is not none else 'null' }};
     const currentDay = {{ day if day is not none else 'null' }};
     const showAll = {{ 'true' if show_all else 'false' }};
+    const availableDates = {{ available_dates|tojson }};
 
     function rebuildDateLayers() {
       dateLayers = {};
@@ -290,20 +276,25 @@
     }
 
     function setupPeriodSelectors() {
-      const yearSel = document.getElementById('year-select');
-      const monthSel = document.getElementById('month-select');
-      const daySel = document.getElementById('day-select');
+      const dateSel = document.getElementById('date-select');
       function updatePeriod() {
         const params = new URLSearchParams(window.location.search);
-        if (yearSel.value) params.set('year', yearSel.value); else params.delete('year');
-        if (monthSel.value) params.set('month', monthSel.value); else params.delete('month');
-        if (yearSel.value && monthSel.value && daySel.value) params.set('day', daySel.value); else params.delete('day');
-        if (!yearSel.value && !monthSel.value && !daySel.value) params.set('show', 'all'); else params.delete('show');
+        if (dateSel.value) {
+          if (!availableDates.includes(dateSel.value)) return;
+          const [y, m, d] = dateSel.value.split('-');
+          params.set('year', y);
+          params.set('month', m);
+          params.set('day', d);
+          params.delete('show');
+        } else {
+          params.delete('year');
+          params.delete('month');
+          params.delete('day');
+          params.set('show', 'all');
+        }
         window.location.search = params.toString();
       }
-      yearSel.addEventListener('change', updatePeriod);
-      monthSel.addEventListener('change', updatePeriod);
-      daySel.addEventListener('change', updatePeriod);
+      if (dateSel) dateSel.addEventListener('change', updatePeriod);
       const prevBtn = document.getElementById('prev-day');
       const nextBtn = document.getElementById('next-day');
       if (prevBtn) prevBtn.addEventListener('click', () => {

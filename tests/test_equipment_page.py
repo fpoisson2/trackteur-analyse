@@ -134,7 +134,7 @@ def test_equipment_defaults_to_last_day():
         today = date.today()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert f'<option value="{today.day}" selected' in html
+    assert f'value="{today.isoformat()}"' in html
 
 
 def test_multi_pass_zone_included():
@@ -166,7 +166,7 @@ def test_day_menu_excludes_days_without_zones():
             f"/equipment/{eq.id}?year={nz.year}&month={nz.month}"
         )
     html = resp.data.decode()
-    assert f'<option value="{nz.day}"' not in html
+    assert nz.isoformat() not in html
 
 
 def test_equipment_page_has_day_navigation():
@@ -493,9 +493,7 @@ def test_equipment_page_has_period_selectors():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert 'id="year-select"' in html
-    assert 'id="month-select"' in html
-    assert 'id="day-select"' in html
+    assert 'id="date-select"' in html
 
 
 def test_zones_geojson_filters_by_day():
