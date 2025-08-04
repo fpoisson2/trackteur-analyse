@@ -428,6 +428,7 @@ def test_equipment_page_has_period_selectors():
     html = resp.data.decode()
     assert 'id="year-select"' in html
     assert 'id="month-select"' in html
+    assert 'id="day-select"' in html
 
 
 def test_zones_geojson_ignores_period():
@@ -442,7 +443,8 @@ def test_zones_geojson_ignores_period():
         ).replace(day=1)
         resp = client.get(
             f"/equipment/{eq.id}/zones.geojson?"
-            f"year={prev_month.year}&month={prev_month.month}&zoom=12"
+            f"year={prev_month.year}&month={prev_month.month}"
+            f"&day={prev_month.day}&zoom=12"
         )
     data = resp.get_json()
     # Les paramètres de période sont ignorés : toutes les zones sont renvoyées
@@ -461,7 +463,8 @@ def test_points_geojson_ignores_period():
         prev_year = date.today() - timedelta(days=365)
         resp = client.get(
             f"/equipment/{eq.id}/points.geojson?"
-            f"year={prev_year.year}&month={prev_year.month}&limit=100"
+            f"year={prev_year.year}&month={prev_year.month}"
+            f"&day={prev_year.day}&limit=100"
         )
     data = resp.get_json()
     # L'échantillon contient toutes les positions malgré le filtre
@@ -489,3 +492,24 @@ def test_equipment_detail_filters_by_period():
     rows = soup.select("#zones-table tbody tr")
     assert len(rows) == 1
     assert prev_month.isoformat() in rows[0].find_all("td")[0].text
+
+
+def test_equipment_detail_filters_by_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp = client.get(
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert len(rows) == 1
+    assert today.isoformat() in rows[0].find_all("td")[0].text

@@ -70,8 +70,10 @@ _to_webmerc = pyproj.Transformer.from_crs(
 ).transform
 
 # Cache pour les zones agrégées
-# Clé: (equipment_id, year, month)
-_AGG_CACHE: Dict[Tuple[int, Optional[int], Optional[int]], List[dict]] = {}
+# Clé: (equipment_id, year, month, day)
+_AGG_CACHE: Dict[
+    Tuple[int, Optional[int], Optional[int], Optional[int]], List[dict]
+] = {}
 
 
 def invalidate_cache(equipment_id: int) -> None:
@@ -90,29 +92,36 @@ def geom_bounds(geom):
 
 
 def get_aggregated_zones(
-    equipment_id: int, year: Optional[int] = None, month: Optional[int] = None
+    equipment_id: int,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    day: Optional[int] = None,
 ):
     """Retourne les zones agrégées pour un équipement, en cache.
 
-    Les paramètres ``year`` et ``month`` permettent de filtrer les zones
-    journalières avant agrégation. Le cache est segmenté par période afin de
-    conserver des performances acceptables même en cas de navigation
+    Les paramètres ``year``, ``month`` et ``day`` permettent de filtrer les
+    zones journalières avant agrégation. Le cache est segmenté par période afin
+    de conserver des performances acceptables même en cas de navigation
     temporelle.
     """
 
-    key = (equipment_id, year, month)
+    key = (equipment_id, year, month, day)
     if key not in _AGG_CACHE:
         from shapely import wkt
-        from datetime import date
+        from datetime import date, timedelta
 
         query = DailyZone.query.filter_by(equipment_id=equipment_id)
         if year is not None:
             if month is not None:
-                start = date(year, month, 1)
-                if month == 12:
-                    end = date(year + 1, 1, 1)
+                if day is not None:
+                    start = date(year, month, day)
+                    end = start + timedelta(days=1)
                 else:
-                    end = date(year, month + 1, 1)
+                    start = date(year, month, 1)
+                    if month == 12:
+                        end = date(year + 1, 1, 1)
+                    else:
+                        end = date(year, month + 1, 1)
             else:
                 start = date(year, 1, 1)
                 end = date(year + 1, 1, 1)

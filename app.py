@@ -407,12 +407,13 @@ def create_app():
         eq = Equipment.query.get_or_404(equipment_id)
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
+        day = request.args.get('day', type=int)
         # Les zones sont agrégées globalement pour conserver des identifiants
         # stables entre la carte (non filtrée) et le tableau (filtré).
         agg_all = zone.get_aggregated_zones(equipment_id)
-        if year is not None or month is not None:
+        if year is not None or month is not None or day is not None:
             agg_period = zone.get_aggregated_zones(
-                equipment_id, year=year, month=month
+                equipment_id, year=year, month=month, day=day
             )
         else:
             agg_period = agg_all
@@ -454,6 +455,12 @@ def create_app():
         months = sorted(
             {d.month for d in dates if year is None or d.year == year}
         )
+        if year is not None and month is not None:
+            days = sorted(
+                {d.day for d in dates if d.year == year and d.month == month}
+            )
+        else:
+            days = []
 
         return render_template(
             'equipment.html',
@@ -463,8 +470,10 @@ def create_app():
             zone_bounds=zone_bounds,
             years=years,
             months=months,
+            days=days,
             year=year,
             month=month,
+            day=day,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')

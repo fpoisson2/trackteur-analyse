@@ -43,10 +43,16 @@
           <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
           {% endfor %}
         </select>
-        <select id="month-select" class="form-select form-select-sm">
+        <select id="month-select" class="form-select form-select-sm me-2">
           <option value="">Tous les mois</option>
           {% for m in months %}
           <option value="{{ m }}" {% if month == m %}selected{% endif %}>{{ '%02d' % m }}</option>
+          {% endfor %}
+        </select>
+        <select id="day-select" class="form-select form-select-sm" {% if not days %}disabled{% endif %}>
+          <option value="">Tous les jours</option>
+          {% for d in days %}
+          <option value="{{ d }}" {% if day == d %}selected{% endif %}>{{ '%02d' % d }}</option>
           {% endfor %}
         </select>
       </div>
@@ -262,14 +268,17 @@
     function setupPeriodSelectors() {
       const yearSel = document.getElementById('year-select');
       const monthSel = document.getElementById('month-select');
+      const daySel = document.getElementById('day-select');
       function updatePeriod() {
         const params = new URLSearchParams(window.location.search);
         if (yearSel.value) params.set('year', yearSel.value); else params.delete('year');
         if (monthSel.value) params.set('month', monthSel.value); else params.delete('month');
+        if (yearSel.value && monthSel.value && daySel.value) params.set('day', daySel.value); else params.delete('day');
         window.location.search = params.toString();
       }
       yearSel.addEventListener('change', updatePeriod);
       monthSel.addEventListener('change', updatePeriod);
+      daySel.addEventListener('change', updatePeriod);
     }
 
     function setupInteractions() {
