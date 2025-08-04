@@ -27,13 +27,13 @@
       transform: translateY(calc(100% - 3rem));
       transition: transform .3s ease-in-out;
       z-index: 1000;
-      overflow-y: hidden;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       touch-action: none;
     }
     .bottom-sheet.open {
       transform: translateY(0);
-      overflow-y: auto;
-      touch-action: pan-y;
     }
     .bottom-sheet .drag-handle {
       width: 50px;
@@ -43,6 +43,12 @@
       margin: 8px auto;
       cursor: grab;
       touch-action: none;
+    }
+    .bottom-sheet .sheet-content {
+      flex: 1;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
     }
   </style>
 </head>
@@ -56,7 +62,7 @@
   {% if zones %}
   <div id="info-sheet" class="bottom-sheet">
     <div class="drag-handle"></div>
-    <div class="p-3">
+    <div class="sheet-content p-3">
       <h5 class="mb-3">{{ equipment.name }}</h5>
       <div id="date-nav" class="input-group mb-3">
         <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
@@ -435,6 +441,7 @@
       const sheet = document.getElementById('info-sheet');
       if (!sheet) return;
       const handle = sheet.querySelector('.drag-handle');
+      const content = sheet.querySelector('.sheet-content');
       const collapsed = sheet.offsetHeight - 48;
       let current = collapsed;
       sheet.style.transform = `translateY(${current}px)`;
@@ -478,7 +485,7 @@
       }
 
       sheet.addEventListener('pointerdown', e => {
-        if (sheet.classList.contains('open')) return;
+        if (sheet.classList.contains('open') && content.scrollTop > 0) return;
         onDown(e);
       });
 

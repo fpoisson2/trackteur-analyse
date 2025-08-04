@@ -379,7 +379,7 @@ def test_map_container_allows_touch():
     assert "touch-action: none" not in tag
 
 
-def test_bottom_sheet_blocks_scroll_until_open():
+def test_bottom_sheet_uses_inner_scroll_container():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -389,10 +389,12 @@ def test_bottom_sheet_blocks_scroll_until_open():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert ".bottom-sheet {" in html
-    assert "overflow-y: hidden" in html
-    assert "touch-action: none" in html
-    assert ".bottom-sheet.open {" in html
-    assert "overflow-y: auto" in html
+    assert "overflow: hidden" in html
+    assert '<div class="drag-handle"></div>' in html
+    handle_pos = html.find('class="drag-handle"')
+    content_pos = html.find('class="sheet-content')
+    assert handle_pos != -1 and content_pos != -1 and handle_pos < content_pos
+    assert "overscroll-behavior: contain" in html
     assert "touch-action: pan-y" in html
 
 
