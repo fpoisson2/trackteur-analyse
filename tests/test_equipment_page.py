@@ -89,6 +89,15 @@ def make_app():
                 timestamp=prev_year,
             )
         )
+        nozone_day = today - timedelta(days=2)
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=6.0,
+                longitude=0.0,
+                timestamp=nozone_day,
+            )
+        )
         db.session.commit()
     return app
 
@@ -126,6 +135,38 @@ def test_equipment_defaults_to_last_day():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert f'<option value="{today.day}" selected' in html
+
+
+def test_multi_pass_zone_included():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        url = (
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+        resp = client.get(url)
+    html = resp.data.decode()
+    assert '<td>2</td>' in html
+
+
+def test_day_menu_excludes_days_without_zones():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        nz = date.today() - timedelta(days=2)
+        resp = client.get(
+            f"/equipment/{eq.id}?year={nz.year}&month={nz.month}"
+        )
+    html = resp.data.decode()
+    assert f'<option value="{nz.day}"' not in html
 
 
 def test_equipment_page_has_day_navigation():

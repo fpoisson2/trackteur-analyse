@@ -11,7 +11,7 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, DailyZone, Config, Track
+from models import db, User, Equipment, Position, Config, Track
 import zone
 
 from datetime import datetime, date, timedelta
@@ -410,20 +410,12 @@ def create_app():
         day = request.args.get('day', type=int)
         show_all = request.args.get('show') == 'all'
 
+        agg_all = zone.get_aggregated_zones(equipment_id)
         dates = {
-            dz.date
-            for dz in DailyZone.query.filter_by(
-                equipment_id=equipment_id
-            ).all()
-            if dz.date
+            date.fromisoformat(d)
+            for z in agg_all
+            for d in z.get("dates", [])
         }
-        for tr in Track.query.filter_by(equipment_id=equipment_id).all():
-            if tr.start_time:
-                cur = tr.start_time.date()
-                end = tr.end_time.date() if tr.end_time else cur
-                while cur <= end:
-                    dates.add(cur)
-                    cur += timedelta(days=1)
 
         if (
             not show_all
@@ -435,7 +427,6 @@ def create_app():
             last = max(dates)
             year, month, day = last.year, last.month, last.day
 
-        agg_all = zone.get_aggregated_zones(equipment_id)
         if show_all or (year is None and month is None and day is None):
             agg_period = agg_all
         else:
@@ -443,8 +434,9 @@ def create_app():
                 equipment_id, year=year, month=month, day=day
             )
 
-        zones = []
+        zones: list = []
         zone_bounds = {}
+        grouped: dict = {}
         for z in agg_period:
             full_idx = next(
                 (
@@ -456,16 +448,21 @@ def create_app():
             )
             if full_idx is None:
                 continue
-            zones.append(
-                {
-                    "id": full_idx,
-                    "dates": ", ".join(sorted(set(z["dates"]))),
-                    "pass_count": len(z["dates"]),
-                    "surface_ha": z["geometry"].area / 1e4,
-                }
-            )
+            info = grouped.setdefault(full_idx, {"dates": [], "surface": 0.0})
+            info["dates"].extend(z.get("dates", []))
+            info["surface"] += z["geometry"].area / 1e4
             zone_bounds[full_idx] = zone.geom_bounds(
                 agg_all[full_idx]["geometry"]
+            )
+
+        for idx, info in grouped.items():
+            zones.append(
+                {
+                    "id": idx,
+                    "dates": ", ".join(sorted(set(info["dates"]))),
+                    "pass_count": len(info["dates"]),
+                    "surface_ha": info["surface"],
+                }
             )
 
         bounds = zone.get_bounds_for_equipment(equipment_id)
