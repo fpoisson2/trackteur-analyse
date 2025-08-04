@@ -1,7 +1,7 @@
 import os
 import logging
 
-from flask import Flask, render_template, request, redirect, url_for, abort
+from flask import Flask, render_template, request, redirect, url_for
 from flask_login import (
     LoginManager,
     login_user,
@@ -421,13 +421,6 @@ def create_app():
             for d in z.get("dates", [])
         }
 
-        if start_date and end_date:
-            current = start_date
-            while current <= end_date:
-                if current not in dates:
-                    abort(404)
-                current += timedelta(days=1)
-
         if (
             not show_all
             and start_date is None
@@ -597,18 +590,6 @@ def create_app():
         end_str = request.args.get('end')
         start = date.fromisoformat(start_str) if start_str else None
         end = date.fromisoformat(end_str) if end_str else None
-        if start and end:
-            agg_all = zone.get_aggregated_zones(equipment_id)
-            available = {
-                date.fromisoformat(d)
-                for z in agg_all
-                for d in z.get("dates", [])
-            }
-            cur = start
-            while cur <= end:
-                if cur not in available:
-                    abort(404)
-                cur += timedelta(days=1)
         agg = zone.get_aggregated_zones(
             equipment_id,
             year=year,
@@ -674,18 +655,6 @@ def create_app():
         if start_str or end_str:
             start_d = date.fromisoformat(start_str) if start_str else None
             end_d = date.fromisoformat(end_str) if end_str else None
-            if start_d and end_d:
-                agg_all = zone.get_aggregated_zones(equipment_id)
-                available = {
-                    date.fromisoformat(d)
-                    for z in agg_all
-                    for d in z.get("dates", [])
-                }
-                cur = start_d
-                while cur <= end_d:
-                    if cur not in available:
-                        abort(404)
-                    cur += timedelta(days=1)
             if start_d:
                 start_dt = datetime.combine(start_d, datetime.min.time())
                 query = query.filter(Position.timestamp >= start_dt)
@@ -760,18 +729,6 @@ def create_app():
         if start_str or end_str:
             start_d = date.fromisoformat(start_str) if start_str else None
             end_d = date.fromisoformat(end_str) if end_str else None
-            if start_d and end_d:
-                agg_all = zone.get_aggregated_zones(equipment_id)
-                available = {
-                    date.fromisoformat(d)
-                    for z in agg_all
-                    for d in z.get("dates", [])
-                }
-                cur = start_d
-                while cur <= end_d:
-                    if cur not in available:
-                        abort(404)
-                    cur += timedelta(days=1)
             if start_d is not None:
                 start_dt = datetime.combine(start_d, datetime.min.time())
                 query = query.filter(Track.end_time >= start_dt)

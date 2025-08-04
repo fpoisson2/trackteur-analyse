@@ -303,34 +303,14 @@
         }
         window.location.search = params.toString();
       }
-      if (dateSel && availableDates.length) {
-        const availableSet = new Set(availableDates);
+      if (dateSel) {
         flatpickr(dateSel, {
           mode: 'range',
-          enable: availableDates,
           dateFormat: 'Y-m-d',
           defaultDate: dateSel.value ? dateSel.value.split(' to ') : null,
           allowInput: true,
-          onChange: function(selectedDates, dateStr, instance) {
-            if (selectedDates.length === 2) {
-              let cur = new Date(selectedDates[0]);
-              const end = selectedDates[1];
-              let valid = true;
-              while (cur <= end) {
-                const iso = cur.toISOString().slice(0, 10);
-                if (!availableSet.has(iso)) {
-                  valid = false;
-                  break;
-                }
-                cur.setDate(cur.getDate() + 1);
-              }
-              if (valid) {
-                updatePeriod(dateStr);
-              } else {
-                instance.clear();
-                alert('Plage invalide');
-              }
-            } else if (selectedDates.length === 0) {
+          onChange: function(selectedDates, dateStr) {
+            if (selectedDates.length === 2 || selectedDates.length === 0) {
               updatePeriod(dateStr);
             }
           }

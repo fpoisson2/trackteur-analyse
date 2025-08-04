@@ -562,7 +562,7 @@ def test_zones_geojson_filters_by_range():
             assert yesterday <= dd <= today
 
 
-def test_zones_geojson_range_with_gap_returns_404():
+def test_zones_geojson_range_with_gap():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -576,7 +576,13 @@ def test_zones_geojson_range_with_gap_returns_404():
             f"end={today.isoformat()}&zoom=12",
         )
 
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    data = resp.get_json()
+    all_dates = []
+    for feat in data["features"]:
+        all_dates.extend(feat["properties"]["dates"])
+    assert today.isoformat() in all_dates
+    assert prev_month.isoformat() in all_dates
 
 
 def test_points_geojson_filters_by_day():
@@ -594,6 +600,25 @@ def test_points_geojson_filters_by_day():
         )
     data = resp.get_json()
     assert len(data["features"]) == 1
+
+
+def test_points_geojson_range_with_gap():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        prev_year = today - timedelta(days=365)
+        resp = client.get(
+            f"/equipment/{eq.id}/points.geojson?start={prev_year.isoformat()}&"
+            f"end={today.isoformat()}"
+        )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["features"]
 
 
 def test_tracks_geojson_filters_cross_day():
@@ -640,6 +665,39 @@ def test_tracks_geojson_filters_cross_day():
     )
     data = resp.get_json()
     assert len(data["features"]) == 1
+
+
+def test_tracks_geojson_range_with_gap():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        Track.query.delete()
+        db.session.commit()
+        tr = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(date.today(), datetime.min.time()),
+            end_time=(
+                datetime.combine(date.today(), datetime.min.time())
+                + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        db.session.add(tr)
+        db.session.commit()
+        today = date.today()
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        url = (
+            f"/equipment/{eq.id}/tracks.geojson?"
+            f"start={prev_month.isoformat()}&end={today.isoformat()}"
+        )
+        resp = client.get(url)
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["features"]
 
 
 def test_equipment_detail_filters_by_period():
@@ -736,7 +794,7 @@ def test_equipment_detail_filters_by_range():
     assert any(today.isoformat() in d for d in dates)
 
 
-def test_equipment_detail_range_with_gap_returns_404():
+def test_equipment_detail_range_with_gap():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -750,7 +808,16 @@ def test_equipment_detail_range_with_gap_returns_404():
             f"end={today.isoformat()}"
         )
 
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert rows
+    dates = [r.find_all("td")[0].text for r in rows]
+    assert any(prev_month.isoformat() in d for d in dates)
+    assert any(today.isoformat() in d for d in dates)
 
 
 def test_initial_bounds_include_tracks():
