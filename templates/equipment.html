@@ -51,6 +51,10 @@
       <div class="col-md-8">
         <h2>Carte des passages</h2>
         <p class="text-muted">Les couleurs indiquent le nombre de passages sur chaque zone.</p>
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="togglePoints">
+          <label class="form-check-label" for="togglePoints">Afficher les points GPS</label>
+        </div>
         <div id="map-container"></div>
       </div>
     </div>
@@ -63,7 +67,9 @@
   <script>
     let map;
     let zoneLayer;
+    let trackLayer;
     let pointLayer;
+    let showPoints = false;
     let dateLayers = {};
     let featureLayers = {};
     let skipFetch = false;
@@ -162,14 +168,26 @@
       }
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
-      const pp = fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
+      const tp = fetch(`/equipment/${equipmentId}/track.geojson?bbox=${bbox}&limit=5000`)
         .then(r => r.json())
-        .then(pointData => {
+        .then(trackData => {
           if (token !== fetchToken) return;
-          pointLayer.clearLayers();
-          pointLayer.addData(pointData);
+          trackLayer.clearLayers();
+          trackLayer.addData(trackData);
         });
-      promises.push(pp);
+      promises.push(tp);
+      if (showPoints) {
+        const pp = fetch(`/equipment/${equipmentId}/points.geojson?bbox=${bbox}&limit=5000`)
+          .then(r => r.json())
+          .then(pointData => {
+            if (token !== fetchToken) return;
+            pointLayer.clearLayers();
+            pointLayer.addData(pointData);
+          });
+        promises.push(pp);
+      } else {
+        pointLayer.clearLayers();
+      }
       return Promise.all(promises);
     }
 
@@ -198,6 +216,9 @@
             highlightZone(zoneId);
           });
         }
+      }).addTo(map);
+      trackLayer = L.geoJSON(null, {
+        style: { color: 'blue', weight: 2 }
       }).addTo(map);
       pointLayer = L.geoJSON(null, {
         pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 })
@@ -229,6 +250,12 @@
     }
 
     function setupInteractions() {
+      const toggle = document.getElementById('togglePoints');
+      toggle.addEventListener('change', () => {
+        showPoints = toggle.checked;
+        fetchData();
+      });
+
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', () => {
           const zoneId = parseInt(row.dataset.zoneId);

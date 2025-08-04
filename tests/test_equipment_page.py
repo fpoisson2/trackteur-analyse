@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
@@ -123,6 +123,63 @@ def test_points_geojson_endpoint():
     assert resp.status_code == 200
     data = resp.get_json()
     assert len(data["features"]) <= 2
+
+
+def test_track_geojson_endpoint():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        db.session.add_all([
+            Position(
+                equipment_id=eq.id,
+                latitude=2.0,
+                longitude=2.0,
+                timestamp=datetime.utcnow(),
+            ),
+            Position(
+                equipment_id=eq.id,
+                latitude=3.0,
+                longitude=3.0,
+                timestamp=datetime.utcnow(),
+            ),
+        ])
+        db.session.commit()
+        resp = client.get(
+            f"/equipment/{eq.id}/track.geojson?bbox=-180,-90,180,90&limit=10"
+        )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["features"]
+    assert data["features"][0]["geometry"]["type"] == "LineString"
+
+
+def test_equipment_page_has_point_toggle():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "togglePoints" in html
+    assert "Afficher les points GPS" in html
+
+
+def test_track_fetched_by_default():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "/track.geojson" in html
+    assert "if (showPoints)" in html
 
 
 def test_equipment_page_contains_highlight_zone():

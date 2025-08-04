@@ -11,7 +11,7 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, Config
+from models import db, User, Equipment, Position, Config, DailyZone
 import zone
 
 from datetime import datetime
@@ -477,6 +477,71 @@ def create_app():
                 },
             })
 
+        return {'type': 'FeatureCollection', 'features': features}
+
+    @app.route('/equipment/<int:equipment_id>/track.geojson')
+    @login_required
+    def equipment_track_geojson(equipment_id):
+        """Return line segments connecting GPS points outside zones."""
+        Equipment.query.get_or_404(equipment_id)
+        bbox = request.args.get('bbox')
+        limit = int(request.args.get('limit', 5000))
+        west = south = east = north = None
+        if bbox:
+            west, south, east, north = [float(x) for x in bbox.split(',')]
+        query = Position.query.filter_by(equipment_id=equipment_id)
+        if bbox:
+            query = query.filter(
+                Position.longitude >= west,
+                Position.longitude <= east,
+                Position.latitude >= south,
+                Position.latitude <= north,
+            )
+        query = query.order_by(Position.timestamp).limit(limit)
+        positions = query.all()
+
+        from shapely import wkt
+        from shapely.geometry import Point
+        from shapely.ops import unary_union, transform as shp_transform
+
+        zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+        polys = [
+            shp_transform(zone._transformer, wkt.loads(z.polygon_wkt))
+            for z in zones
+            if z.polygon_wkt
+        ]
+        union = unary_union(polys) if polys else None
+
+        features = []
+        segment = []
+        for p in positions:
+            pt = Point(p.longitude, p.latitude)
+            if union and union.contains(pt):
+                if len(segment) > 1:
+                    features.append(
+                        {
+                            'type': 'Feature',
+                            'properties': {},
+                            'geometry': {
+                                'type': 'LineString',
+                                'coordinates': segment,
+                            },
+                        }
+                    )
+                segment = []
+            else:
+                segment.append([p.longitude, p.latitude])
+        if len(segment) > 1:
+            features.append(
+                {
+                    'type': 'Feature',
+                    'properties': {},
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': segment,
+                    },
+                }
+            )
         return {'type': 'FeatureCollection', 'features': features}
 
     # Planification de la tâche quotidienne à 2h du matin
