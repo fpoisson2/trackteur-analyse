@@ -317,6 +317,62 @@ def test_process_equipment_creates_tracks(monkeypatch):
             assert all(p.track_id == track.id for p in positions_db)
 
 
+def test_track_includes_zone_endpoints(monkeypatch):
+    for app in setup_db():
+        with app.app_context():
+            eq = zone.Equipment(id_traccar=1, name="eq1")
+            zone.db.session.add(eq)
+            zone.db.session.commit()
+
+            positions = [
+                {
+                    "latitude": 0,
+                    "longitude": 0,
+                    "deviceTime": "2023-01-01T00:00:00Z",
+                },
+                {
+                    "latitude": 0.0005,
+                    "longitude": 0.0005,
+                    "deviceTime": "2023-01-01T00:05:00Z",
+                },
+                {
+                    "latitude": 0.001,
+                    "longitude": 0.001,
+                    "deviceTime": "2023-01-01T00:10:00Z",
+                },
+            ]
+
+            monkeypatch.setattr(
+                zone,
+                "fetch_positions",
+                lambda *a, **k: positions,
+            )
+
+            from datetime import datetime as dt
+
+            def fake_cluster(pos):
+                return [], {
+                    "2023-01-01": [
+                        (0.0005, 0.0005, dt(2023, 1, 1, 0, 5)),
+                    ]
+                }
+
+            monkeypatch.setattr(zone, "cluster_positions", fake_cluster)
+            monkeypatch.setattr(
+                zone, "aggregate_overlapping_zones", lambda z: z
+            )
+
+            zone.process_equipment(eq)
+
+            track = zone.Track.query.first()
+            from shapely import wkt
+
+            coords = list(wkt.loads(track.line_wkt).coords)
+            assert coords[0] == (0.0, 0.0)
+            assert coords[1] == (0.0005, 0.0005)
+            assert coords[-1] == (0.001, 0.001)
+
+
 # ---------- recalculate_hectares_from_positions ----------
 
 def test_recalculate_hectares_from_positions(monkeypatch):

@@ -269,7 +269,7 @@ def test_equipment_page_contains_highlight_rows():
     assert "function highlightRows" in html
 
 
-def test_map_container_has_touch_action():
+def test_map_container_allows_touch():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -278,7 +278,7 @@ def test_map_container_has_touch_action():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "touch-action: none" in html
+    assert "touch-action: none" not in html
 
 
 def test_row_click_uses_instant_zoom():

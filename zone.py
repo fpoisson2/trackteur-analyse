@@ -513,19 +513,47 @@ def process_equipment(eq, since=None):
         prev = None
         for lon, lat, ts in pts:
             if prev and (ts - prev).total_seconds() > 600:
-                if len(current) >= 2:
+                if current:
                     segments.append(current)
                 current = []
             current.append((lon, lat, ts))
             prev = ts
-        if len(current) >= 2:
+        if current:
             segments.append(current)
         for seg in segments:
-            line = LineString([(x, y) for x, y, _ in seg])
+            prev_pos = (
+                Position.query.filter(
+                    Position.equipment_id == eq.id,
+                    Position.timestamp < seg[0][2],
+                )
+                .order_by(Position.timestamp.desc())
+                .first()
+            )
+            next_pos = (
+                Position.query.filter(
+                    Position.equipment_id == eq.id,
+                    Position.timestamp > seg[-1][2],
+                )
+                .order_by(Position.timestamp)
+                .first()
+            )
+            coords: List[tuple] = []
+            if prev_pos:
+                coords.append(
+                    (prev_pos.longitude, prev_pos.latitude, prev_pos.timestamp)
+                )
+            coords.extend(seg)
+            if next_pos:
+                coords.append(
+                    (next_pos.longitude, next_pos.latitude, next_pos.timestamp)
+                )
+            if len(coords) < 2:
+                continue
+            line = LineString([(x, y) for x, y, _ in coords])
             tr = Track(
                 equipment_id=eq.id,
-                start_time=seg[0][2],
-                end_time=seg[-1][2],
+                start_time=coords[0][2],
+                end_time=coords[-1][2],
                 line_wkt=line.wkt,
             )
             db.session.add(tr)
