@@ -9,7 +9,11 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <style>
-    html, body { height: 100%; margin: 0; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      overscroll-behavior-y: none;
+    }
     #map-container { height: 100%; }
     .zone-row { cursor: pointer; }
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
