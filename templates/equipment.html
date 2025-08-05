@@ -29,7 +29,6 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      touch-action: pan-y;
     }
     .bottom-sheet .drag-handle {
       width: 50px;
@@ -53,7 +52,7 @@
   </div>
 
   {% if zones %}
-  <div id="info-sheet" class="bottom-sheet" data-sheet="equipment">
+  <div id="info-sheet" class="bottom-sheet" data-sheet="equipment" data-open="false">
     <div class="drag-handle"></div>
     <div class="sheet-content p-3" data-sheet-content>
       <h5 class="mb-3">{{ equipment.name }}</h5>

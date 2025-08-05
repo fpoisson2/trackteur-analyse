@@ -390,6 +390,7 @@ def test_equipment_sheet_has_data_attributes_and_script():
     html = resp.data.decode()
     assert 'data-sheet="equipment"' in html
     assert 'data-sheet-content' in html
+    assert 'data-open="false"' in html
     assert 'equipment-sheet.js' in html
 
 
