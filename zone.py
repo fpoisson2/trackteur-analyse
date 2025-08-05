@@ -91,6 +91,34 @@ def geom_bounds(geom):
     return geom_wgs.bounds
 
 
+def _determine_period(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    day: Optional[int] = None,
+    start: Optional[dt_date] = None,
+    end: Optional[dt_date] = None,
+) -> Tuple[Optional[dt_date], Optional[dt_date]]:
+    """Calcule la période de filtrage à partir des paramètres fournis."""
+
+    if start is not None or end is not None:
+        return start, end
+
+    if year is not None:
+        if month is not None:
+            if day is not None:
+                d = dt_date(year, month, day)
+                return d, d
+            start_date = dt_date(year, month, 1)
+            if month == 12:
+                end_date = dt_date(year, 12, 31)
+            else:
+                end_date = dt_date(year, month + 1, 1) - timedelta(days=1)
+            return start_date, end_date
+        return dt_date(year, 1, 1), dt_date(year, 12, 31)
+
+    return None, None
+
+
 def get_aggregated_zones(
     equipment_id: int,
     year: Optional[int] = None,
@@ -107,26 +135,9 @@ def get_aggregated_zones(
     acceptables même en cas de navigation temporelle.
     """
 
-    # Déterminer la période de filtrage
-    if start is not None or end is not None:
-        start_date = start
-        end_date = end
-    elif year is not None:
-        if month is not None:
-            if day is not None:
-                start_date = dt_date(year, month, day)
-                end_date = start_date
-            else:
-                start_date = dt_date(year, month, 1)
-                if month == 12:
-                    end_date = dt_date(year, 12, 31)
-                else:
-                    end_date = dt_date(year, month + 1, 1) - timedelta(days=1)
-        else:
-            start_date = dt_date(year, 1, 1)
-            end_date = dt_date(year, 12, 31)
-    else:
-        start_date = end_date = None
+    start_date, end_date = _determine_period(
+        year=year, month=month, day=day, start=start, end=end
+    )
 
     key = (equipment_id, start_date, end_date)
     if key not in _AGG_CACHE:

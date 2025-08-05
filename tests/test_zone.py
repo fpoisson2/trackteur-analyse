@@ -1,7 +1,7 @@
 import os
 import sys
 import types
-from datetime import datetime
+from datetime import datetime, date as dt_date
 
 import pytest
 from shapely.geometry import Polygon, Point, LineString
@@ -32,6 +32,35 @@ class DummyResponse:
     def raise_for_status(self):
         if self.status_code >= 400:
             raise zone.requests.exceptions.HTTPError(response=self)
+
+
+# ---------- _determine_period ----------
+
+
+def test_determine_period_year_month_day():
+    start, end = zone._determine_period(year=2024, month=5, day=2)
+    assert start == dt_date(2024, 5, 2)
+    assert end == dt_date(2024, 5, 2)
+
+
+def test_determine_period_start_end():
+    start_date = dt_date(2024, 5, 1)
+    end_date = dt_date(2024, 5, 2)
+    start, end = zone._determine_period(start=start_date, end=end_date)
+    assert start == start_date
+    assert end == end_date
+
+
+def test_determine_period_year_month():
+    start, end = zone._determine_period(year=2024, month=2)
+    assert start == dt_date(2024, 2, 1)
+    assert end == dt_date(2024, 2, 29)
+
+
+def test_determine_period_year_only():
+    start, end = zone._determine_period(year=2024)
+    assert start == dt_date(2024, 1, 1)
+    assert end == dt_date(2024, 12, 31)
 
 
 # ---------- fetch_devices ----------
