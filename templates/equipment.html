@@ -466,25 +466,32 @@
       let start = 0;
       let dragging = false;
 
+      const supportPointer = 'PointerEvent' in window;
+      const startEvent = supportPointer ? 'pointerdown' : 'touchstart';
+      const moveEvent = supportPointer ? 'pointermove' : 'touchmove';
+      const endEvent = supportPointer ? 'pointerup' : 'touchend';
+
+      const getY = e => (supportPointer ? e.clientY : e.touches[0].clientY);
+
       function onDown(e, initialY) {
         e.preventDefault();
         startY = initialY;
         start = current;
         sheet.style.transition = 'none';
         dragging = true;
-        window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', onUp);
+        window.addEventListener(moveEvent, onMove, { passive: false });
+        window.addEventListener(endEvent, onUp);
       }
 
       function onMove(e) {
         if (!dragging) return;
         e.preventDefault();
-        const dy = e.clientY - startY;
+        const dy = getY(e) - startY;
         current = clamp(start + dy, 0, collapsed);
         sheet.style.transform = `translateY(${current}px)`;
       }
 
-      function onUp(e) {
+      function onUp() {
         if (!dragging) return;
         sheet.style.transition = '';
         if (current < collapsed / 2) {
@@ -498,39 +505,40 @@
         }
         sheet.style.transform = `translateY(${current}px)`;
         dragging = false;
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener(moveEvent, onMove);
+        window.removeEventListener(endEvent, onUp);
       }
 
-      sheet.addEventListener('pointerdown', e => {
+      sheet.addEventListener(startEvent, e => {
         if (sheet.classList.contains('open')) {
-          const startClientY = e.clientY;
+          const startClientY = getY(e);
           const maybeDrag = moveEvt => {
-            const dy = moveEvt.clientY - startClientY;
+            const dy = getY(moveEvt) - startClientY;
             if (dy > 0 && content.scrollTop === 0) {
+              moveEvt.preventDefault();
               disableScroll();
               onDown(moveEvt, startClientY);
-              content.removeEventListener('pointermove', maybeDrag);
+              content.removeEventListener(moveEvent, maybeDrag);
             } else if (Math.abs(dy) > 5) {
-              content.removeEventListener('pointermove', maybeDrag);
+              content.removeEventListener(moveEvent, maybeDrag);
             }
           };
-          content.addEventListener('pointermove', maybeDrag);
+          content.addEventListener(moveEvent, maybeDrag, { passive: false });
           content.addEventListener(
-            'pointerup',
-            () => content.removeEventListener('pointermove', maybeDrag),
+            endEvent,
+            () => content.removeEventListener(moveEvent, maybeDrag),
             { once: true }
           );
         } else {
           disableScroll();
-          onDown(e, e.clientY);
+          onDown(e, getY(e));
         }
       });
 
-      handle.addEventListener('pointerdown', e => {
+      handle.addEventListener(startEvent, e => {
         e.stopPropagation();
         disableScroll();
-        onDown(e, e.clientY);
+        onDown(e, getY(e));
       });
 
       sheet.addEventListener('click', () => {
