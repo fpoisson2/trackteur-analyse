@@ -76,7 +76,6 @@
     sheetEl.addEventListener(
       'transitionend',
       () => {
-        sheetEl.style.transform = '';
         if (shouldClose) {
           if (typeof window.closeEquipmentSheet === 'function') {
             window.closeEquipmentSheet();
@@ -90,7 +89,11 @@
               sheetEl.setAttribute('data-open', 'false');
             }
           }
+          requestAnimationFrame(() => {
+            sheetEl.style.transform = '';
+          });
         } else {
+          sheetEl.style.transform = '';
           sheetEl.setAttribute('data-open', 'true');
         }
       },
