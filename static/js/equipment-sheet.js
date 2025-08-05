@@ -34,7 +34,6 @@
     let lastTime = 0;
     let dragging = false;
     let maybeDrag = false;
-    let captureEl = null;
     const mediaQuery = window.matchMedia('(max-width: 768px)');
 
     function onPointerDown(e) {
@@ -49,14 +48,7 @@
       maybeDrag = startScrollTop <= 0;
       sheet.style.transition = 'none';
       if (maybeDrag) {
-        captureEl = e.target;
-        try {
-          captureEl.setPointerCapture(e.pointerId);
-        } catch (err) {
-          captureEl = sheet;
-          captureEl.setPointerCapture(e.pointerId);
-        }
-        disableScroll();
+        sheet.setPointerCapture(e.pointerId);
         e.preventDefault();
       }
     }
@@ -74,14 +66,11 @@
             (start > 0 && dy >= 0)
           ) {
             maybeDrag = false;
-            enableScroll();
-            if (captureEl) {
-              try { captureEl.releasePointerCapture(e.pointerId); } catch (err) {}
-              captureEl = null;
-            }
+            sheet.releasePointerCapture(e.pointerId);
             return;
           }
           dragging = true;
+          disableScroll();
         } else {
           return;
         }
@@ -96,11 +85,7 @@
     function onPointerUp(e) {
       if (!dragging) {
         if (maybeDrag) {
-          enableScroll();
-          if (captureEl) {
-            try { captureEl.releasePointerCapture(e.pointerId); } catch (err) {}
-            captureEl = null;
-          }
+          sheet.releasePointerCapture(e.pointerId);
           maybeDrag = false;
         }
         return;
@@ -133,10 +118,7 @@
       sheet.style.transform = `translateY(${current}px)`;
       dragging = false;
       maybeDrag = false;
-      if (captureEl) {
-        try { captureEl.releasePointerCapture(e.pointerId); } catch (err) {}
-        captureEl = null;
-      }
+      sheet.releasePointerCapture(e.pointerId);
     }
 
     sheet.addEventListener('pointerdown', onPointerDown, { passive: false });
