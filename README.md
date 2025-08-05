@@ -1,5 +1,7 @@
 # Trackteur Analyse
 
+![Trackteur Analyse logo](static/logo.png)
+
 > Analyse et visualisation des zones de travail depuis un serveur [Traccar](https://www.traccar.org/)
 
 Trackteur Analyse interroge l'API Traccar, agrège les positions par jour et calcule les surfaces travaillées. Les résultats sont présentés dans une interface Web conviviale.
@@ -66,7 +68,7 @@ app.py         - Application Flask et routes principales
 models.py      - Modèles SQLAlchemy
 zone.py        - Récupération et traitement des positions
 templates/     - Gabarits HTML (index, login, administration, équipement, assistant)
-static/        - Export de carte Leaflet `carte_passages.html`
+static/        - Export de carte Leaflet `carte_passages.html` et logo
 ```
 
 ## Contribution
