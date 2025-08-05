@@ -61,7 +61,11 @@
 
       if (!dragging) {
         if (maybeDrag) {
-          if (Math.abs(dx) > Math.abs(dy) || dy <= 0) {
+          if (
+            Math.abs(dx) > Math.abs(dy) ||
+            (start === 0 && dy <= 0) ||
+            (start > 0 && dy >= 0)
+          ) {
             maybeDrag = false;
             enableScroll();
             sheet.releasePointerCapture(e.pointerId);
@@ -102,7 +106,8 @@
           enableScroll();
         }
       } else {
-        if (current < collapsed / 2) {
+        const traveled = start - current;
+        if (traveled > 120 || velocity < -0.25) {
           current = 0;
           sheet.classList.add('open');
           enableScroll();
@@ -115,6 +120,7 @@
       sheet.style.transform = `translateY(${current}px)`;
       dragging = false;
       maybeDrag = false;
+      sheet.releasePointerCapture(e.pointerId);
     }
 
     sheet.addEventListener('pointerdown', onPointerDown, { passive: false });
