@@ -503,7 +503,25 @@
       }
 
       sheet.addEventListener('pointerdown', e => {
-        if (!sheet.classList.contains('open')) {
+        if (sheet.classList.contains('open')) {
+          const startY = e.clientY;
+          const maybeDrag = moveEvt => {
+            const dy = moveEvt.clientY - startY;
+            if (dy > 0 && content.scrollTop === 0) {
+              disableScroll();
+              onDown(moveEvt);
+              sheet.removeEventListener('pointermove', maybeDrag);
+            } else if (Math.abs(dy) > 5) {
+              sheet.removeEventListener('pointermove', maybeDrag);
+            }
+          };
+          sheet.addEventListener('pointermove', maybeDrag);
+          sheet.addEventListener(
+            'pointerup',
+            () => sheet.removeEventListener('pointermove', maybeDrag),
+            { once: true }
+          );
+        } else {
           disableScroll();
           onDown(e);
         }
