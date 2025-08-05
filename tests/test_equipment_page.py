@@ -301,7 +301,7 @@ def test_equipment_page_shows_legend():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "legend" in html
+    assert "const legend = L.control({ position: 'topright' });" in html
 
 
 def test_zones_geojson_endpoint():
@@ -539,7 +539,8 @@ def test_equipment_page_has_period_selectors():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert 'id="date-select"' in html
+    assert 'id="date-display"' in html
+    assert 'id="open-calendar"' in html
 
 
 def test_zones_geojson_filters_by_day():
