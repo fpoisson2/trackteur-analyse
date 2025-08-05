@@ -466,9 +466,9 @@
       let start = 0;
       let dragging = false;
 
-      function onDown(e) {
+      function onDown(e, initialY) {
         e.preventDefault();
-        startY = e.clientY;
+        startY = initialY;
         start = current;
         sheet.style.transition = 'none';
         dragging = true;
@@ -504,12 +504,12 @@
 
       sheet.addEventListener('pointerdown', e => {
         if (sheet.classList.contains('open')) {
-          const startY = e.clientY;
+          const startClientY = e.clientY;
           const maybeDrag = moveEvt => {
-            const dy = moveEvt.clientY - startY;
+            const dy = moveEvt.clientY - startClientY;
             if (dy > 0 && content.scrollTop === 0) {
               disableScroll();
-              onDown(moveEvt);
+              onDown(moveEvt, startClientY);
               sheet.removeEventListener('pointermove', maybeDrag);
             } else if (Math.abs(dy) > 5) {
               sheet.removeEventListener('pointermove', maybeDrag);
@@ -523,14 +523,14 @@
           );
         } else {
           disableScroll();
-          onDown(e);
+          onDown(e, e.clientY);
         }
       });
 
       handle.addEventListener('pointerdown', e => {
         e.stopPropagation();
         disableScroll();
-        onDown(e);
+        onDown(e, e.clientY);
       });
 
       sheet.addEventListener('click', () => {
