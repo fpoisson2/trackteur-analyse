@@ -442,7 +442,12 @@
       if (!sheet) return;
       const handle = sheet.querySelector('.drag-handle');
       const content = sheet.querySelector('.sheet-content');
-      const collapsed = sheet.offsetHeight - 48;
+      const handleStyles = getComputedStyle(handle);
+      const handleHeight =
+        handle.offsetHeight +
+        parseFloat(handleStyles.marginTop) +
+        parseFloat(handleStyles.marginBottom);
+      const collapsed = sheet.offsetHeight - handleHeight;
       let current = collapsed;
       sheet.style.transform = `translateY(${current}px)`;
       const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
