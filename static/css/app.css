@@ -1,0 +1,17 @@
+@media (max-width: 768px) {
+  [data-sheet="equipment"] {
+    overscroll-behavior-y: contain;
+    will-change: transform;
+    transform: translateY(0);
+    transition: transform 220ms ease;
+  }
+  [data-sheet="equipment"][data-open="false"] {
+    transform: translateY(calc(100% - 3rem));
+  }
+  [data-sheet-content] {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
+  }
+}

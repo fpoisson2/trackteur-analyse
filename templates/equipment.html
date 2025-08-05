@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <style>
     html, body { height: 100%; margin: 0; }
     #map-container { height: 100%; }
@@ -24,16 +25,10 @@
       border-top-left-radius: 1rem;
       border-top-right-radius: 1rem;
       box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.2);
-      transform: translateY(calc(100% - 3rem));
-      transition: transform .3s ease-in-out;
       z-index: 1000;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      touch-action: none;
-    }
-    .bottom-sheet.open {
-      transform: translateY(0);
     }
     .bottom-sheet .drag-handle {
       width: 50px;
@@ -42,13 +37,10 @@
       border-radius: 3px;
       margin: 8px auto;
       cursor: grab;
-      touch-action: none;
+      touch-action: pan-y;
     }
     .bottom-sheet .sheet-content {
       flex: 1;
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      touch-action: pan-y;
     }
   </style>
 </head>
@@ -60,9 +52,9 @@
   </div>
 
   {% if zones %}
-  <div id="info-sheet" class="bottom-sheet">
+  <div id="info-sheet" class="bottom-sheet" data-sheet="equipment" data-open="false">
     <div class="drag-handle"></div>
-    <div class="sheet-content p-3">
+    <div class="sheet-content p-3" data-sheet-content>
       <h5 class="mb-3">{{ equipment.name }}</h5>
       <div id="date-nav" class="input-group mb-3">
         <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
@@ -437,113 +429,11 @@
       });
     }
 
-    function setupBottomSheet() {
-      const sheet = document.getElementById('info-sheet');
-      if (!sheet) return;
-      const handle = sheet.querySelector('.drag-handle');
-      const content = sheet.querySelector('.sheet-content');
-      const handleStyles = getComputedStyle(handle);
-      const handleHeight =
-        handle.offsetHeight +
-        parseFloat(handleStyles.marginTop) +
-        parseFloat(handleStyles.marginBottom);
-      const collapsed = sheet.offsetHeight - handleHeight;
-      let current = collapsed;
-      sheet.style.transform = `translateY(${current}px)`;
-      const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
-
-      const disableScroll = () => {
-        content.style.touchAction = 'none';
-        content.style.overflowY = 'hidden';
-      };
-      const enableScroll = () => {
-        content.style.touchAction = 'pan-y';
-        content.style.overflowY = 'auto';
-      };
-      disableScroll();
-
-      let startY = 0;
-      let start = 0;
-      let dragging = false;
-
-      function onDown(e) {
-        e.preventDefault();
-        startY = e.clientY;
-        start = current;
-        sheet.style.transition = 'none';
-        dragging = true;
-        window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', onUp);
-      }
-
-      function onMove(e) {
-        if (!dragging) return;
-        e.preventDefault();
-        const dy = e.clientY - startY;
-        current = clamp(start + dy, 0, collapsed);
-        sheet.style.transform = `translateY(${current}px)`;
-      }
-
-      function onUp(e) {
-        if (!dragging) return;
-        sheet.style.transition = '';
-        if (current < collapsed / 2) {
-          current = 0;
-          sheet.classList.add('open');
-          enableScroll();
-        } else {
-          current = collapsed;
-          sheet.classList.remove('open');
-          disableScroll();
-        }
-        sheet.style.transform = `translateY(${current}px)`;
-        dragging = false;
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-      }
-
-      sheet.addEventListener('pointerdown', e => {
-        if (!sheet.classList.contains('open')) {
-          disableScroll();
-          onDown(e);
-        }
-      });
-
-      handle.addEventListener('pointerdown', e => {
-        e.stopPropagation();
-        disableScroll();
-        onDown(e);
-      });
-
-      sheet.addEventListener('click', () => {
-        if (dragging) return;
-        if (!sheet.classList.contains('open')) {
-          current = 0;
-          sheet.classList.add('open');
-          sheet.style.transform = `translateY(${current}px)`;
-          enableScroll();
-        }
-      });
-
-      handle.addEventListener('click', e => {
-        e.stopPropagation();
-        if (dragging) return;
-        current = current === 0 ? collapsed : 0;
-        sheet.classList.toggle('open');
-        sheet.style.transform = `translateY(${current}px)`;
-        if (current === 0) {
-          enableScroll();
-        } else {
-          disableScroll();
-        }
-      });
-    }
-
     window.addEventListener('DOMContentLoaded', () => {
       setupPeriodSelectors();
       setupInteractions();
-      setupBottomSheet();
     });
   </script>
+  <script src="{{ url_for('static', filename='js/equipment-sheet.js') }}"></script>
 </body>
 </html>
