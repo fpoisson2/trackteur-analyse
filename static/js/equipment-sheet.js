@@ -33,11 +33,11 @@
     let lastY = 0;
     let lastTime = 0;
     let dragging = false;
+    let maybeDrag = false;
     const mediaQuery = window.matchMedia('(max-width: 768px)');
 
     function onPointerDown(e) {
       if (!mediaQuery.matches || !e.isPrimary) return;
-      sheet.setPointerCapture(e.pointerId);
       startY = e.clientY;
       startX = e.clientX;
       start = current;
@@ -45,8 +45,11 @@
       lastY = e.clientY;
       lastTime = e.timeStamp;
       dragging = false;
+      maybeDrag = startScrollTop === 0;
       sheet.style.transition = 'none';
-      if (startScrollTop === 0) {
+      if (maybeDrag) {
+        sheet.setPointerCapture(e.pointerId);
+        disableScroll();
         e.preventDefault();
       }
     }
@@ -57,20 +60,18 @@
       const dx = e.clientX - startX;
 
       if (!dragging) {
-        if (Math.abs(dx) > Math.abs(dy)) return;
-        if (start === 0) {
-          if (startScrollTop === 0 && dy > 0) {
-            dragging = true;
-            disableScroll();
-          } else {
+        if (maybeDrag) {
+          if (Math.abs(dx) > Math.abs(dy) || dy <= 0) {
+            maybeDrag = false;
+            enableScroll();
+            sheet.releasePointerCapture(e.pointerId);
             return;
           }
-        } else {
           dragging = true;
-          disableScroll();
+        } else {
+          return;
         }
       }
-      if (!dragging) return;
       e.preventDefault();
       current = clamp(start + dy, 0, collapsed);
       sheet.style.transform = `translateY(${current}px)`;
@@ -79,7 +80,14 @@
     }
 
     function onPointerUp(e) {
-      if (!dragging) return;
+      if (!dragging) {
+        if (maybeDrag) {
+          enableScroll();
+          sheet.releasePointerCapture(e.pointerId);
+          maybeDrag = false;
+        }
+        return;
+      }
       const dt = e.timeStamp - lastTime;
       const velocity = dt > 0 ? (e.clientY - lastY) / dt : 0;
       sheet.style.transition = '';
@@ -106,6 +114,7 @@
       }
       sheet.style.transform = `translateY(${current}px)`;
       dragging = false;
+      maybeDrag = false;
     }
 
     sheet.addEventListener('pointerdown', onPointerDown, { passive: false });
