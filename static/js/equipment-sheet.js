@@ -13,6 +13,7 @@
   let currentY = 0;
   let lastY = 0;
   let lastTime = 0;
+  let velocityY = 0;
 
   function onPointerDown(e) {
     if (!e.isPrimary) return;
@@ -23,6 +24,7 @@
     currentY = 0;
     lastY = startY;
     lastTime = e.timeStamp;
+    velocityY = 0;
     sheetEl.style.transition = 'none';
     try {
       sheetEl.setPointerCapture(e.pointerId);
@@ -44,10 +46,12 @@
       }
     }
     e.preventDefault();
+    const now = e.timeStamp;
+    velocityY = (e.clientY - lastY) / (now - lastTime || 1);
+    lastY = e.clientY;
+    lastTime = now;
     currentY = Math.min(Math.max(dy, 0), window.innerHeight * 0.6);
     sheetEl.style.transform = `translateY(${currentY}px)`;
-    lastY = e.clientY;
-    lastTime = e.timeStamp;
   }
 
   function finishDrag(e) {
@@ -63,9 +67,7 @@
       sheetEl.setAttribute('data-open', 'true');
       return;
     }
-    const dt = e.timeStamp - lastTime || 1;
-    const vy = (e.clientY - lastY) / dt;
-    const shouldClose = currentY > 120 || vy > 0.35;
+    const shouldClose = currentY > 120 || velocityY > 0.35;
     sheetEl.style.transform = '';
     if (shouldClose) {
       if (typeof window.closeEquipmentSheet === 'function') {
@@ -74,10 +76,9 @@
         const btn = document.querySelector('[data-close-sheet="equipment"], #close-equipment, [aria-label="Fermer"]');
         if (btn) {
           btn.click();
-        } else {
-          sheetEl.setAttribute('data-open', 'false');
         }
       }
+      sheetEl.setAttribute('data-open', 'false');
     } else {
       sheetEl.setAttribute('data-open', 'true');
     }
