@@ -11,6 +11,7 @@
   let startScrollTop = 0;
   let dragging = false;
   let currentY = 0;
+  let initialTranslateY = 0;
   let lastY = 0;
   let lastTime = 0;
   let velocityY = 0;
@@ -26,6 +27,9 @@
     lastTime = e.timeStamp;
     velocityY = 0;
     sheetEl.style.transition = 'none';
+    const style = window.getComputedStyle(sheetEl);
+    const matrix = new DOMMatrixReadOnly(style.transform);
+    initialTranslateY = matrix.m42;
     try {
       sheetEl.setPointerCapture(e.pointerId);
     } catch (err) {
@@ -51,8 +55,13 @@
     velocityY = (e.clientY - lastY) / (now - lastTime || 1);
     lastY = e.clientY;
     lastTime = now;
-    currentY = Math.min(Math.max(dy, 0), window.innerHeight * 0.6);
-    sheetEl.style.transform = `translateY(${currentY}px)`;
+    const dyClamped = Math.min(
+      Math.max(dy, 0),
+      window.innerHeight * 0.6
+    );
+    const newTranslateY = initialTranslateY + dyClamped;
+    sheetEl.style.transform = `translateY(${newTranslateY}px)`;
+    currentY = newTranslateY;
   }
 
   function finishDrag(e) {
