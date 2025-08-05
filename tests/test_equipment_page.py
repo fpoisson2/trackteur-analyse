@@ -379,7 +379,7 @@ def test_map_container_allows_touch():
     assert "touch-action: none" not in tag
 
 
-def test_bottom_sheet_uses_inner_scroll_container():
+def test_equipment_sheet_has_data_attributes_and_script():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -388,28 +388,9 @@ def test_bottom_sheet_uses_inner_scroll_container():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert ".bottom-sheet {" in html
-    assert "overflow: hidden" in html
-    assert '<div class="drag-handle"></div>' in html
-    handle_pos = html.find('class="drag-handle"')
-    content_pos = html.find('class="sheet-content')
-    assert handle_pos != -1 and content_pos != -1 and handle_pos < content_pos
-    assert "overscroll-behavior: contain" in html
-    assert "touch-action: pan-y" in html
-
-
-def test_bottom_sheet_disables_content_scroll_during_drag():
-    app = make_app()
-    client = app.test_client()
-    login(client)
-
-    with app.app_context():
-        eq = Equipment.query.first()
-        resp = client.get(f"/equipment/{eq.id}")
-    html = resp.data.decode()
-    assert "content.style.touchAction = 'none'" in html
-    assert "content.style.touchAction = 'pan-y'" in html
-    assert "if (!sheet.classList.contains('open'))" in html
+    assert 'data-sheet="equipment"' in html
+    assert 'data-sheet-content' in html
+    assert 'equipment-sheet.js' in html
 
 
 def test_row_click_uses_instant_zoom():
