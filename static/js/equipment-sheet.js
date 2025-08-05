@@ -42,8 +42,9 @@
     const dy = e.clientY - startY;
     const dx = e.clientX - startX;
     if (!dragging) {
-      if (startScrollTop > 0) return;
-      if (dy > 6 && Math.abs(dy) > Math.abs(dx)) {
+      if (startScrollTop > 0 && initialTranslateY === 0) return;
+      if (Math.abs(dy) > 6 && Math.abs(dy) > Math.abs(dx)) {
+        if (dy < 0 && initialTranslateY === 0) return;
         dragging = true;
       } else {
         if (dy > 0) e.preventDefault();
@@ -55,11 +56,10 @@
     velocityY = (e.clientY - lastY) / (now - lastTime || 1);
     lastY = e.clientY;
     lastTime = now;
-    const dyClamped = Math.min(
-      Math.max(dy, 0),
+    const newTranslateY = Math.min(
+      Math.max(initialTranslateY + dy, 0),
       window.innerHeight * 0.6
     );
-    const newTranslateY = initialTranslateY + dyClamped;
     sheetEl.style.transform = `translateY(${newTranslateY}px)`;
     currentY = newTranslateY;
   }
