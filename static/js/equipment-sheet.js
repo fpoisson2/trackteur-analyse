@@ -68,20 +68,31 @@
       return;
     }
     const shouldClose = currentY > 120 || velocityY > 0.35;
-    sheetEl.style.transform = '';
-    if (shouldClose) {
-      if (typeof window.closeEquipmentSheet === 'function') {
-        window.closeEquipmentSheet();
-      } else {
-        const btn = document.querySelector('[data-close-sheet="equipment"], #close-equipment, [aria-label="Fermer"]');
-        if (btn) {
-          btn.click();
+    const target = shouldClose ? 'calc(100% - 3rem)' : '0px';
+    requestAnimationFrame(() => {
+      sheetEl.style.transform = `translateY(${target})`;
+    });
+    sheetEl.addEventListener(
+      'transitionend',
+      () => {
+        sheetEl.style.transform = '';
+        if (shouldClose) {
+          if (typeof window.closeEquipmentSheet === 'function') {
+            window.closeEquipmentSheet();
+          } else {
+            const btn = document.querySelector('[data-close-sheet="equipment"], #close-equipment, [aria-label="Fermer"]');
+            if (btn) {
+              btn.click();
+            } else {
+              sheetEl.setAttribute('data-open', 'false');
+            }
+          }
+        } else {
+          sheetEl.setAttribute('data-open', 'true');
         }
-      }
-      sheetEl.setAttribute('data-open', 'false');
-    } else {
-      sheetEl.setAttribute('data-open', 'true');
-    }
+      },
+      { once: true }
+    );
     dragging = false;
   }
 
