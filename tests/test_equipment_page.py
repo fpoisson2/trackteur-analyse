@@ -398,6 +398,19 @@ def test_bottom_sheet_uses_inner_scroll_container():
     assert "touch-action: pan-y" in html
 
 
+def test_bottom_sheet_disables_content_scroll_during_drag():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "content.style.touchAction = 'none'" in html
+    assert "content.style.touchAction = 'pan-y'" in html
+
+
 def test_row_click_uses_instant_zoom():
     app = make_app()
     client = app.test_client()
