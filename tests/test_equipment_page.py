@@ -416,7 +416,8 @@ def test_bottom_sheet_disables_content_scroll_during_drag():
     assert "content.style.touchAction = 'pan-y'" in js
     assert "if (!sheet.classList.contains('open'))" in js
     assert js.count('e.preventDefault()') >= 2
-    assert "startScrollTop === 0" in js
+    assert "startScrollTop <= 0" in js
+    assert ".setPointerCapture(e.pointerId)" in js
     assert "start === 0 && dy <= 0" in js
     assert "start > 0 && dy >= 0" in js
 
