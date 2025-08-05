@@ -6,7 +6,7 @@
     transition: transform 220ms ease;
   }
   [data-sheet="equipment"][data-open="false"] {
-    transform: translateY(100%);
+    transform: translateY(calc(100% - 3rem));
   }
   [data-sheet-content] {
     overflow-y: auto;

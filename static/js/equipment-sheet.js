@@ -58,7 +58,11 @@
       /* ignore */
     }
     sheetEl.style.transition = '';
-    if (!dragging) return;
+    if (!dragging) {
+      sheetEl.style.transform = '';
+      sheetEl.setAttribute('data-open', 'true');
+      return;
+    }
     const dt = e.timeStamp - lastTime || 1;
     const vy = (e.clientY - lastY) / dt;
     const shouldClose = currentY > 120 || vy > 0.35;
