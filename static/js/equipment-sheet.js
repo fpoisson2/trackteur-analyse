@@ -17,8 +17,8 @@
 
   function computeMaxOffset() {
     const handleHeight = handle.offsetHeight || 0;
-    // leave the drag handle visible when the sheet is closed
-    maxOffset = sheet.offsetHeight - handleHeight - 8;
+    const peek = 40; // keep part of the sheet visible when closed
+    maxOffset = sheet.offsetHeight - handleHeight - 8 - peek;
   }
 
   function applyOffset(y) {
@@ -44,6 +44,7 @@
     ) {
       return; // allow normal scrolling
     }
+    e.preventDefault();
     dragging = true;
     startY = e.clientY;
     startX = e.clientX;
@@ -104,7 +105,7 @@
     if (initialized) return;
     computeMaxOffset();
     snap(false);
-    sheet.addEventListener('pointerdown', onPointerDown, { passive: true });
+    sheet.addEventListener('pointerdown', onPointerDown, { passive: false });
     sheet.addEventListener('pointermove', onPointerMove, { passive: false });
     sheet.addEventListener('pointerup', onPointerUp, { passive: true });
     sheet.addEventListener('pointercancel', onPointerUp, { passive: true });
