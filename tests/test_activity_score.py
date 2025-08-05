@@ -91,3 +91,15 @@ def test_index_sorted_by_score(monkeypatch):
     html = resp.data.decode()
     assert "🥇" in html
     assert html.index("T1") < html.index("T2")
+
+
+def test_index_has_mobile_menu():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "navbar-toggler" in html
+    assert 'id="navbar-menu"' in html
