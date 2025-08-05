@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import re
+from pathlib import Path
 from datetime import date, timedelta, datetime
 
 from pytest import approx
@@ -394,7 +395,7 @@ def test_bottom_sheet_uses_inner_scroll_container():
     handle_pos = html.find('class="drag-handle"')
     content_pos = html.find('class="sheet-content')
     assert handle_pos != -1 and content_pos != -1 and handle_pos < content_pos
-    assert "overscroll-behavior: contain" in html
+    assert "overscroll-behavior-y: contain" in html
     assert "touch-action: pan-y" in html
 
 
@@ -407,9 +408,12 @@ def test_bottom_sheet_disables_content_scroll_during_drag():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "content.style.touchAction = 'none'" in html
-    assert "content.style.touchAction = 'pan-y'" in html
-    assert "if (!sheet.classList.contains('open'))" in html
+    assert "js/equipment-sheet.js" in html
+    js_path = Path(ROOT_DIR) / "static/js/equipment-sheet.js"
+    js = js_path.read_text()
+    assert "content.style.touchAction = 'none'" in js
+    assert "content.style.touchAction = 'pan-y'" in js
+    assert "if (!sheet.classList.contains('open'))" in js
 
 
 def test_row_click_uses_instant_zoom():
