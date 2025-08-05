@@ -54,7 +54,11 @@
     }
 
     try {
-      sheetEl.setPointerCapture(e.pointerId);
+      if (e.target && e.target.setPointerCapture) {
+        e.target.setPointerCapture(e.pointerId);
+      } else if (sheetEl.setPointerCapture) {
+        sheetEl.setPointerCapture(e.pointerId);
+      }
     } catch (err) {
       /* ignore */
     }
@@ -105,7 +109,11 @@
     if (!e.isPrimary) return;
 
     try {
-      sheetEl.releasePointerCapture(e.pointerId);
+      if (e.target && e.target.releasePointerCapture) {
+        e.target.releasePointerCapture(e.pointerId);
+      } else if (sheetEl.releasePointerCapture) {
+        sheetEl.releasePointerCapture(e.pointerId);
+      }
     } catch (err) {
       /* ignore */
     }
