@@ -1,11 +1,11 @@
 @media (max-width: 768px) {
   [data-sheet="equipment"] {
-    overscroll-behavior-y: contain;
+    overscroll-behavior-y: none;
     will-change: transform;
     transform: translateY(0);
     transition: transform 220ms ease;
   }
   [data-sheet="equipment"][data-open="false"] {
-    transform: translateY(calc(100% - 3rem));
+    transform: translateY(calc(100% - 4rem));
   }
 }

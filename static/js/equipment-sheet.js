@@ -18,7 +18,7 @@
 
   // Fonction pour calculer la position fermée du volet
   function getClosedPosition() {
-    return sheetEl.offsetHeight - 48; // 3rem = 48px approximativement
+    return sheetEl.offsetHeight - 64; // 4rem = 64px approximativement
   }
 
   function onPointerDown(e) {
@@ -163,11 +163,20 @@
     dragging = false;
   }
 
+  function onTouchMove(e) {
+    const dy = e.touches[0].clientY - startY;
+    const isClosed = sheetEl.getAttribute('data-open') === 'false';
+    if (!isClosed && content.scrollTop <= 0 && dy > 0) {
+      e.preventDefault();
+    }
+  }
+
   // Ajouter les event listeners
   sheetEl.addEventListener('pointerdown', onPointerDown, { passive: true });
   sheetEl.addEventListener('pointermove', onPointerMove, { passive: false });
   sheetEl.addEventListener('pointerup', finishDrag, { passive: true });
   sheetEl.addEventListener('pointercancel', finishDrag, { passive: true });
+  sheetEl.addEventListener('touchmove', onTouchMove, { passive: false });
   
   // Fonction pour ouvrir le volet programmatiquement
   window.openEquipmentSheet = function() {
@@ -178,85 +187,4 @@
       sheetEl.style.transform = '';
     }, 220);
   };
-})();    }
-  }
-
-  function onPointerMove(e) {
-    if (!e.isPrimary) return;
-    const dy = e.clientY - startY;
-    const dx = e.clientX - startX;
-    if (!dragging) {
-      if (startScrollTop > 0 && initialTranslateY === 0) return;
-      if (Math.abs(dy) > 6 && Math.abs(dy) > Math.abs(dx)) {
-        if (dy < 0 && initialTranslateY === 0) return;
-        dragging = true;
-      } else {
-        if (dy > 0) e.preventDefault();
-        return;
-      }
-    }
-    e.preventDefault();
-    const now = e.timeStamp;
-    velocityY = (e.clientY - lastY) / (now - lastTime || 1);
-    lastY = e.clientY;
-    lastTime = now;
-    const newTranslateY = Math.min(
-      Math.max(initialTranslateY + dy, 0),
-      window.innerHeight * 0.6
-    );
-    sheetEl.style.transform = `translateY(${newTranslateY}px)`;
-    currentY = newTranslateY;
-  }
-
-  function finishDrag(e) {
-    if (!e.isPrimary) return;
-    try {
-      sheetEl.releasePointerCapture(e.pointerId);
-    } catch (err) {
-      /* ignore */
-    }
-    sheetEl.style.transition = '';
-    if (!dragging) {
-      sheetEl.style.transform = '';
-      sheetEl.setAttribute('data-open', 'true');
-      return;
-    }
-    const shouldClose = currentY > 120 || velocityY > 0.35;
-    const target = shouldClose ? 'calc(100% - 3rem)' : '0px';
-    requestAnimationFrame(() => {
-      sheetEl.style.transform = `translateY(${target})`;
-    });
-    sheetEl.addEventListener(
-      'transitionend',
-      () => {
-        if (shouldClose) {
-          if (typeof window.closeEquipmentSheet === 'function') {
-            window.closeEquipmentSheet();
-          } else {
-            const btn = sheetEl.querySelector(
-              '[data-close-sheet="equipment"], #close-equipment, [aria-label="Fermer"]'
-            );
-            if (btn) {
-              btn.click();
-            } else {
-              sheetEl.setAttribute('data-open', 'false');
-            }
-          }
-          requestAnimationFrame(() => {
-            sheetEl.style.transform = '';
-          });
-        } else {
-          sheetEl.style.transform = '';
-          sheetEl.setAttribute('data-open', 'true');
-        }
-      },
-      { once: true }
-    );
-    dragging = false;
-  }
-
-  sheetEl.addEventListener('pointerdown', onPointerDown, { passive: true });
-  sheetEl.addEventListener('pointermove', onPointerMove, { passive: false });
-  sheetEl.addEventListener('pointerup', finishDrag, { passive: true });
-  sheetEl.addEventListener('pointercancel', finishDrag, { passive: true });
 })();
