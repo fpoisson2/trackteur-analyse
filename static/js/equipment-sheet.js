@@ -17,7 +17,8 @@
 
   function computeMaxOffset() {
     const handleHeight = handle.offsetHeight || 0;
-    maxOffset = sheet.offsetHeight - handleHeight - 16; // account for handle margins
+    // leave the drag handle visible when the sheet is closed
+    maxOffset = sheet.offsetHeight - handleHeight - 8;
   }
 
   function applyOffset(y) {
@@ -91,9 +92,11 @@
     } catch (err) {
       /* ignore */
     }
-    const match = sheet.style.transform.match(/-?\d+/);
+    const match = sheet.style.transform.match(/-?\d+(?:\.\d+)?/);
     const current = match ? parseFloat(match[0]) : 0;
-    const shouldOpen = velocity < -0.3 || current < maxOffset / 2;
+    const threshold = maxOffset * 0.3;
+    const shouldOpen =
+      velocity < -0.2 || (velocity <= 0.2 && current < threshold);
     snap(shouldOpen);
   }
 
