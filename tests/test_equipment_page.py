@@ -409,6 +409,7 @@ def test_bottom_sheet_disables_content_scroll_during_drag():
     html = resp.data.decode()
     assert "content.style.touchAction = 'none'" in html
     assert "content.style.touchAction = 'pan-y'" in html
+    assert "if (!sheet.classList.contains('open'))" in html
 
 
 def test_row_click_uses_instant_zoom():

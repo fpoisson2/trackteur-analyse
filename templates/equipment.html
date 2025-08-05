@@ -503,9 +503,10 @@
       }
 
       sheet.addEventListener('pointerdown', e => {
-        if (sheet.classList.contains('open') && content.scrollTop > 0) return;
-        disableScroll();
-        onDown(e);
+        if (!sheet.classList.contains('open')) {
+          disableScroll();
+          onDown(e);
+        }
       });
 
       handle.addEventListener('pointerdown', e => {
