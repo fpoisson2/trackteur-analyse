@@ -48,11 +48,14 @@
       flex: 1;
       overflow-y: auto;
     }
+    .flatpickr-calendar {
+      z-index: 2000;
+    }
   </style>
 </head>
 <body class="m-0">
   <div id="map-container"></div>
-  <div class="position-absolute top-0 start-0 p-2 d-flex align-items-center" style="z-index:1000;">
+  <div class="position-absolute top-0 start-0 p-2 d-flex align-items-center bg-white rounded shadow" style="z-index:1100;">
     <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="40" class="me-2">
     <a href="{{ url_for('index') }}" class="btn btn-sm btn-light">Retour</a>
     <a href="{{ url_for('logout') }}" class="btn btn-sm btn-light ms-2">Déconnexion</a>
@@ -96,19 +99,7 @@
     </div>
   </div>
 
-  <div class="modal fade" id="dateModal" tabindex="-1">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Sélection des dates</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <input type="text" id="date-select" class="form-control" value="{{ date_value or '' }}" {% if not available_dates %}disabled{% endif %}>
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- Calendar handled directly by flatpickr; modal removed -->
   {% else %}
   <div class="position-absolute top-50 start-50 translate-middle text-center bg-white p-3 rounded" style="z-index:1000;">
     <p>Aucune donnée disponible pour cet équipement.</p>
@@ -320,11 +311,9 @@
     }
 
     function setupPeriodSelectors() {
-      const dateInput = document.getElementById('date-select');
-      const dateDisplay = document.getElementById('date-display');
+      const dateInput = document.getElementById('date-display');
       const openBtn = document.getElementById('open-calendar');
-      const modalEl = document.getElementById('dateModal');
-      const modal = new bootstrap.Modal(modalEl);
+
       function updatePeriod(val) {
         const params = new URLSearchParams(window.location.search);
         if (val) {
@@ -354,23 +343,26 @@
         }
         window.location.search = params.toString();
       }
-      if (openBtn) {
-        openBtn.addEventListener('click', () => {
-          modal.show();
-        });
-      }
+
+      let picker;
       if (dateInput) {
-        flatpickr(dateInput, {
+        picker = flatpickr(dateInput, {
           mode: 'range',
           dateFormat: 'Y-m-d',
+          allowInput: false,
           defaultDate: dateInput.value ? dateInput.value.split(' to ') : null,
           onChange: function(selectedDates, dateStr) {
             if (selectedDates.length === 2 || selectedDates.length === 0) {
-              if (dateDisplay) dateDisplay.value = dateStr;
-              modal.hide();
+              dateInput.value = dateStr;
               updatePeriod(dateStr);
             }
           }
+        });
+      }
+
+      if (openBtn && picker) {
+        openBtn.addEventListener('click', () => {
+          picker.open();
         });
       }
       const prevBtn = document.getElementById('prev-day');
