@@ -466,27 +466,19 @@
       let start = 0;
       let dragging = false;
 
-      const supportPointer = 'PointerEvent' in window;
-      const startEvent = supportPointer ? 'pointerdown' : 'touchstart';
-      const moveEvent = supportPointer ? 'pointermove' : 'touchmove';
-      const endEvent = supportPointer ? 'pointerup' : 'touchend';
-
-      const getY = e => (supportPointer ? e.clientY : e.touches[0].clientY);
-
-      function onDown(e, initialY) {
-        e.preventDefault();
-        startY = initialY;
+      function startDrag(clientY) {
+        startY = clientY;
         start = current;
-        sheet.style.transition = 'none';
         dragging = true;
-        window.addEventListener(moveEvent, onMove, { passive: false });
-        window.addEventListener(endEvent, onUp);
+        sheet.style.transition = 'none';
+        window.addEventListener('pointermove', onMove, { passive: false });
+        window.addEventListener('pointerup', onUp);
       }
 
       function onMove(e) {
         if (!dragging) return;
         e.preventDefault();
-        const dy = getY(e) - startY;
+        const dy = e.clientY - startY;
         current = clamp(start + dy, 0, collapsed);
         sheet.style.transform = `translateY(${current}px)`;
       }
@@ -505,40 +497,47 @@
         }
         sheet.style.transform = `translateY(${current}px)`;
         dragging = false;
-        window.removeEventListener(moveEvent, onMove);
-        window.removeEventListener(endEvent, onUp);
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
       }
 
-      sheet.addEventListener(startEvent, e => {
+      sheet.addEventListener('pointerdown', e => {
         if (sheet.classList.contains('open')) {
-          const startClientY = getY(e);
-          const maybeDrag = moveEvt => {
-            const dy = getY(moveEvt) - startClientY;
-            if (dy > 0 && content.scrollTop === 0) {
-              moveEvt.preventDefault();
+          const initialY = e.clientY;
+          const detectDrag = moveEvt => {
+            const dy = moveEvt.clientY - initialY;
+            if (dy > 5 && content.scrollTop === 0) {
               disableScroll();
-              onDown(moveEvt, startClientY);
-              content.removeEventListener(moveEvent, maybeDrag);
+              startDrag(initialY);
+              sheet.removeEventListener('pointermove', detectDrag);
             } else if (Math.abs(dy) > 5) {
-              content.removeEventListener(moveEvent, maybeDrag);
+              sheet.removeEventListener('pointermove', detectDrag);
             }
           };
-          content.addEventListener(moveEvent, maybeDrag, { passive: false });
-          content.addEventListener(
-            endEvent,
-            () => content.removeEventListener(moveEvent, maybeDrag),
-            { once: true }
-          );
+          const stopDetect = () =>
+            sheet.removeEventListener('pointermove', detectDrag);
+          sheet.addEventListener('pointermove', detectDrag, { passive: false });
+          sheet.addEventListener('pointerup', stopDetect, { once: true });
         } else {
           disableScroll();
-          onDown(e, getY(e));
+          startDrag(e.clientY);
         }
       });
 
-      handle.addEventListener(startEvent, e => {
+      handle.addEventListener('click', e => {
         e.stopPropagation();
-        disableScroll();
-        onDown(e, getY(e));
+        if (dragging) return;
+        if (sheet.classList.contains('open')) {
+          current = collapsed;
+          sheet.classList.remove('open');
+          sheet.style.transform = `translateY(${current}px)`;
+          disableScroll();
+        } else {
+          current = 0;
+          sheet.classList.add('open');
+          sheet.style.transform = `translateY(${current}px)`;
+          enableScroll();
+        }
       });
 
       sheet.addEventListener('click', () => {
@@ -548,19 +547,6 @@
           sheet.classList.add('open');
           sheet.style.transform = `translateY(${current}px)`;
           enableScroll();
-        }
-      });
-
-      handle.addEventListener('click', e => {
-        e.stopPropagation();
-        if (dragging) return;
-        current = current === 0 ? collapsed : 0;
-        sheet.classList.toggle('open');
-        sheet.style.transform = `translateY(${current}px)`;
-        if (current === 0) {
-          enableScroll();
-        } else {
-          disableScroll();
         }
       });
     }
