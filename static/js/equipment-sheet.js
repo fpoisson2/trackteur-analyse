@@ -46,6 +46,9 @@
       lastTime = e.timeStamp;
       dragging = false;
       sheet.style.transition = 'none';
+      if (startScrollTop === 0) {
+        e.preventDefault();
+      }
     }
 
     function onPointerMove(e) {

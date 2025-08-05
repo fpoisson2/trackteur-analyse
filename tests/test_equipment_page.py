@@ -395,6 +395,7 @@ def test_bottom_sheet_uses_inner_scroll_container():
     handle_pos = html.find('class="drag-handle"')
     content_pos = html.find('class="sheet-content')
     assert handle_pos != -1 and content_pos != -1 and handle_pos < content_pos
+    assert "overscroll-behavior: none" in html
     assert "overscroll-behavior-y: contain" in html
     assert "touch-action: pan-y" in html
 
@@ -414,6 +415,8 @@ def test_bottom_sheet_disables_content_scroll_during_drag():
     assert "content.style.touchAction = 'none'" in js
     assert "content.style.touchAction = 'pan-y'" in js
     assert "if (!sheet.classList.contains('open'))" in js
+    assert js.count('e.preventDefault()') >= 2
+    assert "if (startScrollTop === 0)" in js
 
 
 def test_row_click_uses_instant_zoom():
