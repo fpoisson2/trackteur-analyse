@@ -58,6 +58,7 @@
         if (start === 0) {
           if (startScrollTop === 0 && dy > 0) {
             dragging = true;
+            disableScroll();
           } else {
             return;
           }
