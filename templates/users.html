@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Gestion des utilisateurs</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 </head>
@@ -40,38 +41,40 @@
     </form>
 
     <h5 class="mt-4">Utilisateurs existants</h5>
-    <table class="table table-bordered align-middle">
-      <thead class="table-light">
-        <tr>
-          <th>Nom</th>
-          <th>Rôle</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for user in users %}
-        <tr>
-          <td>{{ user.username }}</td>
-          <td>{{ 'Admin' if user.is_admin else 'Lecture' }}</td>
-          <td>
-            <form method="post" class="d-inline">
-              <input type="hidden" name="action" value="reset">
-              <input type="hidden" name="user_id" value="{{ user.id }}">
-              <input type="password" name="password" class="form-control d-inline w-auto" placeholder="Nouveau mot de passe" required>
-              <button type="submit" class="btn btn-sm btn-warning ms-1">Réinitialiser</button>
-            </form>
-            {% if user != current_user %}
-            <form method="post" class="d-inline ms-2">
-              <input type="hidden" name="action" value="delete">
-              <input type="hidden" name="user_id" value="{{ user.id }}">
-              <button type="submit" class="btn btn-sm btn-danger">Supprimer</button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="table table-bordered align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Nom</th>
+            <th>Rôle</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+          <tr>
+            <td>{{ user.username }}</td>
+            <td>{{ 'Admin' if user.is_admin else 'Lecture' }}</td>
+            <td>
+              <form method="post" class="d-inline">
+                <input type="hidden" name="action" value="reset">
+                <input type="hidden" name="user_id" value="{{ user.id }}">
+                <input type="password" name="password" class="form-control d-inline w-auto" placeholder="Nouveau mot de passe" required>
+                <button type="submit" class="btn btn-sm btn-warning ms-1">Réinitialiser</button>
+              </form>
+              {% if user != current_user %}
+              <form method="post" class="d-inline ms-2">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="user_id" value="{{ user.id }}">
+                <button type="submit" class="btn btn-sm btn-danger">Supprimer</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </body>
 </html>
