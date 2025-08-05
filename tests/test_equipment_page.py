@@ -301,7 +301,7 @@ def test_equipment_page_shows_legend():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "legend" in html
+    assert "const legend = L.control({ position: 'topright' });" in html
 
 
 def test_zones_geojson_endpoint():

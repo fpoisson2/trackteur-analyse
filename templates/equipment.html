@@ -19,7 +19,6 @@
     .zone-row { cursor: pointer; }
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
     .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
-    .leaflet-bottom .legend { margin-bottom: 50vh; }
     #date-nav button { min-width: 3rem; }
     .bottom-sheet {
       position: fixed;
@@ -286,7 +285,7 @@
       trackLayer = L.geoJSON(null, {
         style: { color: 'blue' }
       }).addTo(map);
-      const legend = L.control({ position: 'bottomright' });
+      const legend = L.control({ position: 'topright' });
       legend.onAdd = () => {
         const div = L.DomUtil.create('div', 'legend');
         const levels = [1, 2, 3, 4, 5];
