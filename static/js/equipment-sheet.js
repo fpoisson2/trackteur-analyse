@@ -42,6 +42,7 @@
       if (dy > 6 && Math.abs(dy) > Math.abs(dx)) {
         dragging = true;
       } else {
+        if (dy > 0) e.preventDefault();
         return;
       }
     }
@@ -80,7 +81,9 @@
           if (typeof window.closeEquipmentSheet === 'function') {
             window.closeEquipmentSheet();
           } else {
-            const btn = document.querySelector('[data-close-sheet="equipment"], #close-equipment, [aria-label="Fermer"]');
+            const btn = sheetEl.querySelector(
+              '[data-close-sheet="equipment"], #close-equipment, [aria-label="Fermer"]'
+            );
             if (btn) {
               btn.click();
             } else {
