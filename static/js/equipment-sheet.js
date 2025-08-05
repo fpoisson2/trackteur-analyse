@@ -1,6 +1,5 @@
-(function () {
+ (function () {
   const mql = window.matchMedia('(max-width: 768px)');
-  if (!mql.matches) return;
   const sheetEl = document.querySelector('[data-sheet="equipment"]');
   if (!sheetEl) return;
   const content = sheetEl.querySelector('[data-sheet-content]');
@@ -15,6 +14,7 @@
   let lastY = 0;
   let lastTime = 0;
   let velocityY = 0;
+  let initialized = false;
 
   function getClosedPosition() {
     return sheetEl.offsetHeight - 48; // ~3rem
@@ -27,9 +27,6 @@
       sheetEl.style.transform = '';
     }
   }
-
-  setInitialState();
-  window.addEventListener('resize', setInitialState);
 
   function onPointerDown(e) {
     if (!e.isPrimary) return;
@@ -44,8 +41,14 @@
     sheetEl.style.transition = 'none';
 
     const style = window.getComputedStyle(sheetEl);
-    const matrix = new DOMMatrixReadOnly(style.transform);
-    initialTranslateY = matrix.m42;
+    let matrix;
+    try {
+      const Matrix = window.DOMMatrix || window.WebKitCSSMatrix;
+      matrix = new Matrix(style.transform);
+    } catch (err) {
+      matrix = { m42: 0 };
+    }
+    initialTranslateY = matrix.m42 || 0;
     if (sheetEl.getAttribute('data-open') === 'false') {
       initialTranslateY = getClosedPosition();
     }
@@ -154,13 +157,48 @@
 
     dragging = false;
   }
+  function setup() {
+    if (initialized) return;
+    setInitialState();
+    window.addEventListener('resize', setInitialState);
+    sheetEl.addEventListener('pointerdown', onPointerDown, { passive: true });
+    sheetEl.addEventListener('pointermove', onPointerMove, { passive: false });
+    sheetEl.addEventListener('pointerup', finishDrag, { passive: true });
+    sheetEl.addEventListener('pointercancel', finishDrag, { passive: true });
+    initialized = true;
+  }
 
-  sheetEl.addEventListener('pointerdown', onPointerDown, { passive: true });
-  sheetEl.addEventListener('pointermove', onPointerMove, { passive: false });
-  sheetEl.addEventListener('pointerup', finishDrag, { passive: true });
-  sheetEl.addEventListener('pointercancel', finishDrag, { passive: true });
+  function teardown() {
+    if (!initialized) return;
+    sheetEl.style.transform = '';
+    sheetEl.setAttribute('data-open', 'true');
+    window.removeEventListener('resize', setInitialState);
+    sheetEl.removeEventListener('pointerdown', onPointerDown);
+    sheetEl.removeEventListener('pointermove', onPointerMove);
+    sheetEl.removeEventListener('pointerup', finishDrag);
+    sheetEl.removeEventListener('pointercancel', finishDrag);
+    initialized = false;
+  }
+
+  function handleModeChange(e) {
+    if (e.matches) {
+      setup();
+    } else {
+      teardown();
+    }
+  }
+
+  mql.addEventListener('change', handleModeChange);
+  if (mql.matches) {
+    setup();
+  } else {
+    teardown();
+  }
 
   window.openEquipmentSheet = function () {
+    if (!initialized && mql.matches) {
+      setup();
+    }
     sheetEl.style.transition = '';
     sheetEl.style.transform = 'translateY(0px)';
     sheetEl.setAttribute('data-open', 'true');
