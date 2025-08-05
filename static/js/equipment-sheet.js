@@ -110,7 +110,7 @@
       /* ignore */
     }
 
-    sheetEl.style.transition = '';
+    sheetEl.style.transition = 'transform 0.2s ease-out';
 
     if (!dragging) {
       sheetEl.style.transform = '';
@@ -118,7 +118,8 @@
     }
 
     const closedPosition = getClosedPosition();
-    const threshold = closedPosition * 0.3;
+    const isClosed = sheetEl.getAttribute('data-open') === 'false';
+    const threshold = closedPosition * (isClosed ? 0.7 : 0.3);
     const shouldClose = currentY > threshold || velocityY > 0.35;
 
     const targetPosition = shouldClose ? closedPosition : 0;
@@ -130,30 +131,31 @@
       sheetEl.style.transform = targetTransform;
     });
 
-    sheetEl.addEventListener(
-      'transitionend',
-      () => {
-        if (shouldClose) {
-          sheetEl.setAttribute('data-open', 'false');
-          if (typeof window.closeEquipmentSheet === 'function') {
-            window.closeEquipmentSheet();
-          } else {
-            const btn = sheetEl.querySelector(
-              '[data-close-sheet="equipment"], #close-equipment, [aria-label="Fermer"]'
-            );
-            if (btn) {
-              btn.click();
-            }
-          }
+    let finalized = false;
+    function finalize() {
+      if (finalized) return;
+      finalized = true;
+      if (shouldClose) {
+        sheetEl.setAttribute('data-open', 'false');
+        if (typeof window.closeEquipmentSheet === 'function') {
+          window.closeEquipmentSheet();
         } else {
-          sheetEl.setAttribute('data-open', 'true');
+          const btn = sheetEl.querySelector(
+            '[data-close-sheet="equipment"], #close-equipment, [aria-label="Fermer"]'
+          );
+          if (btn) {
+            btn.click();
+          }
         }
-        requestAnimationFrame(() => {
-          setInitialState();
-        });
-      },
-      { once: true }
-    );
+      } else {
+        sheetEl.setAttribute('data-open', 'true');
+      }
+      requestAnimationFrame(() => {
+        setInitialState();
+      });
+    }
+    sheetEl.addEventListener('transitionend', finalize, { once: true });
+    setTimeout(finalize, 250);
 
     dragging = false;
   }
