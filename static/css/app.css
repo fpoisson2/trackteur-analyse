@@ -9,3 +9,9 @@
     transform: translateY(calc(100% - 3rem));
   }
 }
+
+.leaflet-control-zoom,
+#legend-btn {
+  background: transparent;
+  border: none;
+}
