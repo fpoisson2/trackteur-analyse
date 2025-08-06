@@ -17,6 +17,7 @@
     }
     #map-container { height: 100%; }
     .zone-row { cursor: pointer; }
+    .zone-row.highlighted { outline: 2px solid #0d6efd; }
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
     .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
     .legend-popup { position: absolute; top: 60px; right: 10px; z-index: 1100; }
@@ -93,7 +94,7 @@
           </thead>
           <tbody>
             {% for z in zones %}
-            <tr class="zone-row" data-zone-id="{{ z.id }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
+            <tr class="zone-row" data-zone-id="{{ z.id }}">
               <td>{{ z.dates }}</td>
               <td>{{ z.pass_count }}</td>
               <td>{{ z.surface_ha|round(2) }}</td>
@@ -115,6 +116,7 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="{{ url_for('static', filename='js/overlay_bundle.js') }}"></script>
   <script>
     let map;
     let zoneLayer;
@@ -138,7 +140,12 @@
       featureLayers = {};
       zoneLayer.eachLayer(layer => {
         const dates = layer.feature.properties.dates;
-        featureLayers[layer.feature.id] = layer;
+        const zid = String(
+          layer.feature.properties.id ??
+          layer.feature.properties.zone_id ??
+          layer.feature.id
+        );
+        featureLayers[zid] = layer;
         dates.forEach(d => {
           dateLayers[d] = dateLayers[d] || [];
           dateLayers[d].push(layer);
@@ -149,11 +156,13 @@
     function highlightRows(ids) {
       const rows = document.querySelectorAll('.zone-row');
       rows.forEach(r => {
-        r.classList.toggle('table-primary', ids.includes(parseInt(r.dataset.zoneId)));
+        const selected = ids.includes(r.dataset.zoneId);
+        r.classList.toggle('table-primary', selected);
+        r.classList.toggle('highlighted', selected);
       });
     }
 
-    function highlightZone(ids, skipZoom = false) {
+    function highlightZone(ids, showPopup = false) {
       zoneLayer.eachLayer(l => l.setStyle({ weight: 1 }));
       ids = Array.isArray(ids) ? ids : [ids];
       let bounds;
@@ -161,7 +170,7 @@
         const layer = featureLayers[id];
         if (layer) {
           layer.setStyle({ weight: 4 });
-          if (!skipZoom && layer.getBounds && layer.getBounds().isValid()) {
+          if (layer.getBounds && layer.getBounds().isValid()) {
             const b = layer.getBounds();
             bounds = bounds
               ? bounds.extend(b)
@@ -169,39 +178,49 @@
           }
         }
       });
-      if (bounds && !skipZoom) {
+      if (bounds) {
         skipFetch = true;
-        const finish = () => {
-          skipFetch = false;
-          fetchData().then(() => {
-            if (ids.length === 1 && featureLayers[ids[0]]) {
-              featureLayers[ids[0]].openPopup();
+        return new Promise(resolve => {
+          const finish = () => {
+            skipFetch = false;
+            fetchData().then(() => {
+              if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
+                featureLayers[ids[0]].openPopup();
+              }
+              resolve();
+            });
+          };
+          const ensureZoom = () => {
+            if (map.getZoom() < 17) {
+              map.once('zoomend', finish);
+              map.setZoom(17, { animate: false });
+            } else {
+              finish();
             }
-          });
-        };
-        const ensureZoom = () => {
-          if (map.getZoom() < 17) {
-            map.once('zoomend', finish);
-            map.setZoom(17, { animate: false });
-          } else {
-            finish();
-          }
-        };
-        const center = bounds.getCenter();
-        if (map.getBounds().contains(bounds)) {
-          if (map.getCenter().equals(center)) {
-            ensureZoom();
+          };
+          const center = bounds.getCenter();
+          if (map.getBounds().contains(bounds)) {
+            if (map.getCenter().equals(center)) {
+              ensureZoom();
+            } else {
+              map.once('moveend', ensureZoom);
+              map.panTo(center, { animate: false });
+            }
           } else {
             map.once('moveend', ensureZoom);
-            map.panTo(center, { animate: false });
+            map.fitBounds(bounds, { animate: false });
           }
-        } else {
-          map.once('moveend', ensureZoom);
-          map.fitBounds(bounds, { animate: false });
-        }
-      } else if (ids.length === 1 && featureLayers[ids[0]]) {
+        });
+      }
+      if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
         featureLayers[ids[0]].openPopup();
       }
+      return Promise.resolve();
+    }
+
+    function selectZone(zoneId) {
+      highlightRows([zoneId]);
+      return highlightZone(zoneId, true);
     }
 
 
@@ -278,10 +297,14 @@
           let html = `<b>Passages:</b> ${c}<br><b>Surface:</b> ${area.toFixed(2)} ha`;
           if (dates) html += `<br><b>Dates:</b> ${dates}`;
           layer.bindPopup(html);
-          layer.on('click', () => {
-            const zoneId = parseInt(feature.id);
-            highlightRows([zoneId]);
-            highlightZone(zoneId);
+          layer.on('click', async () => {
+            const zoneId = String(
+              feature.properties.id ??
+              feature.properties.zone_id ??
+              feature.id
+            );
+            await selectZone(zoneId);
+            openEquipmentSheet();
           });
         }
       }).addTo(map);
@@ -417,47 +440,13 @@
 
     function setupInteractions() {
       document.querySelectorAll('.zone-row').forEach(row => {
-        row.addEventListener('click', () => {
-          const zoneId = parseInt(row.dataset.zoneId);
-          highlightRows([zoneId]);
-          const layer = featureLayers[zoneId];
-          if (layer) {
-            highlightZone(zoneId);
-          } else if (row.dataset.bounds) {
-            const b = JSON.parse(row.dataset.bounds);
-            const bounds = L.latLngBounds(
-              [b[1], b[0]],
-              [b[3], b[2]]
-            );
-            skipFetch = true;
-            const finish = () => {
-              skipFetch = false;
-              fetchData().then(() => {
-                highlightRows([zoneId]);
-                if (featureLayers[zoneId]) highlightZone(zoneId, true);
-              });
-            };
-            const ensureZoom = () => {
-              if (map.getZoom() < 17) {
-                map.once('zoomend', finish);
-                map.setZoom(17, { animate: false });
-              } else {
-                finish();
-              }
-            };
-            const center = bounds.getCenter();
-            if (map.getBounds().contains(bounds)) {
-              if (map.getCenter().equals(center)) {
-                ensureZoom();
-              } else {
-                map.once('moveend', ensureZoom);
-                map.panTo(center, { animate: false });
-              }
-            } else {
-              map.once('moveend', ensureZoom);
-              map.fitBounds(bounds, { animate: false });
-            }
+        row.addEventListener('click', async () => {
+          const zoneId = row.dataset.zoneId;
+          if (!zonesLoaded) {
+            await fetchData();
           }
+          await selectZone(zoneId);
+          openEquipmentSheet();
         });
       });
       setupMap();

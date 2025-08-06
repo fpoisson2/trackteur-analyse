@@ -3,6 +3,7 @@ import sys
 import json
 import re
 from datetime import date, timedelta, datetime
+from pathlib import Path
 
 from pytest import approx
 
@@ -382,7 +383,8 @@ def test_equipment_page_contains_highlight_zone():
     start = html.find("function highlightZone")
     end = html.find("function fetchData")
     snippet = html[start:end] if end != -1 else html[start:]
-    assert "fetchData()" in snippet
+    assert "return new Promise" in snippet
+    assert "return Promise.resolve()" in snippet
 
 
 def test_equipment_page_contains_highlight_rows():
@@ -395,6 +397,12 @@ def test_equipment_page_contains_highlight_rows():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert "function highlightRows" in html
+    start = html.find("function highlightRows")
+    end = html.find("function highlightZone")
+    snippet = html[start:end] if end != -1 else html[start:]
+    assert "highlighted" in snippet
+    assert "ids.includes(r.dataset.zoneId)" in snippet
+    assert "parseInt" not in snippet
 
 
 def test_map_container_allows_touch():
@@ -467,7 +475,7 @@ def test_row_click_enforces_min_zoom():
     assert "setZoom(17" in html
 
 
-def test_highlight_zone_skip_zoom_parameter():
+def test_row_click_calls_highlight_zone_with_popup():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -476,8 +484,71 @@ def test_highlight_zone_skip_zoom_parameter():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "skipZoom" in html
-    assert "highlightZone(zoneId, true)" in html
+    start = html.find("row.addEventListener('click'")
+    end = html.find("});", start)
+    snippet = html[start:end]
+    assert "async () =>" in snippet
+    assert "const zoneId = row.dataset.zoneId" in snippet
+    assert "openEquipmentSheet()" in snippet
+    assert "if (!zonesLoaded)" in snippet
+    fd = snippet.index("await fetchData()")
+    sz = snippet.index("await selectZone(zoneId)")
+    os = snippet.index("openEquipmentSheet()")
+    assert fd < sz < os
+    assert "parseInt" not in snippet
+
+
+def test_select_zone_calls_highlight_and_popup():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    start = html.find("function selectZone")
+    end = html.find("function fetchData")
+    snippet = html[start:end] if end != -1 else html[start:]
+    assert "highlightRows([zoneId])" in snippet
+    assert "return highlightZone(zoneId, true)" in snippet
+    assert "parseInt" not in snippet
+
+
+def test_rebuild_date_layers_uses_properties_id():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    start = html.find("function rebuildDateLayers")
+    end = html.find("function highlightRows")
+    snippet = html[start:end] if end != -1 else html[start:]
+    assert "layer.feature.properties.id" in snippet
+    assert "layer.feature.id" in snippet
+
+
+def test_polygon_click_calls_select_zone_and_opens_sheet():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    start = html.find("layer.on('click'")
+    end = html.find("});", start)
+    snippet = html[start:end]
+    assert "feature.properties.id" in snippet
+    assert "feature.id" in snippet
+    assert "String(" in snippet
+    assert "async () =>" in snippet
+    assert "await selectZone(zoneId)" in snippet
+    assert "openEquipmentSheet()" in snippet
 
 
 def test_bounds_check_before_zooming():
@@ -635,6 +706,29 @@ def test_zones_geojson_range_with_gap():
         all_dates.extend(feat["properties"]["dates"])
     assert today.isoformat() in all_dates
     assert prev_month.isoformat() in all_dates
+
+
+def test_zones_geojson_uses_global_ids():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        yesterday = date.today() - timedelta(days=1)
+        agg_all = zone.get_aggregated_zones(eq.id)
+        full_idx = next(
+            i for i, z in enumerate(agg_all) if str(yesterday) in z["dates"]
+        )
+        resp = client.get(
+            f"/equipment/{eq.id}/zones.geojson?start={yesterday.isoformat()}&"
+            f"end={yesterday.isoformat()}&zoom=12"
+        )
+    data = resp.get_json()
+    assert data["features"], "no features returned"
+    feat = data["features"][0]
+    assert feat["id"] == str(full_idx)
+    assert feat["properties"]["id"] == str(full_idx)
 
 
 def test_points_geojson_filters_by_day():
@@ -891,3 +985,21 @@ def test_initial_bounds_include_tracks():
 
     bounds = get_js_array(resp.data.decode(), "initialBounds")
     assert bounds[2] > 9
+
+
+def test_overlay_bundle_guard_present():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+
+    html = resp.data.decode()
+    assert "js/overlay_bundle.js" in html
+
+    project_root = Path(__file__).resolve().parents[1]
+    overlay_path = project_root / "static" / "js" / "overlay_bundle.js"
+    content = overlay_path.read_text()
+    assert "customElements.get('mce-autosize-textarea')" in content
