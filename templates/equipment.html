@@ -51,6 +51,9 @@
     .flatpickr-calendar {
       z-index: 2000;
     }
+    .flatpickr-day.no-data {
+      opacity: 0.3;
+    }
   </style>
 </head>
 <body class="m-0">
@@ -352,6 +355,13 @@
           dateFormat: 'Y-m-d',
           allowInput: false,
           defaultDate: dateInput.value ? dateInput.value.split(' to ') : null,
+          enable: availableDates,
+          onDayCreate: function(dObj, dStr, fp, dayElem) {
+            const date = dayElem.dateObj.toISOString().slice(0, 10);
+            if (!availableDates.includes(date)) {
+              dayElem.classList.add('no-data');
+            }
+          },
           onChange: function(selectedDates, dateStr) {
             if (selectedDates.length === 2 || selectedDates.length === 0) {
               dateInput.value = dateStr;
