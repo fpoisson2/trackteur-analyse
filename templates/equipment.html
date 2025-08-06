@@ -355,17 +355,25 @@
           dateFormat: 'Y-m-d',
           allowInput: false,
           defaultDate: dateInput.value ? dateInput.value.split(' to ') : null,
-          enable: availableDates,
           onDayCreate: function(dObj, dStr, fp, dayElem) {
             const date = dayElem.dateObj.toISOString().slice(0, 10);
             if (!availableDates.includes(date)) {
-              dayElem.classList.add('no-data');
+              dayElem.classList.add('no-data', 'flatpickr-disabled');
+              dayElem.setAttribute('aria-disabled', 'true');
+              dayElem.addEventListener('click', e => e.preventDefault());
             }
           },
           onChange: function(selectedDates, dateStr) {
-            if (selectedDates.length === 2 || selectedDates.length === 0) {
+            if (selectedDates.length === 2) {
+              const [start, end] = selectedDates.map(d => d.toISOString().slice(0, 10));
+              if (!availableDates.includes(start) || !availableDates.includes(end)) {
+                this.clear();
+                return;
+              }
               dateInput.value = dateStr;
               updatePeriod(dateStr);
+            } else if (selectedDates.length === 0) {
+              dateInput.value = '';
             }
           }
         });
