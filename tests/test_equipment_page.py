@@ -485,12 +485,15 @@ def test_row_click_calls_highlight_zone_with_popup():
     start = html.find("row.addEventListener('click'")
     end = html.find("});", start)
     snippet = html[start:end]
+    assert "async () =>" in snippet
     assert "const zoneId = row.dataset.zoneId" in snippet
     assert "highlightRows([zoneId])" in snippet
+    assert "if (!zonesLoaded)" in snippet
+    fd = snippet.index("await fetchData()")
     hz = snippet.index("highlightZone([zoneId], true)")
     os = snippet.index("openEquipmentSheet()")
     hr = snippet.index("highlightRows([zoneId])")
-    assert hr < hz < os
+    assert hr < fd < hz < os
     assert "parseInt" not in snippet
 
 
