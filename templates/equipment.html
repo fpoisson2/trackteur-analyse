@@ -200,12 +200,8 @@
             });
           };
           const ensureZoom = () => {
-            if (map.getZoom() < 17) {
-              map.once('zoomend', finish);
-              map.setZoom(17, { animate: false });
-            } else {
-              finish();
-            }
+            map.zoomOut(3, { animate: false });
+            finish();
           };
           const center = bounds.getCenter();
           if (map.getBounds().contains(bounds)) {

@@ -447,7 +447,7 @@ def test_row_click_uses_instant_zoom():
     assert "animate: false" in html
     assert "fitBounds(bounds, { animate: false" in html
     assert "once('moveend', ensureZoom" in html
-    assert "once('zoomend', finish" in html
+    assert "zoomOut(3, { animate: false" in html
     assert "fetchData().then" in html
 
 
@@ -463,7 +463,7 @@ def test_row_click_recenters_when_visible():
     assert "panTo(center, { animate: false" in html
 
 
-def test_row_click_enforces_min_zoom():
+def test_row_click_zoom_out_three_levels():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -472,7 +472,7 @@ def test_row_click_enforces_min_zoom():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "setZoom(17" in html
+    assert "zoomOut(3" in html
 
 
 def test_row_click_calls_highlight_zone_with_popup():
