@@ -136,6 +136,31 @@ def get_js_array(html: str, var_name: str):
     return json.loads(match.group(1))
 
 
+def test_header_has_clickable_logo_and_no_buttons():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    from flask import url_for
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    with app.test_request_context():
+        index_url = url_for("index")
+
+    html = resp.data.decode()
+    assert "Retour" not in html
+    assert "Déconnexion" not in html
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    logo_link = soup.find("a", href=index_url)
+    assert logo_link is not None
+    assert logo_link.find("img", alt="Trackteur Analyse") is not None
+
+
 def test_equipment_detail_page_loads():
     app = make_app()
     client = app.test_client()
