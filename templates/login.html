@@ -9,14 +9,14 @@
 </head>
 <body class="p-4">
   <section class="d-flex flex-column justify-content-center align-items-center min-vh-100">
-    <div class="container">
+    <div class="card p-4 shadow w-100" style="max-width: 400px;">
       <div class="text-center mb-4">
-        <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="120">
+        <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="180">
       </div>
       {% if error %}
       <div class="alert alert-danger">{{ error }}</div>
       {% endif %}
-      <form method="post" class="mb-4">
+      <form method="post">
         <div class="mb-3">
           <label for="username" class="form-label">Nom d’utilisateur</label>
           <input type="text" class="form-control" id="username" name="username" required autofocus>
@@ -25,7 +25,7 @@
           <label for="password" class="form-label">Mot de passe</label>
           <input type="password" class="form-control" id="password" name="password" required>
         </div>
-        <button type="submit" class="btn btn-primary">Se connecter</button>
+        <button type="submit" class="btn btn-primary w-100">Se connecter</button>
       </form>
     </div>
   </section>
