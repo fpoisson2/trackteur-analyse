@@ -395,6 +395,10 @@ def test_equipment_page_contains_highlight_rows():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert "function highlightRows" in html
+    start = html.find("function highlightRows")
+    end = html.find("function highlightZone")
+    snippet = html[start:end] if end != -1 else html[start:]
+    assert "highlighted" in snippet
 
 
 def test_map_container_allows_touch():
@@ -467,7 +471,7 @@ def test_row_click_enforces_min_zoom():
     assert "setZoom(17" in html
 
 
-def test_highlight_zone_skip_zoom_parameter():
+def test_row_click_calls_highlight_zone_with_popup():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -476,8 +480,8 @@ def test_highlight_zone_skip_zoom_parameter():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "skipZoom" in html
-    assert "highlightZone(zoneId, true)" in html
+    assert "openEquipmentSheet()" in html
+    assert "highlightZone([zoneId], true)" in html
 
 
 def test_bounds_check_before_zooming():

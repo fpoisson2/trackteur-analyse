@@ -17,6 +17,7 @@
     }
     #map-container { height: 100%; }
     .zone-row { cursor: pointer; }
+    .zone-row.highlighted { outline: 2px solid #0d6efd; }
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
     .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
     .legend-popup { position: absolute; top: 60px; right: 10px; z-index: 1100; }
@@ -149,11 +150,13 @@
     function highlightRows(ids) {
       const rows = document.querySelectorAll('.zone-row');
       rows.forEach(r => {
-        r.classList.toggle('table-primary', ids.includes(parseInt(r.dataset.zoneId)));
+        const selected = ids.includes(parseInt(r.dataset.zoneId));
+        r.classList.toggle('table-primary', selected);
+        r.classList.toggle('highlighted', selected);
       });
     }
 
-    function highlightZone(ids, skipZoom = false) {
+    function highlightZone(ids, showPopup = false) {
       zoneLayer.eachLayer(l => l.setStyle({ weight: 1 }));
       ids = Array.isArray(ids) ? ids : [ids];
       let bounds;
@@ -161,7 +164,7 @@
         const layer = featureLayers[id];
         if (layer) {
           layer.setStyle({ weight: 4 });
-          if (!skipZoom && layer.getBounds && layer.getBounds().isValid()) {
+          if (layer.getBounds && layer.getBounds().isValid()) {
             const b = layer.getBounds();
             bounds = bounds
               ? bounds.extend(b)
@@ -169,12 +172,12 @@
           }
         }
       });
-      if (bounds && !skipZoom) {
+      if (bounds) {
         skipFetch = true;
         const finish = () => {
           skipFetch = false;
           fetchData().then(() => {
-            if (ids.length === 1 && featureLayers[ids[0]]) {
+            if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
               featureLayers[ids[0]].openPopup();
             }
           });
@@ -199,7 +202,7 @@
           map.once('moveend', ensureZoom);
           map.fitBounds(bounds, { animate: false });
         }
-      } else if (ids.length === 1 && featureLayers[ids[0]]) {
+      } else if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
         featureLayers[ids[0]].openPopup();
       }
     }
@@ -281,7 +284,7 @@
           layer.on('click', () => {
             const zoneId = parseInt(feature.id);
             highlightRows([zoneId]);
-            highlightZone(zoneId);
+            highlightZone(zoneId, true);
           });
         }
       }).addTo(map);
@@ -419,10 +422,11 @@
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', () => {
           const zoneId = parseInt(row.dataset.zoneId);
+          openEquipmentSheet();
           highlightRows([zoneId]);
           const layer = featureLayers[zoneId];
           if (layer) {
-            highlightZone(zoneId);
+            highlightZone([zoneId], true);
           } else if (row.dataset.bounds) {
             const b = JSON.parse(row.dataset.bounds);
             const bounds = L.latLngBounds(
@@ -434,7 +438,7 @@
               skipFetch = false;
               fetchData().then(() => {
                 highlightRows([zoneId]);
-                if (featureLayers[zoneId]) highlightZone(zoneId, true);
+                if (featureLayers[zoneId]) highlightZone([zoneId], true);
               });
             };
             const ensureZoom = () => {
