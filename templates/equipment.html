@@ -19,6 +19,17 @@
     .zone-row { cursor: pointer; }
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
     .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
+    .legend-btn {
+      background: white;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      line-height: 30px;
+      text-align: center;
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+      font-weight: bold;
+    }
     #date-nav button { min-width: 3rem; }
     .bottom-sheet {
       position: fixed;
@@ -55,11 +66,9 @@
 </head>
 <body class="m-0">
   <div id="map-container"></div>
-  <div class="position-absolute top-0 start-0 p-2 d-flex align-items-center bg-white rounded shadow" style="z-index:1100;">
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="40" class="me-2">
-    <a href="{{ url_for('index') }}" class="btn btn-sm btn-light">Retour</a>
-    <a href="{{ url_for('logout') }}" class="btn btn-sm btn-light ms-2">Déconnexion</a>
-  </div>
+  <a href="{{ url_for('index') }}" class="position-absolute top-0 start-0 p-2" style="z-index:1100;">
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="40">
+  </a>
 
   {% if zones %}
   <div id="info-sheet" class="bottom-sheet" data-sheet="equipment" data-open="false">
@@ -67,9 +76,9 @@
     <div class="sheet-content p-3" data-sheet-content>
       <h5 class="mb-3">{{ equipment.name }}</h5>
       <div id="date-nav" class="input-group mb-3">
-        <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
+        <button id="prev-day" type="button" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
         <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
-        <button id="next-day" class="btn btn-outline-secondary" {% if not next_day_url %}disabled{% endif %} data-url="{{ next_day_url or '' }}">&gt;</button>
+        <button id="next-day" type="button" class="btn btn-outline-secondary" {% if not next_day_url %}disabled{% endif %} data-url="{{ next_day_url or '' }}">&gt;</button>
         <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>📅</button>
       </div>
       <div class="form-check form-switch mb-2">
@@ -105,6 +114,18 @@
     <p>Aucune donnée disponible pour cet équipement.</p>
   </div>
   {% endif %}
+
+  <div class="modal fade" id="legendModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Légende</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+        </div>
+        <div class="modal-body" id="legend-content"></div>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -285,19 +306,29 @@
       trackLayer = L.geoJSON(null, {
         style: { color: 'blue' }
       }).addTo(map);
-      const legend = L.control({ position: 'topright' });
-      legend.onAdd = () => {
-        const div = L.DomUtil.create('div', 'legend');
+      const legendHtml = (() => {
         const levels = [1, 2, 3, 4, 5];
-        let html = '<strong>Passages</strong><br>';
+        let html = '<div class="legend"><strong>Passages</strong><br>';
         levels.forEach((l, i) => {
           const label = i === levels.length - 1 ? `${l}+` : `${l}`;
           html += `<i style="background:${colors[i]}"></i> ${label}<br>`;
         });
-        div.innerHTML = html;
+        html += '</div>';
+        return html;
+      })();
+      const legendBtn = L.control({ position: 'topright' });
+      legendBtn.onAdd = () => {
+        const div = L.DomUtil.create('div', 'legend-btn');
+        div.innerHTML = '?';
+        div.title = 'Légende';
+        div.onclick = () => {
+          document.getElementById('legend-content').innerHTML = legendHtml;
+          const modal = new bootstrap.Modal(document.getElementById('legendModal'));
+          modal.show();
+        };
         return div;
       };
-      legend.addTo(map);
+      legendBtn.addTo(map);
       map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
         const b = L.latLngBounds(
@@ -352,6 +383,7 @@
           dateFormat: 'Y-m-d',
           allowInput: false,
           defaultDate: dateInput.value ? dateInput.value.split(' to ') : null,
+          enable: availableDates,
           onChange: function(selectedDates, dateStr) {
             if (selectedDates.length === 2 || selectedDates.length === 0) {
               dateInput.value = dateStr;
@@ -368,11 +400,46 @@
       }
       const prevBtn = document.getElementById('prev-day');
       const nextBtn = document.getElementById('next-day');
-      if (prevBtn) prevBtn.addEventListener('click', () => {
+
+      function setNavButtons() {
+        if (!dateInput || !availableDates.length) return;
+        const current = dateInput.value;
+        const idx = availableDates.indexOf(current);
+        const buildUrl = (d) => {
+          const [y, m, day] = d.split('-');
+          const params = new URLSearchParams(window.location.search);
+          params.set('year', y);
+          params.set('month', m);
+          params.set('day', day);
+          params.delete('start');
+          params.delete('end');
+          params.delete('show');
+          return `${window.location.pathname}?${params.toString()}`;
+        };
+        if (idx > 0) {
+          prevBtn.dataset.url = buildUrl(availableDates[idx - 1]);
+          prevBtn.disabled = false;
+        } else {
+          prevBtn.dataset.url = '';
+          prevBtn.disabled = true;
+        }
+        if (idx !== -1 && idx < availableDates.length - 1) {
+          nextBtn.dataset.url = buildUrl(availableDates[idx + 1]);
+          nextBtn.disabled = false;
+        } else {
+          nextBtn.dataset.url = '';
+          nextBtn.disabled = true;
+        }
+      }
+
+      setNavButtons();
+      if (prevBtn) prevBtn.addEventListener('click', (e) => {
+        e.preventDefault();
         const url = prevBtn.dataset.url;
         if (url) window.location.href = url;
       });
-      if (nextBtn) nextBtn.addEventListener('click', () => {
+      if (nextBtn) nextBtn.addEventListener('click', (e) => {
+        e.preventDefault();
         const url = nextBtn.dataset.url;
         if (url) window.location.href = url;
       });

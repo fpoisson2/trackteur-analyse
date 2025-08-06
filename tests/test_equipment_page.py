@@ -4,6 +4,8 @@ import json
 import re
 from datetime import date, timedelta, datetime
 
+from bs4 import BeautifulSoup
+
 from pytest import approx
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -301,7 +303,7 @@ def test_equipment_page_shows_legend():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "const legend = L.control({ position: 'topright' });" in html
+    assert "legend-btn" in html
 
 
 def test_zones_geojson_endpoint():
@@ -858,3 +860,54 @@ def test_initial_bounds_include_tracks():
 
     bounds = get_js_array(resp.data.decode(), "initialBounds")
     assert bounds[2] > 9
+
+
+def test_available_dates_variable_only_includes_data_days():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        prev_month = (
+            today.replace(day=1) - timedelta(days=1)
+        ).replace(day=1)
+        prev_year = today - timedelta(days=365)
+        resp = client.get(f"/equipment/{eq.id}")
+
+    available = get_js_array(resp.data.decode(), "availableDates")
+    expected = sorted(
+        [
+            prev_year.isoformat(),
+            prev_month.isoformat(),
+            yesterday.isoformat(),
+            today.isoformat(),
+        ]
+    )
+    assert available == expected
+
+
+def test_prev_next_buttons_point_to_existing_dates():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        resp = client.get(
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+
+    soup = BeautifulSoup(resp.data.decode(), "html.parser")
+    prev_btn = soup.select_one("#prev-day")
+    next_btn = soup.select_one("#next-day")
+    assert prev_btn["data-url"].endswith(
+        f"year={yesterday.year}&month={yesterday.month}&day={yesterday.day}"
+    )
+    assert "disabled" not in prev_btn.attrs
+    assert "disabled" in next_btn.attrs

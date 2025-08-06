@@ -523,32 +523,34 @@ def create_app():
         available_dates = [d.isoformat() for d in sorted_dates]
 
         prev_day_url = next_day_url = None
-        if (
-            start_date is not None
-            and end_date is not None
-            and start_date == end_date
-        ):
+        current = None
+        if start_date is not None and end_date is not None and start_date == end_date:
             current = start_date
-            if current in sorted_dates:
-                idx = sorted_dates.index(current)
-                if idx > 0:
-                    pd = sorted_dates[idx - 1]
-                    prev_day_url = url_for(
-                        'equipment_detail',
-                        equipment_id=equipment_id,
-                        year=pd.year,
-                        month=pd.month,
-                        day=pd.day,
-                    )
-                if idx + 1 < len(sorted_dates):
-                    nd = sorted_dates[idx + 1]
-                    next_day_url = url_for(
-                        'equipment_detail',
-                        equipment_id=equipment_id,
-                        year=nd.year,
-                        month=nd.month,
-                        day=nd.day,
-                    )
+        elif year and month and day:
+            try:
+                current = date(year, month, day)
+            except ValueError:
+                current = None
+        if current and current in sorted_dates:
+            idx = sorted_dates.index(current)
+            if idx > 0:
+                pd = sorted_dates[idx - 1]
+                prev_day_url = url_for(
+                    'equipment_detail',
+                    equipment_id=equipment_id,
+                    year=pd.year,
+                    month=pd.month,
+                    day=pd.day,
+                )
+            if idx + 1 < len(sorted_dates):
+                nd = sorted_dates[idx + 1]
+                next_day_url = url_for(
+                    'equipment_detail',
+                    equipment_id=equipment_id,
+                    year=nd.year,
+                    month=nd.month,
+                    day=nd.day,
+                )
 
         date_value = ""
         if start_date and end_date:
