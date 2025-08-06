@@ -184,7 +184,13 @@
       if (bounds) {
         skipFetch = true;
         return new Promise(resolve => {
+          const sheet = document.querySelector('[data-sheet="equipment"]');
+          const isOpen = sheet && sheet.getAttribute('data-open') === 'true';
+          const offset = isOpen ? sheet.getBoundingClientRect().height : 0;
           const finish = () => {
+            if (offset) {
+              map.panBy([0, offset / 2], { animate: false });
+            }
             skipFetch = false;
             fetchData().then(() => {
               if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
@@ -193,26 +199,12 @@
               resolve();
             });
           };
-          const ensureZoom = () => {
-            if (map.getZoom() < 17) {
-              map.once('zoomend', finish);
-              map.setZoom(17, { animate: false });
-            } else {
-              finish();
-            }
-          };
-          const center = bounds.getCenter();
-          if (map.getBounds().contains(bounds)) {
-            if (map.getCenter().equals(center)) {
-              ensureZoom();
-            } else {
-              map.once('moveend', ensureZoom);
-              map.panTo(center, { animate: false });
-            }
-          } else {
-            map.once('moveend', ensureZoom);
-            map.fitBounds(bounds, { animate: false });
-          }
+          map.once('moveend', finish);
+          map.fitBounds(bounds, {
+            paddingTopLeft: [0, 0],
+            paddingBottomRight: [0, offset],
+            animate: false,
+          });
         });
       }
       if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
@@ -452,8 +444,8 @@
           if (!zonesLoaded) {
             await fetchData();
           }
-          await selectZone(zoneId);
           openEquipmentSheet();
+          await selectZone(zoneId);
         });
       });
       setupMap();

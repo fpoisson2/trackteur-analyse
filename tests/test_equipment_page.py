@@ -435,7 +435,7 @@ def test_equipment_sheet_has_data_attributes_and_script():
     assert 'equipment-sheet.js' in html
 
 
-def test_row_click_uses_instant_zoom():
+def test_row_click_fits_bounds_without_zoom_out():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -444,14 +444,15 @@ def test_row_click_uses_instant_zoom():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
+    assert "map.fitBounds(bounds" in html
     assert "animate: false" in html
-    assert "fitBounds(bounds, { animate: false" in html
-    assert "once('moveend', ensureZoom" in html
-    assert "once('zoomend', finish" in html
+    assert "zoomOut" not in html
+    assert "autoZoomed" not in html
+    assert "panTo(center" not in html
     assert "fetchData().then" in html
 
 
-def test_row_click_recenters_when_visible():
+def test_row_click_calls_fit_bounds():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -460,10 +461,10 @@ def test_row_click_recenters_when_visible():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "panTo(center, { animate: false" in html
+    assert "map.fitBounds(bounds" in html
 
 
-def test_row_click_enforces_min_zoom():
+def test_row_click_does_not_zoom_out():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -472,7 +473,8 @@ def test_row_click_enforces_min_zoom():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "setZoom(17" in html
+    assert "zoomOut" not in html
+    assert "autoZoomed" not in html
 
 
 def test_row_click_calls_highlight_zone_with_popup():
@@ -492,9 +494,9 @@ def test_row_click_calls_highlight_zone_with_popup():
     assert "openEquipmentSheet()" in snippet
     assert "if (!zonesLoaded)" in snippet
     fd = snippet.index("await fetchData()")
-    sz = snippet.index("await selectZone(zoneId)")
     os = snippet.index("openEquipmentSheet()")
-    assert fd < sz < os
+    sz = snippet.index("await selectZone(zoneId)")
+    assert fd < os < sz
     assert "parseInt" not in snippet
 
 
@@ -513,6 +515,25 @@ def test_select_zone_calls_highlight_and_popup():
     assert "highlightRows([zoneId])" in snippet
     assert "return highlightZone(zoneId, true)" in snippet
     assert "parseInt" not in snippet
+
+
+def test_highlight_zone_offsets_for_open_sheet():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    start = html.find("function highlightZone")
+    end = html.find("function selectZone")
+    snippet = html[start:end] if end != -1 else html[start:]
+    assert "[data-sheet=\"equipment\"]" in snippet
+    assert "getAttribute('data-open') === 'true'" in snippet
+    assert "paddingBottomRight: [0, offset]" in snippet
+    assert "map.panBy([0, offset / 2" in snippet
+    assert "map.panBy([0, -offset" not in snippet
 
 
 def test_rebuild_date_layers_uses_properties_id():
@@ -560,7 +581,7 @@ def test_bounds_check_before_zooming():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "getBounds().contains" in html
+    assert "getBounds().contains" not in html
 
 
 def test_zone_rows_have_ids():
