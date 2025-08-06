@@ -3,6 +3,7 @@ import sys
 import json
 import re
 from datetime import date, timedelta, datetime
+from pathlib import Path
 
 from pytest import approx
 
@@ -221,7 +222,9 @@ def test_day_menu_excludes_days_without_zones():
     dates = get_js_array(html, "availableDates")
     assert nz.isoformat() not in dates
     assert "onDayCreate" in html
-    assert ".flatpickr-day.no-data" in html
+    assert "css/app.css" in html
+    css = (Path(app.static_folder) / "css" / "app.css").read_text()
+    assert ".flatpickr-day.no-data" in css
     assert "flatpickr-disabled" in html
     assert "!availableDates.includes(start)" in html
     assert "!availableDates.includes(end)" in html

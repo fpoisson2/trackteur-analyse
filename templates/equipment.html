@@ -9,52 +9,6 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-  <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      overscroll-behavior-y: none;
-    }
-    #map-container { height: 100%; }
-    .zone-row { cursor: pointer; }
-    .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
-    .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
-    #date-nav button { min-width: 3rem; }
-    .bottom-sheet {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 50vh;
-      background: #fff;
-      border-top-left-radius: 1rem;
-      border-top-right-radius: 1rem;
-      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.2);
-      z-index: 1000;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    .bottom-sheet .drag-handle {
-      width: 50px;
-      height: 5px;
-      background: #999;
-      border-radius: 3px;
-      margin: 8px auto;
-      cursor: grab;
-      touch-action: none;
-    }
-    .bottom-sheet .sheet-content {
-      flex: 1;
-      overflow-y: auto;
-    }
-    .flatpickr-calendar {
-      z-index: 2000;
-    }
-    .flatpickr-day.no-data {
-      opacity: 0.3;
-    }
-  </style>
 </head>
 <body class="m-0">
   <div id="map-container"></div>
