@@ -399,6 +399,8 @@ def test_equipment_page_contains_highlight_rows():
     end = html.find("function highlightZone")
     snippet = html[start:end] if end != -1 else html[start:]
     assert "highlighted" in snippet
+    assert "ids.includes(r.dataset.zoneId)" in snippet
+    assert "parseInt" not in snippet
 
 
 def test_map_container_allows_touch():
@@ -480,8 +482,31 @@ def test_row_click_calls_highlight_zone_with_popup():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "openEquipmentSheet()" in html
-    assert "highlightZone([zoneId], true)" in html
+    start = html.find("row.addEventListener('click'")
+    end = html.find("});", start)
+    snippet = html[start:end]
+    assert "const zoneId = row.dataset.zoneId" in snippet
+    assert "highlightRows([zoneId])" in snippet
+    hz = snippet.index("highlightZone([zoneId], true)")
+    os = snippet.index("openEquipmentSheet()")
+    hr = snippet.index("highlightRows([zoneId])")
+    assert hr < hz < os
+    assert "parseInt" not in snippet
+
+
+def test_rebuild_date_layers_uses_properties_id():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    start = html.find("function rebuildDateLayers")
+    end = html.find("function highlightRows")
+    snippet = html[start:end] if end != -1 else html[start:]
+    assert "layer.feature.properties.id" in snippet
 
 
 def test_bounds_check_before_zooming():

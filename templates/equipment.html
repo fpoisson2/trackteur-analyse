@@ -94,7 +94,7 @@
           </thead>
           <tbody>
             {% for z in zones %}
-            <tr class="zone-row" data-zone-id="{{ z.id }}" data-bounds='{{ zone_bounds.get(z.id)|tojson }}'>
+            <tr class="zone-row" data-zone-id="{{ z.id }}">
               <td>{{ z.dates }}</td>
               <td>{{ z.pass_count }}</td>
               <td>{{ z.surface_ha|round(2) }}</td>
@@ -139,7 +139,8 @@
       featureLayers = {};
       zoneLayer.eachLayer(layer => {
         const dates = layer.feature.properties.dates;
-        featureLayers[layer.feature.id] = layer;
+        const zid = layer.feature.properties.id;
+        featureLayers[zid] = layer;
         dates.forEach(d => {
           dateLayers[d] = dateLayers[d] || [];
           dateLayers[d].push(layer);
@@ -150,7 +151,7 @@
     function highlightRows(ids) {
       const rows = document.querySelectorAll('.zone-row');
       rows.forEach(r => {
-        const selected = ids.includes(parseInt(r.dataset.zoneId));
+        const selected = ids.includes(r.dataset.zoneId);
         r.classList.toggle('table-primary', selected);
         r.classList.toggle('highlighted', selected);
       });
@@ -282,7 +283,7 @@
           if (dates) html += `<br><b>Dates:</b> ${dates}`;
           layer.bindPopup(html);
           layer.on('click', () => {
-            const zoneId = parseInt(feature.id);
+            const zoneId = feature.properties.id;
             highlightRows([zoneId]);
             highlightZone(zoneId, true);
           });
@@ -421,47 +422,10 @@
     function setupInteractions() {
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', () => {
-          const zoneId = parseInt(row.dataset.zoneId);
-          openEquipmentSheet();
+          const zoneId = row.dataset.zoneId;
           highlightRows([zoneId]);
-          const layer = featureLayers[zoneId];
-          if (layer) {
-            highlightZone([zoneId], true);
-          } else if (row.dataset.bounds) {
-            const b = JSON.parse(row.dataset.bounds);
-            const bounds = L.latLngBounds(
-              [b[1], b[0]],
-              [b[3], b[2]]
-            );
-            skipFetch = true;
-            const finish = () => {
-              skipFetch = false;
-              fetchData().then(() => {
-                highlightRows([zoneId]);
-                if (featureLayers[zoneId]) highlightZone([zoneId], true);
-              });
-            };
-            const ensureZoom = () => {
-              if (map.getZoom() < 17) {
-                map.once('zoomend', finish);
-                map.setZoom(17, { animate: false });
-              } else {
-                finish();
-              }
-            };
-            const center = bounds.getCenter();
-            if (map.getBounds().contains(bounds)) {
-              if (map.getCenter().equals(center)) {
-                ensureZoom();
-              } else {
-                map.once('moveend', ensureZoom);
-                map.panTo(center, { animate: false });
-              }
-            } else {
-              map.once('moveend', ensureZoom);
-              map.fitBounds(bounds, { animate: false });
-            }
-          }
+          highlightZone([zoneId], true);
+          openEquipmentSheet();
         });
       });
       setupMap();
