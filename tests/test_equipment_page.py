@@ -426,6 +426,18 @@ def test_equipment_sheet_has_data_attributes_and_script():
     assert 'equipment-sheet.js' in html
 
 
+def test_row_click_opens_sheet():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "openEquipmentSheet()" in html
+
+
 def test_row_click_uses_instant_zoom():
     app = make_app()
     client = app.test_client()

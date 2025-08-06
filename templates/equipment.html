@@ -419,6 +419,7 @@
         row.addEventListener('click', () => {
           const zoneId = parseInt(row.dataset.zoneId);
           highlightRows([zoneId]);
+          if (window.openEquipmentSheet) window.openEquipmentSheet();
           const layer = featureLayers[zoneId];
           if (layer) {
             highlightZone(zoneId);
