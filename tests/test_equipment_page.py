@@ -292,7 +292,7 @@ def test_tracks_endpoint_triggers_analysis(monkeypatch):
     assert len(data["features"]) == 1
 
 
-def test_equipment_page_shows_legend():
+def test_equipment_page_has_help_button_and_no_legend():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -301,7 +301,9 @@ def test_equipment_page_shows_legend():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "const legend = L.control({ position: 'topright' });" in html
+    assert "const legend = L.control" not in html
+    assert "button.id = 'legend-btn'" in html
+    assert "button.innerHTML = '?'" in html
 
 
 def test_zones_geojson_endpoint():

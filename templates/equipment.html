@@ -285,19 +285,37 @@
       trackLayer = L.geoJSON(null, {
         style: { color: 'blue' }
       }).addTo(map);
-      const legend = L.control({ position: 'topright' });
-      legend.onAdd = () => {
-        const div = L.DomUtil.create('div', 'legend');
+      const legendHtml = (() => {
         const levels = [1, 2, 3, 4, 5];
         let html = '<strong>Passages</strong><br>';
         levels.forEach((l, i) => {
           const label = i === levels.length - 1 ? `${l}+` : `${l}`;
           html += `<i style="background:${colors[i]}"></i> ${label}<br>`;
         });
-        div.innerHTML = html;
+        return html;
+      })();
+      const legendBtn = L.control({ position: 'topright' });
+      legendBtn.onAdd = () => {
+        const div = L.DomUtil.create('div', 'legend-btn-container leaflet-bar');
+        const button = L.DomUtil.create('button', 'btn btn-light rounded-circle', div);
+        button.id = 'legend-btn';
+        button.type = 'button';
+        button.title = 'Légende';
+        button.style.width = '32px';
+        button.style.height = '32px';
+        button.style.lineHeight = '30px';
+        button.style.padding = '0';
+        button.innerHTML = '?';
+        L.DomEvent.disableClickPropagation(button);
+        L.DomEvent.on(button, 'click', () => {
+          L.popup()
+            .setLatLng(map.getCenter())
+            .setContent(`<div class="legend">${legendHtml}</div>`)
+            .openOn(map);
+        });
         return div;
       };
-      legend.addTo(map);
+      legendBtn.addTo(map);
       map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
         const b = L.latLngBounds(
