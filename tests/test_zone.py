@@ -158,12 +158,12 @@ def test_cluster_positions_returns_zones():
             }
         )
     # Rendre la détection plus permissive
-    old_min = zone.MIN_SURFACE_HA
-    zone.MIN_SURFACE_HA = 0
+    old_params = zone._analysis_params
+    zone._analysis_params = lambda: (25, 0, 0.02)
     try:
         zones, noise = zone.cluster_positions(positions)
     finally:
-        zone.MIN_SURFACE_HA = old_min
+        zone._analysis_params = old_params
     assert zones
     assert not noise
     assert all("geometry" in z and "dates" in z for z in zones)

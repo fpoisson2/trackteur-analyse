@@ -51,10 +51,34 @@ def _auth_header():
     return {"Authorization": f"Bearer {token}"}
 
 
-# 📥 Paramètres d’analyse
-EPS_METERS = 25
-MIN_SURFACE_HA = 0.1  # ha
-ALPHA = 0.02
+# 📥 Paramètres d’analyse (valeurs par défaut)
+DEFAULT_EPS_METERS = 25
+DEFAULT_MIN_SURFACE_HA = 0.1  # ha
+DEFAULT_ALPHA = 0.02
+
+
+def _analysis_params():
+    """Retourne les paramètres d'analyse des zones."""
+    try:
+        cfg = Config.query.first()
+    except Exception:
+        cfg = None
+    eps = (
+        cfg.eps_meters
+        if cfg and cfg.eps_meters is not None
+        else DEFAULT_EPS_METERS
+    )
+    min_surface = (
+        cfg.min_surface_ha
+        if cfg and cfg.min_surface_ha is not None
+        else DEFAULT_MIN_SURFACE_HA
+    )
+    alpha = (
+        cfg.alpha if cfg and cfg.alpha is not None else DEFAULT_ALPHA
+    )
+    return eps, min_surface, alpha
+# Préparer transformer Web Mercator → WGS84
+
 
 # Préparer transformer Web Mercator → WGS84
 _transformer = pyproj.Transformer.from_crs(
@@ -271,11 +295,12 @@ def cluster_positions(positions):
     )
     zones = []
     noise_by_date = {}
+    eps, min_surface, alpha = _analysis_params()
     for date, group in gdf.groupby('date'):
         if len(group) < 3:
             continue
         X = np.vstack([group.geometry.x, group.geometry.y]).T
-        labels = DBSCAN(eps=EPS_METERS, min_samples=3).fit_predict(X)
+        labels = DBSCAN(eps=eps, min_samples=3).fit_predict(X)
         group['cluster'] = labels
         noise = group[group.cluster == -1].sort_values('timestamp')
         if not noise.empty:
@@ -288,7 +313,7 @@ def cluster_positions(positions):
                 continue
             pts = [(pt.x, pt.y) for pt in group[group.cluster == lbl].geometry]
             pts = add_joggle(pts)
-            poly = alphashape.alphashape(pts, ALPHA)
+            poly = alphashape.alphashape(pts, alpha)
             poly = poly.buffer(0)
             if isinstance(poly, (Polygon, MultiPolygon)):
                 poly_list = (
@@ -296,7 +321,7 @@ def cluster_positions(positions):
                 )
                 for sub in poly_list:
                     sub = sub.buffer(0)
-                    if sub.area / 1e4 >= MIN_SURFACE_HA:
+                    if sub.area / 1e4 >= min_surface:
                         zones.append({'geometry': sub, 'dates': [date]})
     return zones, noise_by_date
 

@@ -212,16 +212,28 @@ def create_app():
             token_global = request.form.get('token_global')
             base_url = request.form.get('base_url')
             checked_ids = {int(x) for x in request.form.getlist('equip_ids')}
+            eps = request.form.get('eps_meters')
+            min_surface = request.form.get('min_surface')
+            alpha = request.form.get('alpha_shape')
 
             if cfg:
                 if base_url:
                     cfg.traccar_url = base_url
                 if token_global:
                     cfg.traccar_token = token_global
+                if eps:
+                    cfg.eps_meters = float(eps)
+                if min_surface:
+                    cfg.min_surface_ha = float(min_surface)
+                if alpha:
+                    cfg.alpha = float(alpha)
             else:
                 cfg = Config(
                     traccar_url=base_url or "",
                     traccar_token=token_global or "",
+                    eps_meters=float(eps) if eps else 25.0,
+                    min_surface_ha=float(min_surface) if min_surface else 0.1,
+                    alpha=float(alpha) if alpha else 0.02,
                 )
                 db.session.add(cfg)
 
@@ -245,6 +257,9 @@ def create_app():
         # 👉 Pré‑remplir avec le token du premier équipement si possible
         existing_token = cfg.traccar_token if cfg else ""
         existing_url = cfg.traccar_url if cfg else ""
+        existing_eps = cfg.eps_meters if cfg else 25.0
+        existing_surface = cfg.min_surface_ha if cfg else 0.1
+        existing_alpha = cfg.alpha if cfg else 0.02
 
         return render_template(
             'admin.html',
@@ -252,6 +267,9 @@ def create_app():
             selected_ids=selected_ids,
             existing_token=existing_token,
             existing_url=existing_url,
+            existing_eps=existing_eps,
+            existing_surface=existing_surface,
+            existing_alpha=existing_alpha,
             message=message
         )
 

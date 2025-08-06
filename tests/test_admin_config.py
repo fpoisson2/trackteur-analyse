@@ -49,6 +49,9 @@ def test_admin_updates_server_url(monkeypatch):
             "base_url": "http://new.com",
             "token_global": "tok",
             "equip_ids": ["1"],
+            "eps_meters": "30",
+            "min_surface": "0.2",
+            "alpha_shape": "0.05",
         },
     )
     assert resp.status_code == 200
@@ -56,3 +59,6 @@ def test_admin_updates_server_url(monkeypatch):
         cfg = Config.query.first()
         assert cfg.traccar_url == "http://new.com"
         assert cfg.traccar_token == "tok"
+        assert cfg.eps_meters == 30
+        assert cfg.min_surface_ha == 0.2
+        assert cfg.alpha == 0.05
