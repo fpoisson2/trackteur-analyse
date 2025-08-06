@@ -299,7 +299,7 @@
       })();
       const legendBtn = L.control({ position: 'topright' });
       legendBtn.onAdd = () => {
-        const div = L.DomUtil.create('div', 'legend-btn-container leaflet-bar');
+        const div = L.DomUtil.create('div', 'legend-btn-container');
         const button = L.DomUtil.create('button', 'btn btn-light rounded-circle', div);
         button.id = 'legend-btn';
         button.type = 'button';
