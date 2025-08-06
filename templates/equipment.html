@@ -214,6 +214,11 @@
       return Promise.resolve();
     }
 
+    function selectZone(zoneId) {
+      highlightRows([zoneId]);
+      highlightZone(zoneId, true);
+    }
+
 
     function fetchData() {
       const token = ++fetchToken;
@@ -290,8 +295,7 @@
           layer.bindPopup(html);
           layer.on('click', () => {
             const zoneId = feature.properties.id;
-            highlightRows([zoneId]);
-            highlightZone(zoneId, true);
+            selectZone(zoneId);
           });
         }
       }).addTo(map);
@@ -429,12 +433,11 @@
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', async () => {
           const zoneId = row.dataset.zoneId;
-          highlightRows([zoneId]);
+          openEquipmentSheet();
           if (!zonesLoaded) {
             await fetchData();
           }
-          await highlightZone([zoneId], true);
-          openEquipmentSheet();
+          selectZone(zoneId);
         });
       });
       setupMap();

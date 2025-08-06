@@ -489,13 +489,29 @@ def test_row_click_calls_highlight_zone_with_popup():
     snippet = html[start:end]
     assert "async () =>" in snippet
     assert "const zoneId = row.dataset.zoneId" in snippet
-    assert "highlightRows([zoneId])" in snippet
+    assert "openEquipmentSheet()" in snippet
     assert "if (!zonesLoaded)" in snippet
     fd = snippet.index("await fetchData()")
-    hz = snippet.index("await highlightZone([zoneId], true)")
     os = snippet.index("openEquipmentSheet()")
-    hr = snippet.index("highlightRows([zoneId])")
-    assert hr < fd < hz < os
+    sz = snippet.index("selectZone(zoneId)")
+    assert os < fd < sz
+    assert "parseInt" not in snippet
+
+
+def test_select_zone_calls_highlight_and_popup():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    start = html.find("function selectZone")
+    end = html.find("function fetchData")
+    snippet = html[start:end] if end != -1 else html[start:]
+    assert "highlightRows([zoneId])" in snippet
+    assert "highlightZone(zoneId, true)" in snippet
     assert "parseInt" not in snippet
 
 
