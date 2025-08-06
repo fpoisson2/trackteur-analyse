@@ -47,9 +47,35 @@ def create_app():
 
         inspector = inspect(db.engine)
         tables = inspector.get_table_names()
+        if "config" in tables:
+            config_cols = {c["name"] for c in inspector.get_columns("config")}
+            with db.engine.begin() as conn:
+                if "eps_meters" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN eps_meters "
+                            "FLOAT DEFAULT 25.0"
+                        )
+                    )
+                if "min_surface_ha" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN min_surface_ha "
+                            "FLOAT DEFAULT 0.1"
+                        )
+                    )
+                if "alpha" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN alpha "
+                            "FLOAT DEFAULT 0.02"
+                        )
+                    )
         if "daily_zone" in tables:
-            cols = [c["name"] for c in inspector.get_columns("daily_zone")]
-            if "pass_count" not in cols:
+            daily_cols = [
+                c["name"] for c in inspector.get_columns("daily_zone")
+            ]
+            if "pass_count" not in daily_cols:
                 with db.engine.begin() as conn:
                     conn.execute(
                         text(
@@ -72,8 +98,8 @@ def create_app():
                     )
                 )
         if "position" in tables:
-            cols = [c["name"] for c in inspector.get_columns("position")]
-            if "track_id" not in cols:
+            pos_cols = [c["name"] for c in inspector.get_columns("position")]
+            if "track_id" not in pos_cols:
                 with db.engine.begin() as conn:
                     conn.execute(
                         text(
