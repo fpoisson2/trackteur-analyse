@@ -531,7 +531,7 @@ def test_rebuild_date_layers_uses_properties_id():
     assert "layer.feature.id" in snippet
 
 
-def test_polygon_click_calls_select_zone_and_opens_sheet():
+def test_polygon_click_calls_select_zone_without_opening_sheet():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -548,7 +548,7 @@ def test_polygon_click_calls_select_zone_and_opens_sheet():
     assert "String(" in snippet
     assert "async () =>" in snippet
     assert "await selectZone(zoneId)" in snippet
-    assert "openEquipmentSheet()" in snippet
+    assert "openEquipmentSheet()" not in snippet
 
 
 def test_bounds_check_before_zooming():
@@ -1052,3 +1052,16 @@ def test_overlay_bundle_guard_present():
     overlay_path = project_root / "static" / "js" / "overlay_bundle.js"
     content = overlay_path.read_text()
     assert "customElements.get('mce-autosize-textarea')" in content
+
+
+def test_map_click_does_not_open_sheet():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+
+    html = resp.data.decode()
+    assert html.count("openEquipmentSheet()") == 1
