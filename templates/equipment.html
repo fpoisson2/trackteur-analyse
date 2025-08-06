@@ -172,9 +172,7 @@
         const finish = () => {
           skipFetch = false;
           fetchData().then(() => {
-            if (ids.length === 1 && featureLayers[ids[0]]) {
-              featureLayers[ids[0]].openPopup();
-            }
+            highlightZone(ids, true);
           });
         };
         const ensureZoom = () => {

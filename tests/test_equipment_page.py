@@ -509,6 +509,25 @@ def test_highlight_zone_skip_zoom_parameter():
     assert "highlightZone(zoneId, true)" in html
 
 
+def test_highlight_zone_reapplies_after_fetch():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    start = html.find("function highlightZone")
+    end = html.find("function fetchData()", start)
+    snippet = html[start:end]
+
+    pattern = re.compile(
+        r"fetchData\(\)\.then\(\(\) => \{\s*highlightZone\(ids, true\);"
+    )
+    assert pattern.search(snippet)
+
+
 def test_bounds_check_before_zooming():
     app = make_app()
     client = app.test_client()
