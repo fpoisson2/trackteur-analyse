@@ -189,7 +189,7 @@
           const offset = isOpen ? sheet.getBoundingClientRect().height / 2 : 0;
           const finish = () => {
             if (offset) {
-              map.panBy([0, -offset], { animate: false });
+              map.panBy([0, offset], { animate: false });
             }
             skipFetch = false;
             fetchData().then(() => {

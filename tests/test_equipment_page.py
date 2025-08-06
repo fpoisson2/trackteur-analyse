@@ -529,7 +529,8 @@ def test_highlight_zone_offsets_for_open_sheet():
     snippet = html[start:end] if end != -1 else html[start:]
     assert "[data-sheet=\"equipment\"]" in snippet
     assert "getAttribute('data-open') === 'true'" in snippet
-    assert "map.panBy([" in snippet
+    assert "map.panBy([0, offset" in snippet
+    assert "map.panBy([0, -offset" not in snippet
 
 
 def test_rebuild_date_layers_uses_properties_id():
