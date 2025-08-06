@@ -19,11 +19,14 @@ class User(UserMixin, db.Model):  # type: ignore[name-defined]
 
 
 class Config(db.Model):  # type: ignore[name-defined]
-    """Paramètres de connexion Traccar."""
+    """Paramètres de connexion Traccar et d'analyse des zones."""
 
     id = db.Column(db.Integer, primary_key=True)
     traccar_url = db.Column(db.String, nullable=False)
     traccar_token = db.Column(db.String, nullable=False)
+    eps_meters = db.Column(db.Float, default=25.0)
+    min_surface_ha = db.Column(db.Float, default=0.1)
+    alpha = db.Column(db.Float, default=0.02)
 
 
 class Equipment(db.Model):  # type: ignore[name-defined]

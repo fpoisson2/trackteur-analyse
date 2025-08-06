@@ -11,6 +11,8 @@ os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 from app import create_app  # noqa: E402
 from models import db, User, Config, Equipment  # noqa: E402
 import zone  # noqa: E402
+import sqlite3  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 
 def make_app():
@@ -49,6 +51,9 @@ def test_admin_updates_server_url(monkeypatch):
             "base_url": "http://new.com",
             "token_global": "tok",
             "equip_ids": ["1"],
+            "eps_meters": "30",
+            "min_surface": "0.2",
+            "alpha_shape": "0.05",
         },
     )
     assert resp.status_code == 200
@@ -56,3 +61,71 @@ def test_admin_updates_server_url(monkeypatch):
         cfg = Config.query.first()
         assert cfg.traccar_url == "http://new.com"
         assert cfg.traccar_token == "tok"
+        assert cfg.eps_meters == 30
+        assert cfg.min_surface_ha == 0.2
+        assert cfg.alpha == 0.05
+
+
+def test_upgrade_db_adds_config_columns():
+    db_path = Path("instance/trackteur.db")
+    if db_path.exists():
+        db_path.unlink()
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE config (id INTEGER PRIMARY KEY, traccar_url TEXT, "
+        "traccar_token TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO config (traccar_url, traccar_token) VALUES "
+        "('http://old', 'tok')"
+    )
+    conn.commit()
+    conn.close()
+
+    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
+    app = create_app()
+    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+    client = app.test_client()
+    client.get("/setup")
+    with app.app_context():
+        cfg = Config.query.first()
+        assert cfg.eps_meters == 25.0
+        assert cfg.min_surface_ha == 0.1
+        assert cfg.alpha == 0.02
+    db_path.unlink()
+
+
+def test_reanalyze_saves_params(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    devices = [{"id": 1, "name": "eq"}]
+    monkeypatch.setattr(zone, "fetch_devices", lambda: devices)
+
+    called = []
+
+    def fake_process(eq, since=None):
+        called.append(eq.id_traccar)
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+
+    resp = client.post(
+        "/reanalyze_all",
+        data={
+            "base_url": "http://new.com",
+            "token_global": "tok",
+            "equip_ids": ["1"],
+            "eps_meters": "40",
+            "min_surface": "0.3",
+            "alpha_shape": "0.07",
+        },
+    )
+    assert resp.status_code == 302
+    with app.app_context():
+        cfg = Config.query.first()
+        assert cfg.traccar_url == "http://new.com"
+        assert cfg.traccar_token == "tok"
+        assert cfg.eps_meters == 40
+        assert cfg.min_surface_ha == 0.3
+        assert cfg.alpha == 0.07
+    assert called == [1]

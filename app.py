@@ -15,6 +15,8 @@ from models import db, User, Equipment, Position, Config, Track
 import zone
 
 from datetime import datetime, date, timedelta
+from typing import Iterable, Any
+from werkzeug.datastructures import MultiDict
 
 
 def create_app():
@@ -47,9 +49,35 @@ def create_app():
 
         inspector = inspect(db.engine)
         tables = inspector.get_table_names()
+        if "config" in tables:
+            config_cols = {c["name"] for c in inspector.get_columns("config")}
+            with db.engine.begin() as conn:
+                if "eps_meters" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN eps_meters "
+                            "FLOAT DEFAULT 25.0"
+                        )
+                    )
+                if "min_surface_ha" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN min_surface_ha "
+                            "FLOAT DEFAULT 0.1"
+                        )
+                    )
+                if "alpha" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN alpha "
+                            "FLOAT DEFAULT 0.02"
+                        )
+                    )
         if "daily_zone" in tables:
-            cols = [c["name"] for c in inspector.get_columns("daily_zone")]
-            if "pass_count" not in cols:
+            daily_cols = [
+                c["name"] for c in inspector.get_columns("daily_zone")
+            ]
+            if "pass_count" not in daily_cols:
                 with db.engine.begin() as conn:
                     conn.execute(
                         text(
@@ -72,8 +100,8 @@ def create_app():
                     )
                 )
         if "position" in tables:
-            cols = [c["name"] for c in inspector.get_columns("position")]
-            if "track_id" not in cols:
+            pos_cols = [c["name"] for c in inspector.get_columns("position")]
+            if "track_id" not in pos_cols:
                 with db.engine.begin() as conn:
                     conn.execute(
                         text(
@@ -196,6 +224,49 @@ def create_app():
             processed.append(eq.name)
         return render_template('setup_step4.html', devices=processed)
 
+    def save_config(
+        form: MultiDict[str, str], devices: Iterable[dict[str, Any]]
+    ) -> None:
+        """Persist configuration parameters and selected devices."""
+        token_global = form.get('token_global')
+        base_url = form.get('base_url')
+        checked_ids = {int(x) for x in form.getlist('equip_ids')}
+        eps = form.get('eps_meters')
+        min_surface = form.get('min_surface')
+        alpha = form.get('alpha_shape')
+
+        cfg = Config.query.first()
+        if cfg:
+            if base_url:
+                cfg.traccar_url = base_url
+            if token_global:
+                cfg.traccar_token = token_global
+            if eps:
+                cfg.eps_meters = float(eps)
+            if min_surface:
+                cfg.min_surface_ha = float(min_surface)
+            if alpha:
+                cfg.alpha = float(alpha)
+        else:
+            cfg = Config(
+                traccar_url=base_url or "",
+                traccar_token=token_global or "",
+                eps_meters=float(eps) if eps else 25.0,
+                min_surface_ha=float(min_surface) if min_surface else 0.1,
+                alpha=float(alpha) if alpha else 0.02,
+            )
+            db.session.add(cfg)
+
+        for dev in devices:
+            if dev['id'] in checked_ids:
+                eq = Equipment.query.filter_by(id_traccar=dev['id']).first()
+                if not eq:
+                    eq = Equipment(id_traccar=dev['id'])
+                    db.session.add(eq)
+                eq.name = dev['name']
+                eq.token_api = token_global
+        db.session.commit()
+
     @app.route('/admin', methods=['GET', 'POST'])
     @login_required
     def admin():
@@ -209,35 +280,8 @@ def create_app():
         message = request.args.get('msg')
 
         if request.method == 'POST':
-            token_global = request.form.get('token_global')
-            base_url = request.form.get('base_url')
-            checked_ids = {int(x) for x in request.form.getlist('equip_ids')}
-
-            if cfg:
-                if base_url:
-                    cfg.traccar_url = base_url
-                if token_global:
-                    cfg.traccar_token = token_global
-            else:
-                cfg = Config(
-                    traccar_url=base_url or "",
-                    traccar_token=token_global or "",
-                )
-                db.session.add(cfg)
-
-            for dev in devices:
-                if dev['id'] in checked_ids:
-                    eq = Equipment.query.filter_by(
-                        id_traccar=dev['id']
-                    ).first()
-                    if not eq:
-                        eq = Equipment(id_traccar=dev['id'])
-                        db.session.add(eq)
-                    eq.name = dev['name']
-                    eq.token_api = token_global
-            db.session.commit()
-
-            # 🔄 mise à jour après commit
+            save_config(request.form, devices)
+            cfg = Config.query.first()
             followed = Equipment.query.all()
             selected_ids = {e.id_traccar for e in followed}
             message = "Configuration enregistrée !"
@@ -245,6 +289,9 @@ def create_app():
         # 👉 Pré‑remplir avec le token du premier équipement si possible
         existing_token = cfg.traccar_token if cfg else ""
         existing_url = cfg.traccar_url if cfg else ""
+        existing_eps = cfg.eps_meters if cfg else 25.0
+        existing_surface = cfg.min_surface_ha if cfg else 0.1
+        existing_alpha = cfg.alpha if cfg else 0.02
 
         return render_template(
             'admin.html',
@@ -252,6 +299,9 @@ def create_app():
             selected_ids=selected_ids,
             existing_token=existing_token,
             existing_url=existing_url,
+            existing_eps=existing_eps,
+            existing_surface=existing_surface,
+            existing_alpha=existing_alpha,
             message=message
         )
 
@@ -260,6 +310,9 @@ def create_app():
     def reanalyze_all():
         if not current_user.is_admin:
             return redirect(url_for('index'))
+        if request.form:
+            devices = zone.fetch_devices()
+            save_config(request.form, devices)
 
         now = datetime.utcnow()
         start_of_year = datetime(now.year, 1, 1)
