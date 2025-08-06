@@ -176,37 +176,42 @@
       });
       if (bounds) {
         skipFetch = true;
-        const finish = () => {
-          skipFetch = false;
-          fetchData().then(() => {
-            if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
-              featureLayers[ids[0]].openPopup();
+        return new Promise(resolve => {
+          const finish = () => {
+            skipFetch = false;
+            fetchData().then(() => {
+              if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
+                featureLayers[ids[0]].openPopup();
+              }
+              resolve();
+            });
+          };
+          const ensureZoom = () => {
+            if (map.getZoom() < 17) {
+              map.once('zoomend', finish);
+              map.setZoom(17, { animate: false });
+            } else {
+              finish();
             }
-          });
-        };
-        const ensureZoom = () => {
-          if (map.getZoom() < 17) {
-            map.once('zoomend', finish);
-            map.setZoom(17, { animate: false });
-          } else {
-            finish();
-          }
-        };
-        const center = bounds.getCenter();
-        if (map.getBounds().contains(bounds)) {
-          if (map.getCenter().equals(center)) {
-            ensureZoom();
+          };
+          const center = bounds.getCenter();
+          if (map.getBounds().contains(bounds)) {
+            if (map.getCenter().equals(center)) {
+              ensureZoom();
+            } else {
+              map.once('moveend', ensureZoom);
+              map.panTo(center, { animate: false });
+            }
           } else {
             map.once('moveend', ensureZoom);
-            map.panTo(center, { animate: false });
+            map.fitBounds(bounds, { animate: false });
           }
-        } else {
-          map.once('moveend', ensureZoom);
-          map.fitBounds(bounds, { animate: false });
-        }
-      } else if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
+        });
+      }
+      if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
         featureLayers[ids[0]].openPopup();
       }
+      return Promise.resolve();
     }
 
 
@@ -428,7 +433,7 @@
           if (!zonesLoaded) {
             await fetchData();
           }
-          highlightZone([zoneId], true);
+          await highlightZone([zoneId], true);
           openEquipmentSheet();
         });
       });

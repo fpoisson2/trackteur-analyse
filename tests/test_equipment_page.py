@@ -383,7 +383,8 @@ def test_equipment_page_contains_highlight_zone():
     start = html.find("function highlightZone")
     end = html.find("function fetchData")
     snippet = html[start:end] if end != -1 else html[start:]
-    assert "fetchData()" in snippet
+    assert "return new Promise" in snippet
+    assert "return Promise.resolve()" in snippet
 
 
 def test_equipment_page_contains_highlight_rows():
@@ -491,7 +492,7 @@ def test_row_click_calls_highlight_zone_with_popup():
     assert "highlightRows([zoneId])" in snippet
     assert "if (!zonesLoaded)" in snippet
     fd = snippet.index("await fetchData()")
-    hz = snippet.index("highlightZone([zoneId], true)")
+    hz = snippet.index("await highlightZone([zoneId], true)")
     os = snippet.index("openEquipmentSheet()")
     hr = snippet.index("highlightRows([zoneId])")
     assert hr < fd < hz < os
