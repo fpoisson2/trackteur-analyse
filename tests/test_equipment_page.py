@@ -334,6 +334,7 @@ def test_equipment_page_has_help_button_and_no_legend():
     assert "const legend = L.control" not in html
     assert "button.id = 'legend-btn'" in html
     assert "button.innerHTML = '?'" in html
+    assert 'id="legend-popup"' in html
 
 
 def test_zones_geojson_endpoint():
