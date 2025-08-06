@@ -708,6 +708,29 @@ def test_zones_geojson_range_with_gap():
     assert prev_month.isoformat() in all_dates
 
 
+def test_zones_geojson_uses_global_ids():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        yesterday = date.today() - timedelta(days=1)
+        agg_all = zone.get_aggregated_zones(eq.id)
+        full_idx = next(
+            i for i, z in enumerate(agg_all) if str(yesterday) in z["dates"]
+        )
+        resp = client.get(
+            f"/equipment/{eq.id}/zones.geojson?start={yesterday.isoformat()}&"
+            f"end={yesterday.isoformat()}&zoom=12"
+        )
+    data = resp.get_json()
+    assert data["features"], "no features returned"
+    feat = data["features"][0]
+    assert feat["id"] == str(full_idx)
+    assert feat["properties"]["id"] == str(full_idx)
+
+
 def test_points_geojson_filters_by_day():
     app = make_app()
     client = app.test_client()

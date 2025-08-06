@@ -590,6 +590,7 @@ def create_app():
         end_str = request.args.get('end')
         start = date.fromisoformat(start_str) if start_str else None
         end = date.fromisoformat(end_str) if end_str else None
+        agg_all = zone.get_aggregated_zones(equipment_id)
         agg = zone.get_aggregated_zones(
             equipment_id,
             year=year,
@@ -612,24 +613,36 @@ def create_app():
 
         features = []
         for idx, z in enumerate(agg):
-            geom = z['geometry']
+            geom = z["geometry"]
             if bbox_geom and not geom.intersects(bbox_geom):
                 continue
             if bbox_geom:
                 geom = geom.intersection(bbox_geom)
             geom = zone.simplify_for_zoom(geom, zoom)
             geom_wgs = shp_transform(zone._transformer, geom)
-            features.append({
-                'type': 'Feature',
-                'id': str(idx),
-                'properties': {
-                    'dates': z['dates'],
-                    'dz_ids': z.get('ids', []),
-                    'count': len(z['dates']),
-                    'surface_ha': round(geom.area / 1e4, 2),
-                },
-                'geometry': geom_wgs.__geo_interface__,
-            })
+            full_idx = next(
+                (
+                    i
+                    for i, full in enumerate(agg_all)
+                    if set(z.get("ids", [])) <= set(full.get("ids", []))
+                ),
+                idx,
+            )
+            zid = str(full_idx)
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": zid,
+                    "properties": {
+                        "id": zid,
+                        "dates": z["dates"],
+                        "dz_ids": z.get("ids", []),
+                        "count": len(z["dates"]),
+                        "surface_ha": round(geom.area / 1e4, 2),
+                    },
+                    "geometry": geom_wgs.__geo_interface__,
+                }
+            )
 
         return {'type': 'FeatureCollection', 'features': features}
 
