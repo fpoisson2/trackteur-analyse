@@ -93,3 +93,39 @@ def test_upgrade_db_adds_config_columns():
         assert cfg.min_surface_ha == 0.1
         assert cfg.alpha == 0.02
     db_path.unlink()
+
+
+def test_reanalyze_saves_params(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    devices = [{"id": 1, "name": "eq"}]
+    monkeypatch.setattr(zone, "fetch_devices", lambda: devices)
+
+    called = []
+
+    def fake_process(eq, since=None):
+        called.append(eq.id_traccar)
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+
+    resp = client.post(
+        "/reanalyze_all",
+        data={
+            "base_url": "http://new.com",
+            "token_global": "tok",
+            "equip_ids": ["1"],
+            "eps_meters": "40",
+            "min_surface": "0.3",
+            "alpha_shape": "0.07",
+        },
+    )
+    assert resp.status_code == 302
+    with app.app_context():
+        cfg = Config.query.first()
+        assert cfg.traccar_url == "http://new.com"
+        assert cfg.traccar_token == "tok"
+        assert cfg.eps_meters == 40
+        assert cfg.min_surface_ha == 0.3
+        assert cfg.alpha == 0.07
+    assert called == [1]
