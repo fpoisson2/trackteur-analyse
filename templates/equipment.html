@@ -127,7 +127,6 @@
     let skipFetch = false;
     let fetchToken = 0;
     let zonesLoaded = false;
-    let autoZoomed = false;
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
     const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
@@ -187,10 +186,10 @@
         return new Promise(resolve => {
           const sheet = document.querySelector('[data-sheet="equipment"]');
           const isOpen = sheet && sheet.getAttribute('data-open') === 'true';
-          const offset = isOpen ? sheet.getBoundingClientRect().height / 2 : 0;
+          const offset = isOpen ? sheet.getBoundingClientRect().height : 0;
           const finish = () => {
             if (offset) {
-              map.panBy([0, offset], { animate: false });
+              map.panBy([0, offset / 2], { animate: false });
             }
             skipFetch = false;
             fetchData().then(() => {
@@ -200,20 +199,12 @@
               resolve();
             });
           };
-          const applyZoom = () => {
-            if (!autoZoomed) {
-              map.zoomOut(3, { animate: false });
-              autoZoomed = true;
-            }
-            finish();
-          };
-          const center = bounds.getCenter();
-          if (map.getCenter().equals(center)) {
-            applyZoom();
-          } else {
-            map.once('moveend', applyZoom);
-            map.panTo(center, { animate: false });
-          }
+          map.once('moveend', finish);
+          map.fitBounds(bounds, {
+            paddingTopLeft: [0, 0],
+            paddingBottomRight: [0, offset],
+            animate: false,
+          });
         });
       }
       if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
