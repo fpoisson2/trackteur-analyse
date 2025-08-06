@@ -132,6 +132,9 @@
     const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
     const startDate = {{ start|tojson if start else 'null' }};
     const endDate = {{ end|tojson if end else 'null' }};
+    const year = {{ year|tojson if year else 'null' }};
+    const month = {{ month|tojson if month else 'null' }};
+    const day = {{ day|tojson if day else 'null' }};
     const showAll = {{ 'true' if show_all else 'false' }};
     const availableDates = {{ available_dates|tojson }};
 
@@ -232,6 +235,11 @@
         params.set('zoom', 17);
         if (startDate !== null) params.set('start', startDate);
         if (endDate !== null) params.set('end', endDate);
+        if (startDate === null && endDate === null) {
+          if (year !== null) params.set('year', year);
+          if (month !== null) params.set('month', month);
+          if (day !== null) params.set('day', day);
+        }
         const zp = fetch(`/equipment/${equipmentId}/zones.geojson?${params.toString()}`)
           .then(r => r.json())
           .then(zoneData => {

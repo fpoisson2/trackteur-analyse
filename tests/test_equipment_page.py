@@ -890,6 +890,55 @@ def test_equipment_detail_filters_by_day():
     assert today.isoformat() in rows[0].find_all("td")[0].text
 
 
+def test_equipment_page_exposes_year_month_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp = client.get(
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+
+    html = resp.data.decode()
+    assert f"const year = {today.year}" in html
+    assert f"const month = {today.month}" in html
+    assert f"const day = {today.day}" in html
+
+
+def test_map_and_table_zones_match_for_day():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp_page = client.get(
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+        resp_geo = client.get(
+            f"/equipment/{eq.id}/zones.geojson?zoom=17"
+            f"&year={today.year}&month={today.month}&day={today.day}"
+        )
+
+    html = resp_page.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    table_ids = {
+        row["data-zone-id"]
+        for row in soup.select("#zones-table tbody tr")
+    }
+    data = resp_geo.get_json()
+    feature_ids = {feat["id"] for feat in data["features"]}
+    assert table_ids == feature_ids
+
+
 def test_initial_bounds_reflect_selected_day():
     app = make_app()
     client = app.test_client()
