@@ -17,6 +17,7 @@
     <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
     <form method="post" class="mb-4">
+      {{ form.hidden_tag() }}
       <div class="mb-3">
         <label for="username" class="form-label">Nom d’utilisateur</label>
         <input type="text" class="form-control" id="username" name="username" required autofocus>

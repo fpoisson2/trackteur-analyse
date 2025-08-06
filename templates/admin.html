@@ -27,6 +27,7 @@
     {% endif %}
 
     <form method="post" class="mt-3">
+      {{ form.hidden_tag() }}
       <!-- Adresse serveur -->
       <div class="mb-3">
         <label for="base_url" class="form-label fw-bold">Adresse du serveur</label>
@@ -68,6 +69,7 @@
     </form>
 
     <form method="post" action="{{ url_for('reanalyze_all') }}" class="mt-3">
+      {{ reanalyze_form.hidden_tag() }}
       <button type="submit" class="btn btn-danger">Tout réanalyser</button>
     </form>
   </div>

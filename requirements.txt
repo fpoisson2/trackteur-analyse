@@ -1,4 +1,5 @@
 Flask
+Flask-WTF
 Flask-Login
 Flask-SQLAlchemy
 Werkzeug

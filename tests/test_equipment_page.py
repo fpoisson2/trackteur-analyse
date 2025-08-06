@@ -24,6 +24,7 @@ def make_app():
     app = create_app()
     os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         db.drop_all()
         db.create_all()

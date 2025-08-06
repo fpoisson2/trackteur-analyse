@@ -5,6 +5,7 @@ from models import db, User, Equipment, Config
 def make_app():
     app = create_app()
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         db.drop_all()
         db.create_all()

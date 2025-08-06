@@ -17,6 +17,7 @@ def test_setup_without_db():
     app = create_app()
     os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         db.drop_all()
     client = app.test_client()
@@ -65,6 +66,7 @@ def test_schema_upgrade_adds_pass_count(tmp_path):
     app = create_app()
     os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_file}"
+    app.config["WTF_CSRF_ENABLED"] = False
     client = app.test_client()
     client.get("/setup")
 
@@ -109,6 +111,7 @@ def test_schema_upgrade_adds_tracks(tmp_path):
     app = create_app()
     os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_file}"
+    app.config["WTF_CSRF_ENABLED"] = False
     client = app.test_client()
     client.get("/setup")
 
@@ -172,6 +175,7 @@ def test_initial_analysis_upgrades_before_processing(tmp_path, monkeypatch):
 
     os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
     app = importlib.reload(app_module).create_app()
+    app.config["WTF_CSRF_ENABLED"] = False
 
     with app.app_context():
         from sqlalchemy import inspect

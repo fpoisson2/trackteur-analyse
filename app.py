@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime, date, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for
 from flask_login import (
@@ -10,15 +11,61 @@ from flask_login import (
     current_user,
 )
 from apscheduler.schedulers.background import BackgroundScheduler
+from flask_wtf import FlaskForm, CSRFProtect
+from wtforms import PasswordField, SelectMultipleField, StringField
+from wtforms.validators import DataRequired
 
 from models import db, User, Equipment, Position, Config, Track
 import zone
 
-from datetime import datetime, date, timedelta
+
+csrf = CSRFProtect()
+
+
+class LoginForm(FlaskForm):
+    """Formulaire de connexion."""
+
+    username = StringField("Nom d’utilisateur", validators=[DataRequired()])
+    password = PasswordField("Mot de passe", validators=[DataRequired()])
+
+
+class SetupUserForm(FlaskForm):
+    """Formulaire de création de l'administrateur."""
+
+    username = StringField("Nom d'utilisateur", validators=[DataRequired()])
+    password = PasswordField("Mot de passe", validators=[DataRequired()])
+
+
+class SetupConfigForm(FlaskForm):
+    """Formulaire de configuration du serveur Traccar."""
+
+    base_url = StringField("Adresse du serveur", validators=[DataRequired()])
+    token = StringField("Token API", validators=[DataRequired()])
+
+
+class SetupEquipmentForm(FlaskForm):
+    """Formulaire de sélection des équipements à suivre."""
+
+    equip_ids = SelectMultipleField(coerce=int)
+
+
+class AdminForm(FlaskForm):
+    """Formulaire de configuration des équipements."""
+
+    base_url = StringField("Adresse du serveur")
+    token_global = StringField("Token API Traccar")
+    equip_ids = SelectMultipleField(coerce=int)
+
+
+class EmptyForm(FlaskForm):
+    """Formulaire minimal contenant uniquement le token CSRF."""
+
+    pass
 
 
 def create_app():
     app = Flask(__name__)
+    csrf.init_app(app)
     # Configure logging
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
     if not logging.getLogger().handlers:
@@ -117,16 +164,17 @@ def create_app():
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
+        form = LoginForm()
         error = None
-        if request.method == 'POST':
-            username = request.form.get('username')
-            password = request.form.get('password')
+        if form.validate_on_submit():
+            username = form.username.data
+            password = form.password.data
             user = User.query.filter_by(username=username).first()
             if user and user.check_password(password):
                 login_user(user)
                 return redirect(url_for('index'))
             error = 'Nom d’utilisateur ou mot de passe incorrect'
-        return render_template('login.html', error=error)
+        return render_template('login.html', form=form, error=error)
 
     @app.route('/logout')
     @login_required
@@ -148,44 +196,50 @@ def create_app():
             step = 4
 
         if step == 1:
-            if request.method == 'POST':
-                username = request.form.get('username')
-                password = request.form.get('password')
-                if username and password:
-                    admin = User(username=username, is_admin=True)
-                    admin.set_password(password)
-                    db.session.add(admin)
-                    db.session.commit()
-                    return redirect(url_for('setup'))
-            return render_template('setup_step1.html')
+            form = SetupUserForm()
+            if form.validate_on_submit():
+                username = form.username.data
+                password = form.password.data
+                admin = User(username=username, is_admin=True)
+                admin.set_password(password)
+                db.session.add(admin)
+                db.session.commit()
+                return redirect(url_for('setup'))
+            return render_template('setup_step1.html', form=form)
 
         if step == 2:
-            if request.method == 'POST':
-                url = request.form.get('base_url')
-                token = request.form.get('token')
-                if url and token:
-                    cfg = Config(traccar_url=url, traccar_token=token)
-                    db.session.add(cfg)
-                    db.session.commit()
-                    return redirect(url_for('setup'))
-            return render_template('setup_step2.html')
+            form = SetupConfigForm()
+            if form.validate_on_submit():
+                url = form.base_url.data
+                token = form.token.data
+                cfg = Config(traccar_url=url, traccar_token=token)
+                db.session.add(cfg)
+                db.session.commit()
+                return redirect(url_for('setup'))
+            return render_template('setup_step2.html', form=form)
 
         if step == 3:
             devices = zone.fetch_devices()
-            if request.method == 'POST':
-                ids = {int(x) for x in request.form.getlist('equip_ids')}
+            form = SetupEquipmentForm()
+            form.equip_ids.choices = [
+                (dev["id"], dev["name"]) for dev in devices
+            ]
+            if form.validate_on_submit():
+                ids = set(form.equip_ids.data)
                 cfg = Config.query.first()
                 for dev in devices:
-                    if dev['id'] in ids:
+                    if dev["id"] in ids:
                         eq = Equipment(
-                            id_traccar=dev['id'],
-                            name=dev['name'],
+                            id_traccar=dev["id"],
+                            name=dev["name"],
                             token_api=cfg.traccar_token,
                         )
                         db.session.add(eq)
                 db.session.commit()
-                return redirect(url_for('setup'))
-            return render_template('setup_step3.html', devices=devices)
+                return redirect(url_for("setup"))
+            return render_template(
+                "setup_step3.html", devices=devices, form=form
+            )
 
         # step 4
         now = datetime.utcnow()
@@ -208,10 +262,14 @@ def create_app():
         selected_ids = {e.id_traccar for e in followed}
         message = request.args.get('msg')
 
-        if request.method == 'POST':
-            token_global = request.form.get('token_global')
-            base_url = request.form.get('base_url')
-            checked_ids = {int(x) for x in request.form.getlist('equip_ids')}
+        form = AdminForm()
+        form.equip_ids.choices = [
+            (dev["id"], dev["name"]) for dev in devices
+        ]
+        if form.validate_on_submit():
+            token_global = form.token_global.data
+            base_url = form.base_url.data
+            checked_ids = set(form.equip_ids.data)
 
             if cfg:
                 if base_url:
@@ -226,14 +284,14 @@ def create_app():
                 db.session.add(cfg)
 
             for dev in devices:
-                if dev['id'] in checked_ids:
+                if dev["id"] in checked_ids:
                     eq = Equipment.query.filter_by(
-                        id_traccar=dev['id']
+                        id_traccar=dev["id"]
                     ).first()
                     if not eq:
-                        eq = Equipment(id_traccar=dev['id'])
+                        eq = Equipment(id_traccar=dev["id"])
                         db.session.add(eq)
-                    eq.name = dev['name']
+                    eq.name = dev["name"]
                     eq.token_api = token_global
             db.session.commit()
 
@@ -245,14 +303,17 @@ def create_app():
         # 👉 Pré‑remplir avec le token du premier équipement si possible
         existing_token = cfg.traccar_token if cfg else ""
         existing_url = cfg.traccar_url if cfg else ""
+        reanalyze_form = EmptyForm()
 
         return render_template(
             'admin.html',
+            form=form,
+            reanalyze_form=reanalyze_form,
             devices=devices,
             selected_ids=selected_ids,
             existing_token=existing_token,
             existing_url=existing_url,
-            message=message
+            message=message,
         )
 
     @app.route('/reanalyze_all', methods=['POST'])
@@ -260,6 +321,9 @@ def create_app():
     def reanalyze_all():
         if not current_user.is_admin:
             return redirect(url_for('index'))
+        form = EmptyForm()
+        if not form.validate_on_submit():
+            return redirect(url_for('admin'))
 
         now = datetime.utcnow()
         start_of_year = datetime(now.year, 1, 1)
