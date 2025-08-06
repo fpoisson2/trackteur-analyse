@@ -153,6 +153,7 @@
     function highlightZone(ids, skipZoom = false) {
       zoneLayer.eachLayer(l => l.setStyle({ weight: 1 }));
       ids = Array.isArray(ids) ? ids : [ids];
+      if (window.openEquipmentSheet) window.openEquipmentSheet();
       let bounds;
       ids.forEach(id => {
         const layer = featureLayers[id];
@@ -419,7 +420,6 @@
         row.addEventListener('click', () => {
           const zoneId = parseInt(row.dataset.zoneId);
           highlightRows([zoneId]);
-          if (window.openEquipmentSheet) window.openEquipmentSheet();
           const layer = featureLayers[zoneId];
           if (layer) {
             highlightZone(zoneId);

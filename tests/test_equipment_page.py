@@ -435,7 +435,10 @@ def test_row_click_opens_sheet():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "openEquipmentSheet()" in html
+    start = html.find("function highlightZone")
+    end = html.find("function fetchData", start)
+    snippet = html[start:end]
+    assert "openEquipmentSheet()" in snippet
 
 
 def test_row_click_uses_instant_zoom():
