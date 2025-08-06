@@ -140,7 +140,11 @@
       featureLayers = {};
       zoneLayer.eachLayer(layer => {
         const dates = layer.feature.properties.dates;
-        const zid = layer.feature.properties.id;
+        const zid = String(
+          layer.feature.properties.id ??
+          layer.feature.properties.zone_id ??
+          layer.feature.id
+        );
         featureLayers[zid] = layer;
         dates.forEach(d => {
           dateLayers[d] = dateLayers[d] || [];
@@ -216,7 +220,7 @@
 
     function selectZone(zoneId) {
       highlightRows([zoneId]);
-      highlightZone(zoneId, true);
+      return highlightZone(zoneId, true);
     }
 
 
@@ -294,7 +298,11 @@
           if (dates) html += `<br><b>Dates:</b> ${dates}`;
           layer.bindPopup(html);
           layer.on('click', () => {
-            const zoneId = feature.properties.id;
+            const zoneId = String(
+              feature.properties.id ??
+              feature.properties.zone_id ??
+              feature.id
+            );
             selectZone(zoneId);
           });
         }
@@ -433,11 +441,11 @@
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', async () => {
           const zoneId = row.dataset.zoneId;
-          openEquipmentSheet();
           if (!zonesLoaded) {
             await fetchData();
           }
-          selectZone(zoneId);
+          await selectZone(zoneId);
+          openEquipmentSheet();
         });
       });
       setupMap();

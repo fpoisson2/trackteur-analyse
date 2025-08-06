@@ -492,9 +492,9 @@ def test_row_click_calls_highlight_zone_with_popup():
     assert "openEquipmentSheet()" in snippet
     assert "if (!zonesLoaded)" in snippet
     fd = snippet.index("await fetchData()")
+    sz = snippet.index("await selectZone(zoneId)")
     os = snippet.index("openEquipmentSheet()")
-    sz = snippet.index("selectZone(zoneId)")
-    assert os < fd < sz
+    assert fd < sz < os
     assert "parseInt" not in snippet
 
 
@@ -511,7 +511,7 @@ def test_select_zone_calls_highlight_and_popup():
     end = html.find("function fetchData")
     snippet = html[start:end] if end != -1 else html[start:]
     assert "highlightRows([zoneId])" in snippet
-    assert "highlightZone(zoneId, true)" in snippet
+    assert "return highlightZone(zoneId, true)" in snippet
     assert "parseInt" not in snippet
 
 
@@ -528,6 +528,24 @@ def test_rebuild_date_layers_uses_properties_id():
     end = html.find("function highlightRows")
     snippet = html[start:end] if end != -1 else html[start:]
     assert "layer.feature.properties.id" in snippet
+    assert "layer.feature.id" in snippet
+
+
+def test_polygon_click_uses_zone_id_fallback():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    start = html.find("layer.on('click'")
+    end = html.find("selectZone(zoneId)", start)
+    snippet = html[start:end]
+    assert "feature.properties.id" in snippet
+    assert "feature.id" in snippet
+    assert "String(" in snippet
 
 
 def test_bounds_check_before_zooming():
