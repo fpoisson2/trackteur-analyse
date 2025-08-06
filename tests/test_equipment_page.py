@@ -445,8 +445,8 @@ def test_row_click_uses_instant_zoom():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     assert "animate: false" in html
-    assert "fitBounds(bounds, { animate: false" in html
-    assert "once('moveend', ensureZoom" in html
+    assert "panTo(center, { animate: false" in html
+    assert "if (!autoZoomed)" in html
     assert "zoomOut(3, { animate: false" in html
     assert "fetchData().then" in html
 
@@ -472,6 +472,8 @@ def test_row_click_zoom_out_three_levels():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
+    assert "if (!autoZoomed)" in html
+    assert "autoZoomed = true" in html
     assert "zoomOut(3" in html
 
 
@@ -578,7 +580,7 @@ def test_bounds_check_before_zooming():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert "getBounds().contains" in html
+    assert "getBounds().contains" not in html
 
 
 def test_zone_rows_have_ids():

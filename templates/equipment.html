@@ -127,6 +127,7 @@
     let skipFetch = false;
     let fetchToken = 0;
     let zonesLoaded = false;
+    let autoZoomed = false;
     const equipmentId = {{ equipment.id }};
     const initialBounds = {{ bounds|tojson }};
     const colors = ['#2b83ba', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'];
@@ -199,21 +200,19 @@
               resolve();
             });
           };
-          const ensureZoom = () => {
-            map.zoomOut(3, { animate: false });
+          const applyZoom = () => {
+            if (!autoZoomed) {
+              map.zoomOut(3, { animate: false });
+              autoZoomed = true;
+            }
             finish();
           };
           const center = bounds.getCenter();
-          if (map.getBounds().contains(bounds)) {
-            if (map.getCenter().equals(center)) {
-              ensureZoom();
-            } else {
-              map.once('moveend', ensureZoom);
-              map.panTo(center, { animate: false });
-            }
+          if (map.getCenter().equals(center)) {
+            applyZoom();
           } else {
-            map.once('moveend', ensureZoom);
-            map.fitBounds(bounds, { animate: false });
+            map.once('moveend', applyZoom);
+            map.panTo(center, { animate: false });
           }
         });
       }
