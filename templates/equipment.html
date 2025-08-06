@@ -297,13 +297,14 @@
           let html = `<b>Passages:</b> ${c}<br><b>Surface:</b> ${area.toFixed(2)} ha`;
           if (dates) html += `<br><b>Dates:</b> ${dates}`;
           layer.bindPopup(html);
-          layer.on('click', () => {
+          layer.on('click', async () => {
             const zoneId = String(
               feature.properties.id ??
               feature.properties.zone_id ??
               feature.id
             );
-            selectZone(zoneId);
+            await selectZone(zoneId);
+            openEquipmentSheet();
           });
         }
       }).addTo(map);

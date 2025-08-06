@@ -531,7 +531,7 @@ def test_rebuild_date_layers_uses_properties_id():
     assert "layer.feature.id" in snippet
 
 
-def test_polygon_click_uses_zone_id_fallback():
+def test_polygon_click_calls_select_zone_and_opens_sheet():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -541,11 +541,14 @@ def test_polygon_click_uses_zone_id_fallback():
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
     start = html.find("layer.on('click'")
-    end = html.find("selectZone(zoneId)", start)
+    end = html.find("});", start)
     snippet = html[start:end]
     assert "feature.properties.id" in snippet
     assert "feature.id" in snippet
     assert "String(" in snippet
+    assert "async () =>" in snippet
+    assert "await selectZone(zoneId)" in snippet
+    assert "openEquipmentSheet()" in snippet
 
 
 def test_bounds_check_before_zooming():
