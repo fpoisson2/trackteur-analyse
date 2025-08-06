@@ -220,6 +220,11 @@ def test_day_menu_excludes_days_without_zones():
     html = resp.data.decode()
     dates = get_js_array(html, "availableDates")
     assert nz.isoformat() not in dates
+    assert "onDayCreate" in html
+    assert ".flatpickr-day.no-data" in html
+    assert "flatpickr-disabled" in html
+    assert "!availableDates.includes(start)" in html
+    assert "!availableDates.includes(end)" in html
 
 
 def test_equipment_page_has_day_navigation():
