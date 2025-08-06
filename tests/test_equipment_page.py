@@ -3,6 +3,7 @@ import sys
 import json
 import re
 from datetime import date, timedelta, datetime
+from pathlib import Path
 
 from pytest import approx
 
@@ -923,3 +924,21 @@ def test_initial_bounds_include_tracks():
 
     bounds = get_js_array(resp.data.decode(), "initialBounds")
     assert bounds[2] > 9
+
+
+def test_overlay_bundle_guard_present():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+
+    html = resp.data.decode()
+    assert "js/overlay_bundle.js" in html
+
+    project_root = Path(__file__).resolve().parents[1]
+    overlay_path = project_root / "static" / "js" / "overlay_bundle.js"
+    content = overlay_path.read_text()
+    assert "customElements.get('mce-autosize-textarea')" in content
