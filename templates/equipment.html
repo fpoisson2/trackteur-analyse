@@ -419,6 +419,7 @@
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', () => {
           const zoneId = parseInt(row.dataset.zoneId);
+          if (window.openEquipmentSheet) window.openEquipmentSheet();
           highlightRows([zoneId]);
           const layer = featureLayers[zoneId];
           if (layer) {

@@ -426,7 +426,7 @@ def test_equipment_sheet_has_data_attributes_and_script():
     assert 'equipment-sheet.js' in html
 
 
-def test_row_click_opens_sheet():
+def test_highlight_zone_opens_sheet():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -437,6 +437,21 @@ def test_row_click_opens_sheet():
     html = resp.data.decode()
     start = html.find("function highlightZone")
     end = html.find("function fetchData", start)
+    snippet = html[start:end]
+    assert "openEquipmentSheet()" in snippet
+
+
+def test_row_click_opens_sheet():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    start = html.find("row.addEventListener('click'")
+    end = html.find("highlightZone(zoneId", start)
     snippet = html[start:end]
     assert "openEquipmentSheet()" in snippet
 
