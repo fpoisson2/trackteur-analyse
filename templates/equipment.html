@@ -184,7 +184,13 @@
       if (bounds) {
         skipFetch = true;
         return new Promise(resolve => {
+          const sheet = document.querySelector('[data-sheet="equipment"]');
+          const isOpen = sheet && sheet.getAttribute('data-open') === 'true';
+          const offset = isOpen ? sheet.getBoundingClientRect().height / 2 : 0;
           const finish = () => {
+            if (offset) {
+              map.panBy([0, -offset], { animate: false });
+            }
             skipFetch = false;
             fetchData().then(() => {
               if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
@@ -452,8 +458,8 @@
           if (!zonesLoaded) {
             await fetchData();
           }
-          await selectZone(zoneId);
           openEquipmentSheet();
+          await selectZone(zoneId);
         });
       });
       setupMap();
