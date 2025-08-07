@@ -332,14 +332,14 @@ def create_app():
             error=error
         )
 
-    @app.route('/reanalyze_all', methods=['POST'])
+    @app.route('/reanalyze_all', methods=['POST', 'GET'])
     @login_required
     def reanalyze_all():
         if not current_user.is_admin:
             return redirect(url_for('index'))
         if reanalysis_progress["running"]:
             return redirect(url_for('admin', msg="Analyse déjà en cours"))
-        if request.form:
+        if request.method == 'POST' and request.form:
             try:
                 devices = zone.fetch_devices()
             except requests.exceptions.HTTPError:

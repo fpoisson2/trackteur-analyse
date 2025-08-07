@@ -154,6 +154,36 @@ def test_admin_can_trigger_reanalyze(monkeypatch):
     assert status.json == {"running": False, "current": 1, "total": 1}
 
 
+def test_admin_can_reanalyze_via_get(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    called = []
+
+    def fake_process(eq, since=None):
+        called.append(eq.id_traccar)
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+
+    class InstantThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    monkeypatch.setattr(threading, "Thread", InstantThread)
+
+    resp = client.get("/reanalyze_all")
+    assert resp.status_code == 302
+    assert called == [1]
+    status = client.get("/analysis_status")
+    assert status.json == {"running": False, "current": 1, "total": 1}
+
+
 def test_analysis_status_requires_admin(monkeypatch):
     app = make_app()
     with app.app_context():
