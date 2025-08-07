@@ -1086,3 +1086,17 @@ def test_map_click_does_not_open_sheet():
 
     html = resp.data.decode()
     assert html.count("openEquipmentSheet()") == 1
+
+
+def test_calendar_allows_single_day_selection():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+
+    html = resp.data.decode()
+    assert "firstDate = null" in html
+    assert "instance.setDate([current, current], true)" in html

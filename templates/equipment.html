@@ -390,6 +390,7 @@
       }
 
       let picker;
+      let firstDate = null;
       if (dateInput) {
         picker = flatpickr(dateInput, {
           mode: 'range',
@@ -404,9 +405,17 @@
               dayElem.addEventListener('click', e => e.preventDefault());
             }
           },
-          onChange: function(selectedDates, dateStr) {
-            if (selectedDates.length === 2) {
+          onChange: function(selectedDates, dateStr, instance) {
+            if (selectedDates.length === 1) {
+              const current = selectedDates[0];
+              if (firstDate && firstDate.getTime() === current.getTime()) {
+                instance.setDate([current, current], true);
+              } else {
+                firstDate = current;
+              }
+            } else if (selectedDates.length === 2) {
               const [start, end] = selectedDates.map(d => d.toISOString().slice(0, 10));
+              firstDate = null;
               if (!availableDates.includes(start) || !availableDates.includes(end)) {
                 this.clear();
                 return;
@@ -414,6 +423,7 @@
               dateInput.value = dateStr;
               updatePeriod(dateStr);
             } else if (selectedDates.length === 0) {
+              firstDate = null;
               dateInput.value = '';
             }
           }
