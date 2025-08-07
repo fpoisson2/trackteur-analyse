@@ -724,7 +724,7 @@ def process_equipment(eq, since=None):
 # ✅ NOUVELLE FONCTION : Recalculer proprement les hectares depuis la base
 def recalculate_hectares_from_positions(equipment_id, since_date=None):
     """Recalcule les hectares depuis toutes les positions stockées."""
-    eq = Equipment.query.get(equipment_id)
+    eq = db.session.get(Equipment, equipment_id)
     if not eq:
         return None
 
@@ -834,7 +834,7 @@ def calculate_relative_hectares(equipment_id):
 # ✅ FONCTION DE DEBUG : Pour voir ce qui se passe
 def debug_hectares_calculation(equipment_id):
     """Affiche des infos de debug sur le calcul des hectares."""
-    eq = Equipment.query.get(equipment_id)
+    eq = db.session.get(Equipment, equipment_id)
     if not eq:
         print(f"Équipement {equipment_id} introuvable")
         return

@@ -113,6 +113,16 @@ def test_admin_handles_fetch_error(monkeypatch):
     )
 
 
+def test_admin_page_has_status_poll(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    resp = client.get("/admin")
+    html = resp.get_data(as_text=True)
+    assert "credentials: 'same-origin'" in html
+
+
 def test_reanalyze_saves_params(monkeypatch):
     app = make_app()
     client = app.test_client()

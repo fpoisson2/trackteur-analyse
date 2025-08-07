@@ -103,8 +103,11 @@
     [...tooltipTriggerList].forEach(el => new bootstrap.Tooltip(el));
 
     function checkStatus() {
-      fetch("{{ url_for('analysis_status') }}")
-        .then(resp => resp.json())
+      fetch("{{ url_for('analysis_status') }}", {credentials: 'same-origin'})
+        .then(resp => {
+          if (!resp.ok) throw new Error('statut HTTP ' + resp.status);
+          return resp.json();
+        })
         .then(data => {
           const el = document.getElementById('analysis-status');
           if (data.running) {
@@ -115,6 +118,10 @@
           } else {
             el.textContent = '';
           }
+        })
+        .catch(() => {
+          const el = document.getElementById('analysis-status');
+          el.textContent = 'Impossible de récupérer le statut de l\'analyse.';
         });
     }
     checkStatus();

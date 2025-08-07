@@ -107,7 +107,7 @@ def test_password_reset():
         data={"action": "reset", "user_id": str(uid), "password": "new"},
     )
     with app.app_context():
-        user = User.query.get(uid)
+        user = db.session.get(User, uid)
         assert user.check_password("new")
 
 

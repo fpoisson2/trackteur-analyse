@@ -146,7 +146,8 @@ def create_app():
 
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        """Retrieve a user for Flask-Login without legacy API warnings."""
+        return db.session.get(User, int(user_id))
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -403,14 +404,14 @@ def create_app():
             elif action == 'reset':
                 uid = request.form.get('user_id')
                 password = request.form.get('password')
-                user = User.query.get(int(uid)) if uid else None
+                user = db.session.get(User, int(uid)) if uid else None
                 if user and password:
                     user.set_password(password)
                     db.session.commit()
                     message = "Mot de passe réinitialisé"
             elif action == 'delete':
                 uid = request.form.get('user_id')
-                user = User.query.get(int(uid)) if uid else None
+                user = db.session.get(User, int(uid)) if uid else None
                 if user and user != current_user:
                     db.session.delete(user)
                     db.session.commit()
