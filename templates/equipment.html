@@ -404,6 +404,7 @@
           mode: 'range',
           dateFormat: 'Y-m-d',
           allowInput: false,
+          clickOpens: false,
           defaultDate: dateInput.value ? dateInput.value.split(' to ') : null,
           onDayCreate: function(dObj, dStr, fp, dayElem) {
             const date = dayElem.dateObj.toISOString().slice(0, 10);
@@ -440,12 +441,14 @@
 
       if (openBtn && picker) {
         let prevValue = '';
-        openBtn.addEventListener('click', () => {
+        function openPicker() {
           prevValue = dateInput.value;
           firstDate = null;
           picker.clear();
           picker.open();
-        });
+        }
+        openBtn.addEventListener('click', openPicker);
+        dateInput.addEventListener('click', openPicker);
         picker.config.onClose.push(() => {
           if (!dateInput.value && prevValue) {
             dateInput.value = prevValue;

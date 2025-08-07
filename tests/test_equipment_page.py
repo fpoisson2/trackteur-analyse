@@ -1161,6 +1161,8 @@ def test_calendar_allows_single_day_selection():
     assert "firstDate = null" in html
     assert "instance.setDate([current, current], true)" in html
     assert "picker.clear()" in html
+    assert "clickOpens: false" in html
+    assert "dateInput.addEventListener('click', openPicker)" in html
 
 
 def test_track_and_point_requests_use_day_params():
