@@ -179,7 +179,8 @@
           layer.feature.properties.zone_id ??
           layer.feature.id
         );
-        featureLayers[zid] = layer;
+        featureLayers[zid] = featureLayers[zid] || [];
+        featureLayers[zid].push(layer);
         dates.forEach(d => {
           dateLayers[d] = dateLayers[d] || [];
           dateLayers[d].push(layer);
@@ -201,15 +202,17 @@
       ids = Array.isArray(ids) ? ids : [ids];
       let bounds;
       ids.forEach(id => {
-        const layer = featureLayers[id];
-        if (layer) {
-          layer.setStyle({ weight: 4 });
-          if (layer.getBounds && layer.getBounds().isValid()) {
-            const b = layer.getBounds();
-            bounds = bounds
-              ? bounds.extend(b)
-              : L.latLngBounds(b.getSouthWest(), b.getNorthEast());
-          }
+        const layers = featureLayers[id];
+        if (layers) {
+          layers.forEach(layer => {
+            layer.setStyle({ weight: 4 });
+            if (layer.getBounds && layer.getBounds().isValid()) {
+              const b = layer.getBounds();
+              bounds = bounds
+                ? bounds.extend(b)
+                : L.latLngBounds(b.getSouthWest(), b.getNorthEast());
+            }
+          });
         }
       });
       if (bounds) {
@@ -225,7 +228,7 @@
             skipFetch = false;
             fetchData().then(() => {
               if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
-                featureLayers[ids[0]].openPopup();
+                featureLayers[ids[0]][0].openPopup();
               }
               resolve();
             });
@@ -239,7 +242,7 @@
         });
       }
       if (showPopup && ids.length === 1 && featureLayers[ids[0]]) {
-        featureLayers[ids[0]].openPopup();
+        featureLayers[ids[0]][0].openPopup();
       }
       return Promise.resolve();
     }
