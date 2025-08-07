@@ -594,17 +594,25 @@ def create_app():
         zones: list = []
         zone_bounds = {}
         grouped: dict = {}
-        for z in agg_period:
+        for idx, z in enumerate(agg_period):
+            ids_set = set(z.get("ids", []))
             full_idx = next(
                 (
                     i
                     for i, full in enumerate(agg_all)
-                    if set(z.get("ids", [])) == set(full.get("ids", []))
+                    if ids_set == set(full.get("ids", []))
                 ),
                 None,
             )
             if full_idx is None:
-                continue
+                full_idx = next(
+                    (
+                        i
+                        for i, full in enumerate(agg_all)
+                        if ids_set <= set(full.get("ids", []))
+                    ),
+                    idx,
+                )
             info = grouped.setdefault(full_idx, {"dates": [], "surface": 0.0})
             info["dates"].extend(z.get("dates", []))
             info["surface"] += z["geometry"].area / 1e4
