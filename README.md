@@ -60,6 +60,10 @@ Démarrer l'application :
 export SKIP_INITIAL_ANALYSIS=1
 python app.py
 ```
+En production, utilisez [Gunicorn](https://gunicorn.org/) :
+```bash
+gunicorn wsgi:app --bind 0.0.0.0:8000
+```
 Accédez à [http://localhost:5000](http://localhost:5000). La page d'accueil liste les équipements, leur dernière position et les surfaces calculées. Vous pouvez lancer une analyse manuelle ou consulter le détail d'un équipement (zones par jour et carte interactive). Une analyse automatique a lieu chaque nuit à 2 h.
 
 ## Structure du projet
