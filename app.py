@@ -477,11 +477,11 @@ def create_app():
         all_tracks = Track.query.filter_by(equipment_id=equipment_id).all()
         track_dates = set()
         for t in all_tracks:
-            day = t.start_time.date()
+            current = t.start_time.date()
             last = t.end_time.date()
-            while day <= last:
-                track_dates.add(day)
-                day += timedelta(days=1)
+            while current <= last:
+                track_dates.add(current)
+                current += timedelta(days=1)
         dates.update(track_dates)
         has_tracks = bool(all_tracks)
 
@@ -594,6 +594,8 @@ def create_app():
                 date_value = (
                     f"{start_date.isoformat()} to {end_date.isoformat()}"
                 )
+        elif year and month and day:
+            date_value = date(year, month, day).isoformat()
 
         return render_template(
             'equipment.html',

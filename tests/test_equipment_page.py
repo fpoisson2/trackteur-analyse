@@ -273,6 +273,34 @@ def test_calendar_shows_with_tracks_only():
     assert 'id="date-display"' in html
 
 
+def test_single_day_request_with_tracks():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        DailyZone.query.delete()
+        Track.query.delete()
+        db.session.commit()
+        d = date.today()
+        tr = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(d, datetime.min.time()),
+            end_time=(
+                datetime.combine(d, datetime.min.time()) + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        db.session.add(tr)
+        db.session.commit()
+        url = f"/equipment/{eq.id}?year={d.year}&month={d.month}&day={d.day}"
+        resp = client.get(url)
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert f'value="{d.isoformat()}"' in html
+
+
 def test_tracks_and_points_geojson():
     app = make_app()
     client = app.test_client()
