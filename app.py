@@ -2,6 +2,7 @@ import os
 import logging
 import threading
 
+import requests
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_login import (
     LoginManager,
@@ -203,7 +204,16 @@ def create_app():
             return render_template('setup_step2.html')
 
         if step == 3:
-            devices = zone.fetch_devices()
+            error = None
+            try:
+                devices = zone.fetch_devices()
+            except requests.exceptions.HTTPError as exc:
+                app.logger.error("Failed to fetch devices: %s", exc)
+                devices = []
+                error = (
+                    "Impossible de récupérer les équipements. "
+                    "Vérifiez le token ou l'URL."
+                )
             if request.method == 'POST':
                 ids = {int(x) for x in request.form.getlist('equip_ids')}
                 cfg = Config.query.first()
@@ -217,7 +227,9 @@ def create_app():
                         db.session.add(eq)
                 db.session.commit()
                 return redirect(url_for('setup'))
-            return render_template('setup_step3.html', devices=devices)
+            return render_template(
+                'setup_step3.html', devices=devices, error=error
+            )
 
         # step 4
         now = datetime.utcnow()
@@ -278,10 +290,19 @@ def create_app():
             return redirect(url_for('index'))
 
         cfg = Config.query.first()
-        devices = zone.fetch_devices()
+        message = request.args.get('msg')
+        error = None
+        try:
+            devices = zone.fetch_devices()
+        except requests.exceptions.HTTPError as exc:
+            app.logger.error("Device fetch failed: %s", exc)
+            devices = []
+            error = (
+                "Impossible de récupérer les équipements. "
+                "Vérifiez le token ou l'URL."
+            )
         followed = Equipment.query.all()
         selected_ids = {e.id_traccar for e in followed}
-        message = request.args.get('msg')
 
         if request.method == 'POST':
             save_config(request.form, devices)
@@ -306,7 +327,8 @@ def create_app():
             existing_eps=existing_eps,
             existing_surface=existing_surface,
             existing_alpha=existing_alpha,
-            message=message
+            message=message,
+            error=error
         )
 
     @app.route('/reanalyze_all', methods=['POST'])
@@ -317,7 +339,15 @@ def create_app():
         if reanalysis_progress["running"]:
             return redirect(url_for('admin', msg="Analyse déjà en cours"))
         if request.form:
-            devices = zone.fetch_devices()
+            try:
+                devices = zone.fetch_devices()
+            except requests.exceptions.HTTPError:
+                return redirect(
+                    url_for(
+                        'admin',
+                        msg="Erreur lors de la récupération des équipements",
+                    )
+                )
             save_config(request.form, devices)
 
         equipments = Equipment.query.all()

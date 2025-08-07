@@ -22,11 +22,14 @@
       </div>
     </div>
 
-    {% if message %}
-    <div class="alert alert-info">{{ message }}</div>
-    {% endif %}
+      {% if message %}
+      <div class="alert alert-info">{{ message }}</div>
+      {% endif %}
+      {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+      {% endif %}
 
-    <form method="post" class="mt-3">
+      <form method="post" class="mt-3">
       <!-- Adresse serveur -->
       <div class="mb-3">
         <label for="base_url" class="form-label fw-bold">Adresse du serveur</label>

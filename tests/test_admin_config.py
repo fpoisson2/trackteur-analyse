@@ -96,6 +96,23 @@ def test_upgrade_db_adds_config_columns():
     db_path.unlink()
 
 
+def test_admin_handles_fetch_error(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    def fake_fetch_devices():
+        raise zone.requests.exceptions.HTTPError("401")
+
+    monkeypatch.setattr(zone, "fetch_devices", fake_fetch_devices)
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert (
+        "Impossible de récupérer les équipements"
+        in resp.get_data(as_text=True)
+    )
+
+
 def test_reanalyze_saves_params(monkeypatch):
     app = make_app()
     client = app.test_client()
