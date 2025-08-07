@@ -1,7 +1,9 @@
 import os
 import logging
+import threading
 
-from flask import Flask, render_template, request, redirect, url_for
+import requests
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_login import (
     LoginManager,
     login_user,
@@ -18,9 +20,19 @@ from datetime import datetime, date, timedelta
 from typing import Iterable, Any
 from werkzeug.datastructures import MultiDict
 
+reanalysis_progress = {
+    "running": False,
+    "current": 0,
+    "total": 0,
+    "equipment": "",
+}
+
 
 def create_app():
     app = Flask(__name__)
+    reanalysis_progress.update(
+        {"running": False, "current": 0, "total": 0, "equipment": ""}
+    )
     # Configure logging
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
     if not logging.getLogger().handlers:
@@ -141,7 +153,8 @@ def create_app():
 
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        """Retrieve a user for Flask-Login without legacy API warnings."""
+        return db.session.get(User, int(user_id))
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -199,7 +212,16 @@ def create_app():
             return render_template('setup_step2.html')
 
         if step == 3:
-            devices = zone.fetch_devices()
+            error = None
+            try:
+                devices = zone.fetch_devices()
+            except requests.exceptions.HTTPError as exc:
+                app.logger.error("Failed to fetch devices: %s", exc)
+                devices = []
+                error = (
+                    "Impossible de récupérer les équipements. "
+                    "Vérifiez le token ou l'URL."
+                )
             if request.method == 'POST':
                 ids = {int(x) for x in request.form.getlist('equip_ids')}
                 cfg = Config.query.first()
@@ -213,7 +235,9 @@ def create_app():
                         db.session.add(eq)
                 db.session.commit()
                 return redirect(url_for('setup'))
-            return render_template('setup_step3.html', devices=devices)
+            return render_template(
+                'setup_step3.html', devices=devices, error=error
+            )
 
         # step 4
         now = datetime.utcnow()
@@ -274,10 +298,19 @@ def create_app():
             return redirect(url_for('index'))
 
         cfg = Config.query.first()
-        devices = zone.fetch_devices()
+        message = request.args.get('msg')
+        error = None
+        try:
+            devices = zone.fetch_devices()
+        except requests.exceptions.HTTPError as exc:
+            app.logger.error("Device fetch failed: %s", exc)
+            devices = []
+            error = (
+                "Impossible de récupérer les équipements. "
+                "Vérifiez le token ou l'URL."
+            )
         followed = Equipment.query.all()
         selected_ids = {e.id_traccar for e in followed}
-        message = request.args.get('msg')
 
         if request.method == 'POST':
             save_config(request.form, devices)
@@ -302,24 +335,67 @@ def create_app():
             existing_eps=existing_eps,
             existing_surface=existing_surface,
             existing_alpha=existing_alpha,
-            message=message
+            message=message,
+            error=error
         )
 
-    @app.route('/reanalyze_all', methods=['POST'])
+    @app.route('/reanalyze_all', methods=['POST', 'GET'])
     @login_required
     def reanalyze_all():
         if not current_user.is_admin:
             return redirect(url_for('index'))
-        if request.form:
-            devices = zone.fetch_devices()
+        if reanalysis_progress["running"]:
+            return redirect(url_for('admin', msg="Analyse déjà en cours"))
+        if request.method == 'POST' and request.form:
+            try:
+                devices = zone.fetch_devices()
+            except requests.exceptions.HTTPError:
+                return redirect(
+                    url_for(
+                        'admin',
+                        msg="Erreur lors de la récupération des équipements",
+                    )
+                )
             save_config(request.form, devices)
 
-        now = datetime.utcnow()
-        start_of_year = datetime(now.year, 1, 1)
-        for eq in Equipment.query.all():
-            zone.process_equipment(eq, since=start_of_year)
+        equipments = Equipment.query.all()
+        reanalysis_progress.update(
+            {
+                "running": True,
+                "current": 0,
+                "total": len(equipments),
+                "equipment": "",
+            }
+        )
 
-        return redirect(url_for('admin', msg="Analyse complète terminée"))
+        def run() -> None:
+            with app.app_context():
+                now = datetime.utcnow()
+                start_of_year = datetime(now.year, 1, 1)
+                for idx, eq in enumerate(equipments, start=1):
+                    reanalysis_progress["equipment"] = eq.name
+                    zone.process_equipment(eq, since=start_of_year)
+                    reanalysis_progress["current"] = idx
+                reanalysis_progress["running"] = False
+                reanalysis_progress["equipment"] = ""
+
+        threading.Thread(target=run, daemon=True).start()
+        return redirect(
+            url_for('admin', msg="Analyse relancée en arrière-plan")
+        )
+
+    @app.route('/analysis_status')
+    @login_required
+    def analysis_status():
+        if not current_user.is_admin:
+            return jsonify({"running": False}), 403
+        resp = jsonify(reanalysis_progress)
+        resp.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
 
     @app.route('/users', methods=['GET', 'POST'])
     @login_required
@@ -348,14 +424,14 @@ def create_app():
             elif action == 'reset':
                 uid = request.form.get('user_id')
                 password = request.form.get('password')
-                user = User.query.get(int(uid)) if uid else None
+                user = db.session.get(User, int(uid)) if uid else None
                 if user and password:
                     user.set_password(password)
                     db.session.commit()
                     message = "Mot de passe réinitialisé"
             elif action == 'delete':
                 uid = request.form.get('user_id')
-                user = User.query.get(int(uid)) if uid else None
+                user = db.session.get(User, int(uid)) if uid else None
                 if user and user != current_user:
                     db.session.delete(user)
                     db.session.commit()
