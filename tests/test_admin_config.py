@@ -67,6 +67,21 @@ def test_admin_updates_server_url(monkeypatch):
         assert cfg.alpha == 0.05
 
 
+def test_admin_updates_analysis_hour(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    resp = client.post(
+        "/admin",
+        data={"analysis_hour": "5"},
+    )
+    assert resp.status_code == 200
+    with app.app_context():
+        cfg = Config.query.first()
+        assert cfg.analysis_hour == 5
+
+
 def test_upgrade_db_adds_config_columns():
     db_path = Path("instance/trackteur.db")
     if db_path.exists():
@@ -93,6 +108,7 @@ def test_upgrade_db_adds_config_columns():
         assert cfg.eps_meters == 25.0
         assert cfg.min_surface_ha == 0.1
         assert cfg.alpha == 0.02
+        assert cfg.analysis_hour == 2
     db_path.unlink()
 
 

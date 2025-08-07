@@ -78,6 +78,12 @@
                value="{{ existing_token }}">
       </div>
 
+      <!-- Heure analyse automatique -->
+      <div class="mb-4">
+        <label for="analysis_hour" class="form-label fw-bold">Heure d'analyse automatique (0-23)</label>
+        <input type="number" class="form-control" id="analysis_hour" name="analysis_hour" min="0" max="23" value="{{ existing_hour }}">
+      </div>
+
       <!-- Paramètres de calcul des zones -->
       <h5 class="mb-2">Paramètres des zones :</h5>
       <div class="mb-3">

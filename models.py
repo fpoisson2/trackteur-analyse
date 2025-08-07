@@ -27,6 +27,7 @@ class Config(db.Model):  # type: ignore[name-defined]
     eps_meters = db.Column(db.Float, default=25.0)
     min_surface_ha = db.Column(db.Float, default=0.1)
     alpha = db.Column(db.Float, default=0.02)
+    analysis_hour = db.Column(db.Integer, default=2)
 
 
 class Equipment(db.Model):  # type: ignore[name-defined]

@@ -54,6 +54,7 @@ def create_app():
     db.init_app(app)
     login_manager = LoginManager(app)
     login_manager.login_view = 'login'
+    scheduler = BackgroundScheduler()
 
     def upgrade_db() -> None:
         """Ensure the database schema includes recent columns."""
@@ -83,6 +84,13 @@ def create_app():
                         text(
                             "ALTER TABLE config ADD COLUMN alpha "
                             "FLOAT DEFAULT 0.02"
+                        )
+                    )
+                if "analysis_hour" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN analysis_hour "
+                            "INTEGER DEFAULT 2"
                         )
                     )
         if "daily_zone" in tables:
@@ -258,6 +266,7 @@ def create_app():
         eps = form.get('eps_meters')
         min_surface = form.get('min_surface')
         alpha = form.get('alpha_shape')
+        analysis_hour = form.get('analysis_hour')
 
         cfg = Config.query.first()
         if cfg:
@@ -271,6 +280,8 @@ def create_app():
                 cfg.min_surface_ha = float(min_surface)
             if alpha:
                 cfg.alpha = float(alpha)
+            if analysis_hour:
+                cfg.analysis_hour = int(analysis_hour)
         else:
             cfg = Config(
                 traccar_url=base_url or "",
@@ -278,6 +289,7 @@ def create_app():
                 eps_meters=float(eps) if eps else 25.0,
                 min_surface_ha=float(min_surface) if min_surface else 0.1,
                 alpha=float(alpha) if alpha else 0.02,
+                analysis_hour=int(analysis_hour) if analysis_hour else 2,
             )
             db.session.add(cfg)
 
@@ -290,6 +302,13 @@ def create_app():
                 eq.name = dev['name']
                 eq.token_api = token_global
         db.session.commit()
+
+        if analysis_hour:
+            job = scheduler.get_job('daily_analysis')
+            if job:
+                scheduler.reschedule_job(
+                    'daily_analysis', trigger='cron', hour=int(analysis_hour)
+                )
 
     @app.route('/admin', methods=['GET', 'POST'])
     @login_required
@@ -325,6 +344,7 @@ def create_app():
         existing_eps = cfg.eps_meters if cfg else 25.0
         existing_surface = cfg.min_surface_ha if cfg else 0.1
         existing_alpha = cfg.alpha if cfg else 0.02
+        existing_hour = cfg.analysis_hour if cfg else 2
 
         return render_template(
             'admin.html',
@@ -335,6 +355,7 @@ def create_app():
             existing_eps=existing_eps,
             existing_surface=existing_surface,
             existing_alpha=existing_alpha,
+            existing_hour=existing_hour,
             message=message,
             error=error
         )
@@ -928,20 +949,23 @@ def create_app():
             })
         return {'type': 'FeatureCollection', 'features': features}
 
-    # Planification de la tâche quotidienne à 2h du matin
-    scheduler = BackgroundScheduler()
+    # Planification de la tâche quotidienne
 
     def scheduled_job():
         with app.app_context():
             zone.analyse_quotidienne()
 
-    scheduler.add_job(scheduled_job, trigger='cron', hour=2)
-    scheduler.start()
-
-    # Assurer que la base est prête avant l'analyse initiale
     with app.app_context():
+        # Assurer que la base est prête avant l'analyse initiale
         db.create_all()
         upgrade_db()
+        cfg = Config.query.first()
+        hour = cfg.analysis_hour if cfg else 2
+
+    scheduler.add_job(
+        scheduled_job, trigger='cron', hour=hour, id='daily_analysis'
+    )
+    scheduler.start()
 
     def initial_analysis():
         with app.app_context():
