@@ -17,3 +17,4 @@ pytest-cov
 pytest
 mypy
 beautifulsoup4
+gunicorn

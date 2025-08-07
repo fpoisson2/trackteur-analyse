@@ -1,7 +1,9 @@
 import os
 import logging
+import threading
 
-from flask import Flask, render_template, request, redirect, url_for
+import requests
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_login import (
     LoginManager,
     login_user,
@@ -15,10 +17,22 @@ from models import db, User, Equipment, Position, Config, Track
 import zone
 
 from datetime import datetime, date, timedelta
+from typing import Iterable, Any
+from werkzeug.datastructures import MultiDict
+
+reanalysis_progress = {
+    "running": False,
+    "current": 0,
+    "total": 0,
+    "equipment": "",
+}
 
 
 def create_app():
     app = Flask(__name__)
+    reanalysis_progress.update(
+        {"running": False, "current": 0, "total": 0, "equipment": ""}
+    )
     # Configure logging
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
     if not logging.getLogger().handlers:
@@ -40,6 +54,7 @@ def create_app():
     db.init_app(app)
     login_manager = LoginManager(app)
     login_manager.login_view = 'login'
+    scheduler = BackgroundScheduler()
 
     def upgrade_db() -> None:
         """Ensure the database schema includes recent columns."""
@@ -47,9 +62,42 @@ def create_app():
 
         inspector = inspect(db.engine)
         tables = inspector.get_table_names()
+        if "config" in tables:
+            config_cols = {c["name"] for c in inspector.get_columns("config")}
+            with db.engine.begin() as conn:
+                if "eps_meters" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN eps_meters "
+                            "FLOAT DEFAULT 25.0"
+                        )
+                    )
+                if "min_surface_ha" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN min_surface_ha "
+                            "FLOAT DEFAULT 0.1"
+                        )
+                    )
+                if "alpha" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN alpha "
+                            "FLOAT DEFAULT 0.02"
+                        )
+                    )
+                if "analysis_hour" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN analysis_hour "
+                            "INTEGER DEFAULT 2"
+                        )
+                    )
         if "daily_zone" in tables:
-            cols = [c["name"] for c in inspector.get_columns("daily_zone")]
-            if "pass_count" not in cols:
+            daily_cols = [
+                c["name"] for c in inspector.get_columns("daily_zone")
+            ]
+            if "pass_count" not in daily_cols:
                 with db.engine.begin() as conn:
                     conn.execute(
                         text(
@@ -72,8 +120,8 @@ def create_app():
                     )
                 )
         if "position" in tables:
-            cols = [c["name"] for c in inspector.get_columns("position")]
-            if "track_id" not in cols:
+            pos_cols = [c["name"] for c in inspector.get_columns("position")]
+            if "track_id" not in pos_cols:
                 with db.engine.begin() as conn:
                     conn.execute(
                         text(
@@ -113,7 +161,8 @@ def create_app():
 
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        """Retrieve a user for Flask-Login without legacy API warnings."""
+        return db.session.get(User, int(user_id))
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -171,7 +220,16 @@ def create_app():
             return render_template('setup_step2.html')
 
         if step == 3:
-            devices = zone.fetch_devices()
+            error = None
+            try:
+                devices = zone.fetch_devices()
+            except requests.exceptions.HTTPError as exc:
+                app.logger.error("Failed to fetch devices: %s", exc)
+                devices = []
+                error = (
+                    "Impossible de récupérer les équipements. "
+                    "Vérifiez le token ou l'URL."
+                )
             if request.method == 'POST':
                 ids = {int(x) for x in request.form.getlist('equip_ids')}
                 cfg = Config.query.first()
@@ -185,7 +243,9 @@ def create_app():
                         db.session.add(eq)
                 db.session.commit()
                 return redirect(url_for('setup'))
-            return render_template('setup_step3.html', devices=devices)
+            return render_template(
+                'setup_step3.html', devices=devices, error=error
+            )
 
         # step 4
         now = datetime.utcnow()
@@ -196,6 +256,60 @@ def create_app():
             processed.append(eq.name)
         return render_template('setup_step4.html', devices=processed)
 
+    def save_config(
+        form: MultiDict[str, str], devices: Iterable[dict[str, Any]]
+    ) -> None:
+        """Persist configuration parameters and selected devices."""
+        token_global = form.get('token_global')
+        base_url = form.get('base_url')
+        checked_ids = {int(x) for x in form.getlist('equip_ids')}
+        eps = form.get('eps_meters')
+        min_surface = form.get('min_surface')
+        alpha = form.get('alpha_shape')
+        analysis_hour = form.get('analysis_hour')
+
+        cfg = Config.query.first()
+        if cfg:
+            if base_url:
+                cfg.traccar_url = base_url
+            if token_global:
+                cfg.traccar_token = token_global
+            if eps:
+                cfg.eps_meters = float(eps)
+            if min_surface:
+                cfg.min_surface_ha = float(min_surface)
+            if alpha:
+                cfg.alpha = float(alpha)
+            if analysis_hour:
+                cfg.analysis_hour = int(analysis_hour)
+        else:
+            cfg = Config(
+                traccar_url=base_url or "",
+                traccar_token=token_global or "",
+                eps_meters=float(eps) if eps else 25.0,
+                min_surface_ha=float(min_surface) if min_surface else 0.1,
+                alpha=float(alpha) if alpha else 0.02,
+                analysis_hour=int(analysis_hour) if analysis_hour else 2,
+            )
+            db.session.add(cfg)
+
+        for dev in devices:
+            if dev['id'] in checked_ids:
+                eq = Equipment.query.filter_by(id_traccar=dev['id']).first()
+                if not eq:
+                    eq = Equipment(id_traccar=dev['id'])
+                    db.session.add(eq)
+                eq.name = dev['name']
+                eq.token_api = token_global
+        db.session.commit()
+
+        if analysis_hour:
+            job = scheduler.get_job('daily_analysis')
+            if job:
+                scheduler.reschedule_job(
+                    'daily_analysis', trigger='cron', hour=int(analysis_hour)
+                )
+
     @app.route('/admin', methods=['GET', 'POST'])
     @login_required
     def admin():
@@ -203,41 +317,23 @@ def create_app():
             return redirect(url_for('index'))
 
         cfg = Config.query.first()
-        devices = zone.fetch_devices()
+        message = request.args.get('msg')
+        error = None
+        try:
+            devices = zone.fetch_devices()
+        except requests.exceptions.HTTPError as exc:
+            app.logger.error("Device fetch failed: %s", exc)
+            devices = []
+            error = (
+                "Impossible de récupérer les équipements. "
+                "Vérifiez le token ou l'URL."
+            )
         followed = Equipment.query.all()
         selected_ids = {e.id_traccar for e in followed}
-        message = request.args.get('msg')
 
         if request.method == 'POST':
-            token_global = request.form.get('token_global')
-            base_url = request.form.get('base_url')
-            checked_ids = {int(x) for x in request.form.getlist('equip_ids')}
-
-            if cfg:
-                if base_url:
-                    cfg.traccar_url = base_url
-                if token_global:
-                    cfg.traccar_token = token_global
-            else:
-                cfg = Config(
-                    traccar_url=base_url or "",
-                    traccar_token=token_global or "",
-                )
-                db.session.add(cfg)
-
-            for dev in devices:
-                if dev['id'] in checked_ids:
-                    eq = Equipment.query.filter_by(
-                        id_traccar=dev['id']
-                    ).first()
-                    if not eq:
-                        eq = Equipment(id_traccar=dev['id'])
-                        db.session.add(eq)
-                    eq.name = dev['name']
-                    eq.token_api = token_global
-            db.session.commit()
-
-            # 🔄 mise à jour après commit
+            save_config(request.form, devices)
+            cfg = Config.query.first()
             followed = Equipment.query.all()
             selected_ids = {e.id_traccar for e in followed}
             message = "Configuration enregistrée !"
@@ -245,6 +341,10 @@ def create_app():
         # 👉 Pré‑remplir avec le token du premier équipement si possible
         existing_token = cfg.traccar_token if cfg else ""
         existing_url = cfg.traccar_url if cfg else ""
+        existing_eps = cfg.eps_meters if cfg else 25.0
+        existing_surface = cfg.min_surface_ha if cfg else 0.1
+        existing_alpha = cfg.alpha if cfg else 0.02
+        existing_hour = cfg.analysis_hour if cfg else 2
 
         return render_template(
             'admin.html',
@@ -252,21 +352,71 @@ def create_app():
             selected_ids=selected_ids,
             existing_token=existing_token,
             existing_url=existing_url,
-            message=message
+            existing_eps=existing_eps,
+            existing_surface=existing_surface,
+            existing_alpha=existing_alpha,
+            existing_hour=existing_hour,
+            message=message,
+            error=error
         )
 
-    @app.route('/reanalyze_all', methods=['POST'])
+    @app.route('/reanalyze_all', methods=['POST', 'GET'])
     @login_required
     def reanalyze_all():
         if not current_user.is_admin:
             return redirect(url_for('index'))
+        if reanalysis_progress["running"]:
+            return redirect(url_for('admin', msg="Analyse déjà en cours"))
+        if request.method == 'POST' and request.form:
+            try:
+                devices = zone.fetch_devices()
+            except requests.exceptions.HTTPError:
+                return redirect(
+                    url_for(
+                        'admin',
+                        msg="Erreur lors de la récupération des équipements",
+                    )
+                )
+            save_config(request.form, devices)
 
-        now = datetime.utcnow()
-        start_of_year = datetime(now.year, 1, 1)
-        for eq in Equipment.query.all():
-            zone.process_equipment(eq, since=start_of_year)
+        equipments = Equipment.query.all()
+        reanalysis_progress.update(
+            {
+                "running": True,
+                "current": 0,
+                "total": len(equipments),
+                "equipment": "",
+            }
+        )
 
-        return redirect(url_for('admin', msg="Analyse complète terminée"))
+        def run() -> None:
+            with app.app_context():
+                now = datetime.utcnow()
+                start_of_year = datetime(now.year, 1, 1)
+                for idx, eq in enumerate(equipments, start=1):
+                    reanalysis_progress["equipment"] = eq.name
+                    zone.process_equipment(eq, since=start_of_year)
+                    reanalysis_progress["current"] = idx
+                reanalysis_progress["running"] = False
+                reanalysis_progress["equipment"] = ""
+
+        threading.Thread(target=run, daemon=True).start()
+        return redirect(
+            url_for('admin', msg="Analyse relancée en arrière-plan")
+        )
+
+    @app.route('/analysis_status')
+    @login_required
+    def analysis_status():
+        if not current_user.is_admin:
+            return jsonify({"running": False}), 403
+        resp = jsonify(reanalysis_progress)
+        resp.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
 
     @app.route('/users', methods=['GET', 'POST'])
     @login_required
@@ -295,14 +445,14 @@ def create_app():
             elif action == 'reset':
                 uid = request.form.get('user_id')
                 password = request.form.get('password')
-                user = User.query.get(int(uid)) if uid else None
+                user = db.session.get(User, int(uid)) if uid else None
                 if user and password:
                     user.set_password(password)
                     db.session.commit()
                     message = "Mot de passe réinitialisé"
             elif action == 'delete':
                 uid = request.form.get('user_id')
-                user = User.query.get(int(uid)) if uid else None
+                user = db.session.get(User, int(uid)) if uid else None
                 if user and user != current_user:
                     db.session.delete(user)
                     db.session.commit()
@@ -421,6 +571,17 @@ def create_app():
             for d in z.get("dates", [])
         }
 
+        all_tracks = Track.query.filter_by(equipment_id=equipment_id).all()
+        track_dates = set()
+        for t in all_tracks:
+            current = t.start_time.date()
+            last = t.end_time.date()
+            while current <= last:
+                track_dates.add(current)
+                current += timedelta(days=1)
+        dates.update(track_dates)
+        has_tracks = bool(all_tracks)
+
         if (
             not show_all
             and start_date is None
@@ -454,17 +615,25 @@ def create_app():
         zones: list = []
         zone_bounds = {}
         grouped: dict = {}
-        for z in agg_period:
+        for idx, z in enumerate(agg_period):
+            ids_set = set(z.get("ids", []))
             full_idx = next(
                 (
                     i
                     for i, full in enumerate(agg_all)
-                    if set(z.get("ids", [])) <= set(full.get("ids", []))
+                    if ids_set == set(full.get("ids", []))
                 ),
                 None,
             )
             if full_idx is None:
-                continue
+                full_idx = next(
+                    (
+                        i
+                        for i, full in enumerate(agg_all)
+                        if ids_set <= set(full.get("ids", []))
+                    ),
+                    idx,
+                )
             info = grouped.setdefault(full_idx, {"dates": [], "surface": 0.0})
             info["dates"].extend(z.get("dates", []))
             info["surface"] += z["geometry"].area / 1e4
@@ -477,7 +646,7 @@ def create_app():
                 {
                     "id": idx,
                     "dates": ", ".join(sorted(set(info["dates"]))),
-                    "pass_count": len(info["dates"]),
+                    "pass_count": len(set(info["dates"])),
                     "surface_ha": info["surface"],
                 }
             )
@@ -495,12 +664,23 @@ def create_app():
         )
 
         track_query = Track.query.filter_by(equipment_id=equipment_id)
-        if start_date is not None:
-            start_dt = datetime.combine(start_date, datetime.min.time())
+        filter_start = start_date
+        filter_end = end_date
+        if (
+            filter_start is None
+            and filter_end is None
+            and year
+            and month
+            and day
+        ):
+            d = date(year, month, day)
+            filter_start = filter_end = d
+        if filter_start is not None:
+            start_dt = datetime.combine(filter_start, datetime.min.time())
             track_query = track_query.filter(Track.end_time >= start_dt)
-        if end_date is not None:
+        if filter_end is not None:
             end_dt = datetime.combine(
-                end_date + timedelta(days=1), datetime.min.time()
+                filter_end + timedelta(days=1), datetime.min.time()
             )
             track_query = track_query.filter(Track.start_time < end_dt)
         tracks = [
@@ -522,34 +702,6 @@ def create_app():
         sorted_dates = sorted(dates)
         available_dates = [d.isoformat() for d in sorted_dates]
 
-        prev_day_url = next_day_url = None
-        if (
-            start_date is not None
-            and end_date is not None
-            and start_date == end_date
-        ):
-            current = start_date
-            if current in sorted_dates:
-                idx = sorted_dates.index(current)
-                if idx > 0:
-                    pd = sorted_dates[idx - 1]
-                    prev_day_url = url_for(
-                        'equipment_detail',
-                        equipment_id=equipment_id,
-                        year=pd.year,
-                        month=pd.month,
-                        day=pd.day,
-                    )
-                if idx + 1 < len(sorted_dates):
-                    nd = sorted_dates[idx + 1]
-                    next_day_url = url_for(
-                        'equipment_detail',
-                        equipment_id=equipment_id,
-                        year=nd.year,
-                        month=nd.month,
-                        day=nd.day,
-                    )
-
         date_value = ""
         if start_date and end_date:
             if start_date == end_date:
@@ -558,6 +710,8 @@ def create_app():
                 date_value = (
                     f"{start_date.isoformat()} to {end_date.isoformat()}"
                 )
+        elif year and month and day:
+            date_value = date(year, month, day).isoformat()
 
         return render_template(
             'equipment.html',
@@ -572,9 +726,8 @@ def create_app():
             start=start_date.isoformat() if start_date else None,
             end=end_date.isoformat() if end_date else None,
             date_value=date_value,
-            prev_day_url=prev_day_url,
-            next_day_url=next_day_url,
             show_all=show_all,
+            has_tracks=has_tracks,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')
@@ -590,6 +743,7 @@ def create_app():
         end_str = request.args.get('end')
         start = date.fromisoformat(start_str) if start_str else None
         end = date.fromisoformat(end_str) if end_str else None
+        agg_all = zone.get_aggregated_zones(equipment_id)
         agg = zone.get_aggregated_zones(
             equipment_id,
             year=year,
@@ -612,24 +766,46 @@ def create_app():
 
         features = []
         for idx, z in enumerate(agg):
-            geom = z['geometry']
+            geom = z["geometry"]
             if bbox_geom and not geom.intersects(bbox_geom):
                 continue
             if bbox_geom:
                 geom = geom.intersection(bbox_geom)
             geom = zone.simplify_for_zoom(geom, zoom)
             geom_wgs = shp_transform(zone._transformer, geom)
-            features.append({
-                'type': 'Feature',
-                'id': str(idx),
-                'properties': {
-                    'dates': z['dates'],
-                    'dz_ids': z.get('ids', []),
-                    'count': len(z['dates']),
-                    'surface_ha': round(geom.area / 1e4, 2),
-                },
-                'geometry': geom_wgs.__geo_interface__,
-            })
+            ids_set = set(z.get("ids", []))
+            full_idx = next(
+                (
+                    i
+                    for i, full in enumerate(agg_all)
+                    if ids_set == set(full.get("ids", []))
+                ),
+                None,
+            )
+            if full_idx is None:
+                full_idx = next(
+                    (
+                        i
+                        for i, full in enumerate(agg_all)
+                        if ids_set <= set(full.get("ids", []))
+                    ),
+                    idx,
+                )
+            zid = str(full_idx)
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": zid,
+                    "properties": {
+                        "id": zid,
+                        "dates": z["dates"],
+                        "dz_ids": z.get("ids", []),
+                        "count": len(z["dates"]),
+                        "surface_ha": round(geom.area / 1e4, 2),
+                    },
+                    "geometry": geom_wgs.__geo_interface__,
+                }
+            )
 
         return {'type': 'FeatureCollection', 'features': features}
 
@@ -773,20 +949,23 @@ def create_app():
             })
         return {'type': 'FeatureCollection', 'features': features}
 
-    # Planification de la tâche quotidienne à 2h du matin
-    scheduler = BackgroundScheduler()
+    # Planification de la tâche quotidienne
 
     def scheduled_job():
         with app.app_context():
             zone.analyse_quotidienne()
 
-    scheduler.add_job(scheduled_job, trigger='cron', hour=2)
-    scheduler.start()
-
-    # Assurer que la base est prête avant l'analyse initiale
     with app.app_context():
+        # Assurer que la base est prête avant l'analyse initiale
         db.create_all()
         upgrade_db()
+        cfg = Config.query.first()
+        hour = cfg.analysis_hour if cfg else 2
+
+    scheduler.add_job(
+        scheduled_job, trigger='cron', hour=hour, id='daily_analysis'
+    )
+    scheduler.start()
 
     def initial_analysis():
         with app.app_context():

@@ -8,6 +8,7 @@ if ROOT_DIR not in sys.path:
 from app import create_app  # noqa: E402
 from models import db, User, Equipment, Config  # noqa: E402
 import zone  # noqa: E402
+import threading  # noqa: E402
 
 os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
@@ -106,7 +107,7 @@ def test_password_reset():
         data={"action": "reset", "user_id": str(uid), "password": "new"},
     )
     with app.app_context():
-        user = User.query.get(uid)
+        user = db.session.get(User, uid)
         assert user.check_password("new")
 
 
@@ -135,6 +136,128 @@ def test_admin_can_trigger_reanalyze(monkeypatch):
 
     monkeypatch.setattr(zone, "process_equipment", fake_process)
 
+    class InstantThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    monkeypatch.setattr(threading, "Thread", InstantThread)
+
     resp = client.post("/reanalyze_all")
     assert resp.status_code == 302
     assert called == [1]
+    status = client.get("/analysis_status")
+    assert status.json == {
+        "running": False,
+        "current": 1,
+        "total": 1,
+        "equipment": "",
+    }
+
+
+def test_admin_can_reanalyze_via_get(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    called = []
+
+    def fake_process(eq, since=None):
+        called.append(eq.id_traccar)
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+
+    class InstantThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    monkeypatch.setattr(threading, "Thread", InstantThread)
+
+    resp = client.get("/reanalyze_all")
+    assert resp.status_code == 302
+    assert called == [1]
+    status = client.get("/analysis_status")
+    assert status.json == {
+        "running": False,
+        "current": 1,
+        "total": 1,
+        "equipment": "",
+    }
+
+
+def test_analysis_status_requires_admin(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        u = User(username="reader", is_admin=False)
+        u.set_password("pwd")
+        db.session.add(u)
+        db.session.commit()
+    client = app.test_client()
+    login(client, "reader", "pwd")
+    resp = client.get("/analysis_status")
+    assert resp.status_code == 403
+
+
+def test_analysis_status_initial(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    resp = client.get("/analysis_status")
+    assert resp.json == {
+        "running": False,
+        "current": 0,
+        "total": 0,
+        "equipment": "",
+    }
+
+
+def test_analysis_status_reports_equipment(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    start_evt = threading.Event()
+    finish_evt = threading.Event()
+    done_evt = threading.Event()
+
+    def fake_process(eq, since=None):
+        start_evt.set()
+        finish_evt.wait()
+        done_evt.set()
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+
+    resp = client.post("/reanalyze_all")
+    assert resp.status_code == 302
+
+    assert start_evt.wait(1)
+    status_running = client.get("/analysis_status")
+    assert status_running.json == {
+        "running": True,
+        "current": 0,
+        "total": 1,
+        "equipment": "eq",
+    }
+
+    finish_evt.set()
+    assert done_evt.wait(1)
+    status_done = client.get("/analysis_status")
+    assert status_done.json == {
+        "running": False,
+        "current": 1,
+        "total": 1,
+        "equipment": "",
+    }
+    assert (
+        status_done.headers["Cache-Control"]
+        == "no-store, no-cache, must-revalidate, max-age=0"
+    )
