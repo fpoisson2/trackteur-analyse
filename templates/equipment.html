@@ -22,7 +22,6 @@
     .zone-row.highlighted { outline: 2px solid #0d6efd; }
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
     .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
-    .legend-popup { position: absolute; top: 80px; right: 10px; z-index: 1100; }
     #date-nav button { min-width: 3rem; }
     .bottom-sheet {
       position: fixed;
@@ -74,13 +73,23 @@
     </div>
     {% endif %}
   </header>
-
   <div id="map-container" class="flex-fill"></div>
 
-  <div id="legend-popup" class="legend-popup d-none"></div>
-
-
   {% if zones or has_tracks %}
+  <div class="modal fade" id="legend-modal" tabindex="-1" aria-labelledby="legendModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="legendModalLabel">Légende</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="legend-modal-body"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="modal fade" id="filter-modal" tabindex="-1" aria-labelledby="filterModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
@@ -355,9 +364,9 @@
         });
         return html;
       })();
-      const legendPopup = document.getElementById('legend-popup');
-      if (legendPopup) {
-        legendPopup.innerHTML = `<div class="legend">${legendHtml}</div>`;
+      const legendBody = document.getElementById('legend-modal-body');
+      if (legendBody) {
+        legendBody.innerHTML = `<div class="legend">${legendHtml}</div>`;
       }
       const legendBtn = L.control({ position: 'topright' });
       legendBtn.onAdd = () => {
@@ -369,7 +378,11 @@
         button.innerHTML = '?';
         L.DomEvent.disableClickPropagation(button);
         L.DomEvent.on(button, 'click', () => {
-          if (legendPopup) legendPopup.classList.toggle('d-none');
+          const modalEl = document.getElementById('legend-modal');
+          if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+          }
         });
         return div;
       };
@@ -394,7 +407,6 @@
         return div;
       };
       filterBtn.addTo(map);
-      map.on('click', () => { if (legendPopup) legendPopup.classList.add('d-none'); });
       map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
         const b = L.latLngBounds(

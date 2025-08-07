@@ -434,7 +434,7 @@ def test_tracks_endpoint_triggers_analysis(monkeypatch):
     assert len(data["features"]) == 1
 
 
-def test_equipment_page_has_help_button_and_no_legend():
+def test_legend_modal_present():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -446,7 +446,14 @@ def test_equipment_page_has_help_button_and_no_legend():
     assert "const legend = L.control" not in html
     assert "button.id = 'legend-btn'" in html
     assert "button.innerHTML = '?'" in html
-    assert 'id="legend-popup"' in html
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    modal = soup.find(id="legend-modal")
+    assert modal is not None
+    dialog = modal.find(class_="modal-dialog")
+    assert dialog is not None
+    assert "modal-dialog-centered" in dialog.get("class", [])
 
 
 def test_zones_geojson_endpoint():
