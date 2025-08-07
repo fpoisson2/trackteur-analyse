@@ -1045,6 +1045,53 @@ def test_initial_bounds_reflect_selected_day():
     assert bounds_day[1] == approx(bounds_all[1])
 
 
+def test_single_day_bounds_with_tracks_only():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        DailyZone.query.delete()
+        Track.query.delete()
+        db.session.commit()
+        today = date.today()
+        other = today - timedelta(days=1)
+        t1 = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(today, datetime.min.time()),
+            end_time=(
+                datetime.combine(today, datetime.min.time())
+                + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        t2 = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(other, datetime.min.time()),
+            end_time=(
+                datetime.combine(other, datetime.min.time())
+                + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(10 10,11 11)",
+        )
+        db.session.add_all([t1, t2])
+        db.session.commit()
+        resp_all = client.get(f"/equipment/{eq.id}?show=all")
+        resp_day = client.get(
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+
+    bounds_all = get_js_array(resp_all.data.decode(), "initialBounds")
+    bounds_day = get_js_array(resp_day.data.decode(), "initialBounds")
+    width_all = bounds_all[2] - bounds_all[0]
+    width_day = bounds_day[2] - bounds_day[0]
+    assert width_all > width_day * 5
+    assert bounds_day[0] == approx(0)
+    assert bounds_day[1] == approx(0)
+
+
 def test_equipment_detail_filters_by_range():
     app = make_app()
     client = app.test_client()

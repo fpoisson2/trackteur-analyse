@@ -559,12 +559,23 @@ def create_app():
         )
 
         track_query = Track.query.filter_by(equipment_id=equipment_id)
-        if start_date is not None:
-            start_dt = datetime.combine(start_date, datetime.min.time())
+        filter_start = start_date
+        filter_end = end_date
+        if (
+            filter_start is None
+            and filter_end is None
+            and year
+            and month
+            and day
+        ):
+            d = date(year, month, day)
+            filter_start = filter_end = d
+        if filter_start is not None:
+            start_dt = datetime.combine(filter_start, datetime.min.time())
             track_query = track_query.filter(Track.end_time >= start_dt)
-        if end_date is not None:
+        if filter_end is not None:
             end_dt = datetime.combine(
-                end_date + timedelta(days=1), datetime.min.time()
+                filter_end + timedelta(days=1), datetime.min.time()
             )
             track_query = track_query.filter(Track.start_time < end_dt)
         tracks = [
