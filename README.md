@@ -60,6 +60,38 @@ Démarrer l'application :
 export SKIP_INITIAL_ANALYSIS=1
 python app.py
 ```
+En production, utilisez [Gunicorn](https://gunicorn.org/) :
+```bash
+gunicorn wsgi:app --bind 0.0.0.0:8000
+```
+### Service systemd (Ubuntu)
+
+Pour exécuter l'application comme un service systemd :
+
+1. Créez `/etc/systemd/system/trackteur-analyse.service` :
+
+   ```ini
+   [Unit]
+   Description=Trackteur Analyse
+   After=network.target
+
+   [Service]
+   User=trackteur
+   WorkingDirectory=/opt/trackteur-analyse
+   Environment="FLASK_SECRET_KEY=changer"
+   ExecStart=/usr/bin/gunicorn wsgi:app --bind 0.0.0.0:8000
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+2. Rechargez systemd et démarrez le service :
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now trackteur-analyse.service
+   ```
 Accédez à [http://localhost:5000](http://localhost:5000). La page d'accueil liste les équipements, leur dernière position et les surfaces calculées. Vous pouvez lancer une analyse manuelle ou consulter le détail d'un équipement (zones par jour et carte interactive). Une analyse automatique a lieu chaque nuit à 2 h.
 
 ## Structure du projet
