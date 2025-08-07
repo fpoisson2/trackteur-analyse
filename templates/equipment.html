@@ -16,12 +16,13 @@
       margin: 0;
       overscroll-behavior-y: none;
     }
-    #map-container { height: 100%; }
+    body { display: flex; flex-direction: column; }
+    #map-container { flex: 1; }
     .zone-row { cursor: pointer; }
     .zone-row.highlighted { outline: 2px solid #0d6efd; }
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
     .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
-    .legend-popup { position: absolute; top: 60px; right: 10px; z-index: 1100; }
+    .legend-popup { position: absolute; top: 80px; right: 10px; z-index: 1100; }
     #date-nav button { min-width: 3rem; }
     .bottom-sheet {
       position: fixed;
@@ -59,21 +60,25 @@
     }
   </style>
 </head>
-<body class="m-0">
-  <div id="map-container"></div>
-  <div class="position-absolute top-0 start-0 p-2 bg-white rounded shadow d-flex align-items-center gap-2" style="z-index:1100;">
+<body class="m-0 d-flex flex-column">
+  <header class="p-2 bg-white shadow d-flex align-items-center gap-2" style="z-index:1100;">
     <a href="{{ url_for('index') }}">
       <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="40">
     </a>
     {% if zones or has_tracks %}
     <div id="date-nav" class="input-group ms-2">
       <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
-      <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>📅</button>
+      <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>
+        <i class="bi bi-calendar3"></i>
+      </button>
     </div>
     {% endif %}
-  </div>
+  </header>
+
+  <div id="map-container" class="flex-fill"></div>
 
   <div id="legend-popup" class="legend-popup d-none"></div>
+
 
   {% if zones or has_tracks %}
   <div class="modal fade" id="filter-modal" tabindex="-1" aria-labelledby="filterModalLabel" aria-hidden="true">
