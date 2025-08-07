@@ -523,7 +523,7 @@ def create_app():
                 (
                     i
                     for i, full in enumerate(agg_all)
-                    if set(z.get("ids", [])) <= set(full.get("ids", []))
+                    if set(z.get("ids", [])) == set(full.get("ids", []))
                 ),
                 None,
             )
@@ -541,7 +541,7 @@ def create_app():
                 {
                     "id": idx,
                     "dates": ", ".join(sorted(set(info["dates"]))),
-                    "pass_count": len(info["dates"]),
+                    "pass_count": len(set(info["dates"])),
                     "surface_ha": info["surface"],
                 }
             )
