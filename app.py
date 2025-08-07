@@ -594,17 +594,25 @@ def create_app():
         zones: list = []
         zone_bounds = {}
         grouped: dict = {}
-        for z in agg_period:
+        for idx, z in enumerate(agg_period):
+            ids_set = set(z.get("ids", []))
             full_idx = next(
                 (
                     i
                     for i, full in enumerate(agg_all)
-                    if set(z.get("ids", [])) == set(full.get("ids", []))
+                    if ids_set == set(full.get("ids", []))
                 ),
                 None,
             )
             if full_idx is None:
-                continue
+                full_idx = next(
+                    (
+                        i
+                        for i, full in enumerate(agg_all)
+                        if ids_set <= set(full.get("ids", []))
+                    ),
+                    idx,
+                )
             info = grouped.setdefault(full_idx, {"dates": [], "surface": 0.0})
             info["dates"].extend(z.get("dates", []))
             info["surface"] += z["geometry"].area / 1e4
@@ -744,14 +752,24 @@ def create_app():
                 geom = geom.intersection(bbox_geom)
             geom = zone.simplify_for_zoom(geom, zoom)
             geom_wgs = shp_transform(zone._transformer, geom)
+            ids_set = set(z.get("ids", []))
             full_idx = next(
                 (
                     i
                     for i, full in enumerate(agg_all)
-                    if set(z.get("ids", [])) <= set(full.get("ids", []))
+                    if ids_set == set(full.get("ids", []))
                 ),
-                idx,
+                None,
             )
+            if full_idx is None:
+                full_idx = next(
+                    (
+                        i
+                        for i, full in enumerate(agg_all)
+                        if ids_set <= set(full.get("ids", []))
+                    ),
+                    idx,
+                )
             zid = str(full_idx)
             features.append(
                 {
