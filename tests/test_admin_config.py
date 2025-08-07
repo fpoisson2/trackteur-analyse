@@ -121,6 +121,7 @@ def test_admin_page_has_status_poll(monkeypatch):
     resp = client.get("/admin")
     html = resp.get_data(as_text=True)
     assert "credentials: 'same-origin'" in html
+    assert 'id="analysis-banner"' in html
 
 
 def test_reanalyze_saves_params(monkeypatch):
