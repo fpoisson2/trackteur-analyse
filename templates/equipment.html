@@ -247,6 +247,11 @@
       trackParams.set('bbox', bbox);
       if (startDate !== null) trackParams.set('start', startDate);
       if (endDate !== null) trackParams.set('end', endDate);
+      if (startDate === null && endDate === null) {
+        if (year !== null) trackParams.set('year', year);
+        if (month !== null) trackParams.set('month', month);
+        if (day !== null) trackParams.set('day', day);
+      }
       const tp = fetch(`/equipment/${equipmentId}/tracks.geojson?${trackParams.toString()}`)
         .then(r => r.json())
         .then(trackData => {
@@ -261,6 +266,11 @@
         pointParams.set('all', '1');
         if (startDate !== null) pointParams.set('start', startDate);
         if (endDate !== null) pointParams.set('end', endDate);
+        if (startDate === null && endDate === null) {
+          if (year !== null) pointParams.set('year', year);
+          if (month !== null) pointParams.set('month', month);
+          if (day !== null) pointParams.set('day', day);
+        }
         const pp = fetch(`/equipment/${equipmentId}/points.geojson?${pointParams.toString()}`)
           .then(r => r.json())
           .then(pointData => {
@@ -429,8 +439,17 @@
       }
 
       if (openBtn && picker) {
+        let prevValue = '';
         openBtn.addEventListener('click', () => {
+          prevValue = dateInput.value;
+          firstDate = null;
+          picker.clear();
           picker.open();
+        });
+        picker.config.onClose.push(() => {
+          if (!dateInput.value && prevValue) {
+            dateInput.value = prevValue;
+          }
         });
       }
     }

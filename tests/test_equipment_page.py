@@ -1160,3 +1160,22 @@ def test_calendar_allows_single_day_selection():
     html = resp.data.decode()
     assert "firstDate = null" in html
     assert "instance.setDate([current, current], true)" in html
+    assert "picker.clear()" in html
+
+
+def test_track_and_point_requests_use_day_params():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp = client.get(
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+
+    html = resp.data.decode()
+    assert "trackParams.set('year', year)" in html
+    assert "pointParams.set('year', year)" in html
