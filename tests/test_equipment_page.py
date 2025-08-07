@@ -204,7 +204,13 @@ def test_multi_pass_zone_included():
         )
         resp = client.get(url)
     html = resp.data.decode()
-    assert '<td>2</td>' in html
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert rows
+    cells = rows[0].find_all("td")
+    assert cells[1].text.strip() == "1"
 
 
 def test_day_menu_excludes_days_without_zones():
@@ -685,7 +691,7 @@ def test_table_shows_aggregated_pass_count():
     rows = soup.select("#zones-table tbody tr")
     assert rows
     cells = rows[0].find_all("td")
-    assert cells[1].text.strip() == "2"
+    assert cells[1].text.strip() == "1"
 
 
 def test_fetch_data_uses_token():
@@ -1228,3 +1234,42 @@ def test_track_and_point_requests_use_day_params():
     html = resp.data.decode()
     assert "trackParams.set('year', year)" in html
     assert "pointParams.set('year', year)" in html
+
+
+def test_overlapping_zones_across_days_show_three_rows():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        day1 = date.today() + timedelta(days=10)
+        day2 = day1 + timedelta(days=1)
+        dz_a = DailyZone(
+            equipment_id=eq.id,
+            date=day1,
+            surface_ha=1.0,
+            polygon_wkt="POLYGON((10 0,12 0,12 1,10 1,10 0))",
+        )
+        dz_b = DailyZone(
+            equipment_id=eq.id,
+            date=day2,
+            surface_ha=1.0,
+            polygon_wkt="POLYGON((11 0,13 0,13 1,11 1,11 0))",
+        )
+        db.session.add_all([dz_a, dz_b])
+        db.session.commit()
+        zone._AGG_CACHE.clear()
+        resp = client.get(
+            f"/equipment/{eq.id}?start={day1.isoformat()}&"
+            f"end={day2.isoformat()}"
+        )
+
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#zones-table tbody tr")
+    assert len(rows) == 3
+    pass_counts = [int(r.find_all("td")[1].text) for r in rows]
+    assert pass_counts == [1, 2, 1]
