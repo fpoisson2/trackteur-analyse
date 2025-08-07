@@ -910,6 +910,54 @@ def test_zone_ids_match_between_table_and_geojson():
         assert row_id in feature_ids
 
 
+def test_zone_id_consistency_with_overlaps():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        earlier = date.today() - timedelta(days=2)
+        later = date.today() - timedelta(days=1)
+        # Insert two overlapping zones; the earlier one gets a lower ID
+        db.session.add(
+            DailyZone(
+                equipment_id=eq.id,
+                date=earlier,
+                surface_ha=1.0,
+                polygon_wkt="POLYGON((0 0,2 0,2 2,0 2,0 0))",
+            )
+        )
+        db.session.commit()
+        db.session.add(
+            DailyZone(
+                equipment_id=eq.id,
+                date=later,
+                surface_ha=1.0,
+                polygon_wkt="POLYGON((1 1,3 1,3 3,1 3,1 1))",
+            )
+        )
+        db.session.commit()
+
+        url = (
+            f"/equipment/{eq.id}?year={later.year}&month={later.month}"
+            f"&day={later.day}"
+        )
+        resp = client.get(url)
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(resp.data.decode(), "html.parser")
+        row_id = soup.select_one(".zone-row")["data-zone-id"]
+
+        resp = client.get(
+            f"/equipment/{eq.id}/zones.geojson?start={later.isoformat()}&"
+            f"end={later.isoformat()}&zoom=17"
+        )
+        data = resp.get_json()
+        feature_ids = {feat["id"] for feat in data["features"]}
+        assert row_id in feature_ids
+
+
 def test_points_geojson_filters_by_day():
     app = make_app()
     client = app.test_client()

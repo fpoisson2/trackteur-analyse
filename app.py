@@ -752,14 +752,24 @@ def create_app():
                 geom = geom.intersection(bbox_geom)
             geom = zone.simplify_for_zoom(geom, zoom)
             geom_wgs = shp_transform(zone._transformer, geom)
+            ids_set = set(z.get("ids", []))
             full_idx = next(
                 (
                     i
                     for i, full in enumerate(agg_all)
-                    if set(z.get("ids", [])) <= set(full.get("ids", []))
+                    if ids_set == set(full.get("ids", []))
                 ),
-                idx,
+                None,
             )
+            if full_idx is None:
+                full_idx = next(
+                    (
+                        i
+                        for i, full in enumerate(agg_all)
+                        if ids_set <= set(full.get("ids", []))
+                    ),
+                    idx,
+                )
             zid = str(full_idx)
             features.append(
                 {
