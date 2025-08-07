@@ -6,6 +6,7 @@
   <title>{{ equipment.name }} - Détails</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
@@ -15,12 +16,12 @@
       margin: 0;
       overscroll-behavior-y: none;
     }
-    #map-container { height: 100%; }
+    body { display: flex; flex-direction: column; }
+    #map-container { flex: 1; }
     .zone-row { cursor: pointer; }
     .zone-row.highlighted { outline: 2px solid #0d6efd; }
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
     .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
-    .legend-popup { position: absolute; top: 60px; right: 10px; z-index: 1100; }
     #date-nav button { min-width: 3rem; }
     .bottom-sheet {
       position: fixed;
@@ -58,29 +59,61 @@
     }
   </style>
 </head>
-<body class="m-0">
-  <div id="map-container"></div>
-  <div class="position-absolute top-0 start-0 p-2 bg-white rounded shadow" style="z-index:1100;">
+<body class="m-0 d-flex flex-column">
+  <header class="p-2 bg-white shadow d-flex align-items-center gap-2" style="z-index:1100;">
     <a href="{{ url_for('index') }}">
       <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="40">
     </a>
-  </div>
-
-  <div id="legend-popup" class="legend-popup d-none"></div>
+    {% if zones or has_tracks %}
+    <div id="date-nav" class="input-group ms-2">
+      <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
+      <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>
+        <i class="bi bi-calendar3"></i>
+      </button>
+    </div>
+    {% endif %}
+  </header>
+  <div id="map-container" class="flex-fill"></div>
 
   {% if zones or has_tracks %}
+  <div class="modal fade" id="legend-modal" tabindex="-1" aria-labelledby="legendModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="legendModalLabel">Légende</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="legend-modal-body"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal fade" id="filter-modal" tabindex="-1" aria-labelledby="filterModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="filterModalLabel">Filtres</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="show-points">
+            <label class="form-check-label" for="show-points">Afficher les points GPS</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="info-sheet" class="bottom-sheet" data-sheet="equipment" data-open="false">
     <div class="drag-handle"></div>
     <div class="sheet-content p-3" data-sheet-content>
       <h5 class="mb-3">{{ equipment.name }}</h5>
-      <div id="date-nav" class="input-group mb-3">
-        <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
-        <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>📅</button>
-      </div>
-      <div class="form-check form-switch mb-2">
-        <input class="form-check-input" type="checkbox" id="show-points">
-        <label class="form-check-label" for="show-points">Afficher les points GPS</label>
-      </div>
       <div class="table-responsive">
         <table id="zones-table" class="table table-striped">
           <thead>
@@ -260,7 +293,8 @@
           trackLayer.addData(trackData);
         });
       promises.push(tp);
-      if (document.getElementById('show-points').checked) {
+      const showPointsEl = document.getElementById('show-points');
+      if (showPointsEl && showPointsEl.checked) {
         const pointParams = new URLSearchParams();
         pointParams.set('bbox', bbox);
         pointParams.set('all', '1');
@@ -330,9 +364,9 @@
         });
         return html;
       })();
-      const legendPopup = document.getElementById('legend-popup');
-      if (legendPopup) {
-        legendPopup.innerHTML = `<div class="legend">${legendHtml}</div>`;
+      const legendBody = document.getElementById('legend-modal-body');
+      if (legendBody) {
+        legendBody.innerHTML = `<div class="legend">${legendHtml}</div>`;
       }
       const legendBtn = L.control({ position: 'topright' });
       legendBtn.onAdd = () => {
@@ -344,12 +378,35 @@
         button.innerHTML = '?';
         L.DomEvent.disableClickPropagation(button);
         L.DomEvent.on(button, 'click', () => {
-          if (legendPopup) legendPopup.classList.toggle('d-none');
+          const modalEl = document.getElementById('legend-modal');
+          if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+          }
         });
         return div;
       };
       legendBtn.addTo(map);
-      map.on('click', () => { if (legendPopup) legendPopup.classList.add('d-none'); });
+
+      const filterBtn = L.control({ position: 'topright' });
+      filterBtn.onAdd = () => {
+        const div = L.DomUtil.create('div', 'filter-btn-container');
+        const button = L.DomUtil.create('button', '', div);
+        button.id = 'filter-btn';
+        button.type = 'button';
+        button.title = 'Filtres';
+        button.innerHTML = '<i class="bi bi-funnel"></i>';
+        L.DomEvent.disableClickPropagation(button);
+        L.DomEvent.on(button, 'click', () => {
+          const modalEl = document.getElementById('filter-modal');
+          if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+          }
+        });
+        return div;
+      };
+      filterBtn.addTo(map);
       map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
         const b = L.latLngBounds(
@@ -469,9 +526,12 @@
         });
       });
       setupMap();
-      document.getElementById('show-points').addEventListener('change', () => {
-        fetchData();
-      });
+      const showPoints = document.getElementById('show-points');
+      if (showPoints) {
+        showPoints.addEventListener('change', () => {
+          fetchData();
+        });
+      }
     }
 
     window.addEventListener('DOMContentLoaded', () => {

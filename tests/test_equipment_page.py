@@ -307,6 +307,51 @@ def test_single_day_request_with_tracks():
     assert f'value="{d.isoformat()}"' in html
 
 
+def test_date_selector_outside_info_sheet():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    date_nav = soup.find(id="date-nav")
+    assert date_nav is not None
+    info_sheet = soup.find(id="info-sheet")
+    assert info_sheet is not None
+    assert info_sheet.find(id="date-nav") is None
+
+
+def test_points_filter_modal_present():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    from bs4 import BeautifulSoup
+
+    assert "filter-btn" in html
+    soup = BeautifulSoup(html, "html.parser")
+    info_sheet = soup.find(id="info-sheet")
+    assert info_sheet is not None
+    show_points = soup.find(id="show-points")
+    assert show_points is not None
+    assert info_sheet.find(id="show-points") is None
+    filter_modal = soup.find(id="filter-modal")
+    assert filter_modal is not None
+    assert filter_modal.find(id="show-points") is not None
+    dialog = filter_modal.find(class_="modal-dialog")
+    assert dialog is not None
+    assert "modal-dialog-centered" in dialog.get("class", [])
+
+
 def test_tracks_and_points_geojson():
     app = make_app()
     client = app.test_client()
@@ -389,7 +434,7 @@ def test_tracks_endpoint_triggers_analysis(monkeypatch):
     assert len(data["features"]) == 1
 
 
-def test_equipment_page_has_help_button_and_no_legend():
+def test_legend_modal_present():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -401,7 +446,14 @@ def test_equipment_page_has_help_button_and_no_legend():
     assert "const legend = L.control" not in html
     assert "button.id = 'legend-btn'" in html
     assert "button.innerHTML = '?'" in html
-    assert 'id="legend-popup"' in html
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    modal = soup.find(id="legend-modal")
+    assert modal is not None
+    dialog = modal.find(class_="modal-dialog")
+    assert dialog is not None
+    assert "modal-dialog-centered" in dialog.get("class", [])
 
 
 def test_zones_geojson_endpoint():
