@@ -111,8 +111,9 @@
         .then(data => {
           const el = document.getElementById('analysis-status');
           if (data.running) {
-            el.textContent = `Analyse en cours : ${data.current}/${data.total}`;
-            setTimeout(checkStatus, 2000);
+            const eq = data.equipment ? ` – ${data.equipment}` : "";
+            el.textContent = `Analyse en cours : ${data.current}/${data.total}${eq}`;
+            setTimeout(checkStatus, 1000);
           } else if (data.total > 0) {
             el.textContent = `Analyse terminée (${data.total} équipements).`;
           } else {

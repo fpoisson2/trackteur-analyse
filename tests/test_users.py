@@ -151,7 +151,12 @@ def test_admin_can_trigger_reanalyze(monkeypatch):
     assert resp.status_code == 302
     assert called == [1]
     status = client.get("/analysis_status")
-    assert status.json == {"running": False, "current": 1, "total": 1}
+    assert status.json == {
+        "running": False,
+        "current": 1,
+        "total": 1,
+        "equipment": "",
+    }
 
 
 def test_admin_can_reanalyze_via_get(monkeypatch):
@@ -181,7 +186,12 @@ def test_admin_can_reanalyze_via_get(monkeypatch):
     assert resp.status_code == 302
     assert called == [1]
     status = client.get("/analysis_status")
-    assert status.json == {"running": False, "current": 1, "total": 1}
+    assert status.json == {
+        "running": False,
+        "current": 1,
+        "total": 1,
+        "equipment": "",
+    }
 
 
 def test_analysis_status_requires_admin(monkeypatch):
@@ -202,4 +212,52 @@ def test_analysis_status_initial(monkeypatch):
     client = app.test_client()
     login(client)
     resp = client.get("/analysis_status")
-    assert resp.json == {"running": False, "current": 0, "total": 0}
+    assert resp.json == {
+        "running": False,
+        "current": 0,
+        "total": 0,
+        "equipment": "",
+    }
+
+
+def test_analysis_status_reports_equipment(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    start_evt = threading.Event()
+    finish_evt = threading.Event()
+    done_evt = threading.Event()
+
+    def fake_process(eq, since=None):
+        start_evt.set()
+        finish_evt.wait()
+        done_evt.set()
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+
+    resp = client.post("/reanalyze_all")
+    assert resp.status_code == 302
+
+    assert start_evt.wait(1)
+    status_running = client.get("/analysis_status")
+    assert status_running.json == {
+        "running": True,
+        "current": 0,
+        "total": 1,
+        "equipment": "eq",
+    }
+
+    finish_evt.set()
+    assert done_evt.wait(1)
+    status_done = client.get("/analysis_status")
+    assert status_done.json == {
+        "running": False,
+        "current": 1,
+        "total": 1,
+        "equipment": "",
+    }
+    assert (
+        status_done.headers["Cache-Control"]
+        == "no-store, no-cache, must-revalidate, max-age=0"
+    )

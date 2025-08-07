@@ -20,12 +20,19 @@ from datetime import datetime, date, timedelta
 from typing import Iterable, Any
 from werkzeug.datastructures import MultiDict
 
-reanalysis_progress = {"running": False, "current": 0, "total": 0}
+reanalysis_progress = {
+    "running": False,
+    "current": 0,
+    "total": 0,
+    "equipment": "",
+}
 
 
 def create_app():
     app = Flask(__name__)
-    reanalysis_progress.update({"running": False, "current": 0, "total": 0})
+    reanalysis_progress.update(
+        {"running": False, "current": 0, "total": 0, "equipment": ""}
+    )
     # Configure logging
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
     if not logging.getLogger().handlers:
@@ -353,7 +360,12 @@ def create_app():
 
         equipments = Equipment.query.all()
         reanalysis_progress.update(
-            {"running": True, "current": 0, "total": len(equipments)}
+            {
+                "running": True,
+                "current": 0,
+                "total": len(equipments),
+                "equipment": "",
+            }
         )
 
         def run() -> None:
@@ -361,9 +373,11 @@ def create_app():
                 now = datetime.utcnow()
                 start_of_year = datetime(now.year, 1, 1)
                 for idx, eq in enumerate(equipments, start=1):
+                    reanalysis_progress["equipment"] = eq.name
                     zone.process_equipment(eq, since=start_of_year)
                     reanalysis_progress["current"] = idx
                 reanalysis_progress["running"] = False
+                reanalysis_progress["equipment"] = ""
 
         threading.Thread(target=run, daemon=True).start()
         return redirect(
@@ -375,7 +389,13 @@ def create_app():
     def analysis_status():
         if not current_user.is_admin:
             return jsonify({"running": False}), 403
-        return jsonify(reanalysis_progress)
+        resp = jsonify(reanalysis_progress)
+        resp.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
 
     @app.route('/users', methods=['GET', 'POST'])
     @login_required

@@ -168,4 +168,9 @@ def test_reanalyze_saves_params(monkeypatch):
         assert cfg.alpha == 0.07
     assert called == [1]
     status = client.get("/analysis_status")
-    assert status.json == {"running": False, "current": 1, "total": 1}
+    assert status.json == {
+        "running": False,
+        "current": 1,
+        "total": 1,
+        "equipment": "",
+    }
