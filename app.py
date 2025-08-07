@@ -474,6 +474,17 @@ def create_app():
             for d in z.get("dates", [])
         }
 
+        all_tracks = Track.query.filter_by(equipment_id=equipment_id).all()
+        track_dates = set()
+        for t in all_tracks:
+            current = t.start_time.date()
+            last = t.end_time.date()
+            while current <= last:
+                track_dates.add(current)
+                current += timedelta(days=1)
+        dates.update(track_dates)
+        has_tracks = bool(all_tracks)
+
         if (
             not show_all
             and start_date is None
@@ -548,12 +559,23 @@ def create_app():
         )
 
         track_query = Track.query.filter_by(equipment_id=equipment_id)
-        if start_date is not None:
-            start_dt = datetime.combine(start_date, datetime.min.time())
+        filter_start = start_date
+        filter_end = end_date
+        if (
+            filter_start is None
+            and filter_end is None
+            and year
+            and month
+            and day
+        ):
+            d = date(year, month, day)
+            filter_start = filter_end = d
+        if filter_start is not None:
+            start_dt = datetime.combine(filter_start, datetime.min.time())
             track_query = track_query.filter(Track.end_time >= start_dt)
-        if end_date is not None:
+        if filter_end is not None:
             end_dt = datetime.combine(
-                end_date + timedelta(days=1), datetime.min.time()
+                filter_end + timedelta(days=1), datetime.min.time()
             )
             track_query = track_query.filter(Track.start_time < end_dt)
         tracks = [
@@ -575,34 +597,6 @@ def create_app():
         sorted_dates = sorted(dates)
         available_dates = [d.isoformat() for d in sorted_dates]
 
-        prev_day_url = next_day_url = None
-        if (
-            start_date is not None
-            and end_date is not None
-            and start_date == end_date
-        ):
-            current = start_date
-            if current in sorted_dates:
-                idx = sorted_dates.index(current)
-                if idx > 0:
-                    pd = sorted_dates[idx - 1]
-                    prev_day_url = url_for(
-                        'equipment_detail',
-                        equipment_id=equipment_id,
-                        year=pd.year,
-                        month=pd.month,
-                        day=pd.day,
-                    )
-                if idx + 1 < len(sorted_dates):
-                    nd = sorted_dates[idx + 1]
-                    next_day_url = url_for(
-                        'equipment_detail',
-                        equipment_id=equipment_id,
-                        year=nd.year,
-                        month=nd.month,
-                        day=nd.day,
-                    )
-
         date_value = ""
         if start_date and end_date:
             if start_date == end_date:
@@ -611,6 +605,8 @@ def create_app():
                 date_value = (
                     f"{start_date.isoformat()} to {end_date.isoformat()}"
                 )
+        elif year and month and day:
+            date_value = date(year, month, day).isoformat()
 
         return render_template(
             'equipment.html',
@@ -625,9 +621,8 @@ def create_app():
             start=start_date.isoformat() if start_date else None,
             end=end_date.isoformat() if end_date else None,
             date_value=date_value,
-            prev_day_url=prev_day_url,
-            next_day_url=next_day_url,
             show_all=show_all,
+            has_tracks=has_tracks,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')

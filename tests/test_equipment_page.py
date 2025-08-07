@@ -228,7 +228,7 @@ def test_day_menu_excludes_days_without_zones():
     assert "!availableDates.includes(end)" in html
 
 
-def test_equipment_page_has_day_navigation():
+def test_equipment_page_has_calendar_control_without_arrows():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -237,8 +237,68 @@ def test_equipment_page_has_day_navigation():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert 'id="prev-day"' in html
-    assert 'id="next-day"' in html
+    assert 'id="open-calendar"' in html
+    assert 'id="prev-day"' not in html
+    assert 'id="next-day"' not in html
+
+
+def test_calendar_shows_with_tracks_only():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        DailyZone.query.delete()
+        Track.query.delete()
+        db.session.commit()
+        tr = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(
+                date.today(), datetime.min.time()
+            ),
+            end_time=(
+                datetime.combine(date.today(), datetime.min.time())
+                + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        db.session.add(tr)
+        db.session.commit()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    dates = get_js_array(html, "availableDates")
+    assert date.today().isoformat() in dates
+    assert 'Aucune donnée disponible' not in html
+    assert 'id="date-display"' in html
+
+
+def test_single_day_request_with_tracks():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        DailyZone.query.delete()
+        Track.query.delete()
+        db.session.commit()
+        d = date.today()
+        tr = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(d, datetime.min.time()),
+            end_time=(
+                datetime.combine(d, datetime.min.time()) + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        db.session.add(tr)
+        db.session.commit()
+        url = f"/equipment/{eq.id}?year={d.year}&month={d.month}&day={d.day}"
+        resp = client.get(url)
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert f'value="{d.isoformat()}"' in html
 
 
 def test_tracks_and_points_geojson():
@@ -985,6 +1045,53 @@ def test_initial_bounds_reflect_selected_day():
     assert bounds_day[1] == approx(bounds_all[1])
 
 
+def test_single_day_bounds_with_tracks_only():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        DailyZone.query.delete()
+        Track.query.delete()
+        db.session.commit()
+        today = date.today()
+        other = today - timedelta(days=1)
+        t1 = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(today, datetime.min.time()),
+            end_time=(
+                datetime.combine(today, datetime.min.time())
+                + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        t2 = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(other, datetime.min.time()),
+            end_time=(
+                datetime.combine(other, datetime.min.time())
+                + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(10 10,11 11)",
+        )
+        db.session.add_all([t1, t2])
+        db.session.commit()
+        resp_all = client.get(f"/equipment/{eq.id}?show=all")
+        resp_day = client.get(
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+
+    bounds_all = get_js_array(resp_all.data.decode(), "initialBounds")
+    bounds_day = get_js_array(resp_day.data.decode(), "initialBounds")
+    width_all = bounds_all[2] - bounds_all[0]
+    width_day = bounds_day[2] - bounds_day[0]
+    assert width_all > width_day * 5
+    assert bounds_day[0] == approx(0)
+    assert bounds_day[1] == approx(0)
+
+
 def test_equipment_detail_filters_by_range():
     app = make_app()
     client = app.test_client()
@@ -1086,3 +1193,38 @@ def test_map_click_does_not_open_sheet():
 
     html = resp.data.decode()
     assert html.count("openEquipmentSheet()") == 1
+
+
+def test_calendar_allows_single_day_selection():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+
+    html = resp.data.decode()
+    assert "firstDate = null" in html
+    assert "instance.setDate([current, current], true)" in html
+    assert "picker.clear()" in html
+    assert "clickOpens: false" in html
+    assert "dateInput.addEventListener('click', openPicker)" in html
+
+
+def test_track_and_point_requests_use_day_params():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        resp = client.get(
+            f"/equipment/{eq.id}?year={today.year}&month={today.month}"
+            f"&day={today.day}"
+        )
+
+    html = resp.data.decode()
+    assert "trackParams.set('year', year)" in html
+    assert "pointParams.set('year', year)" in html
