@@ -347,6 +347,9 @@ def test_points_filter_modal_present():
     filter_modal = soup.find(id="filter-modal")
     assert filter_modal is not None
     assert filter_modal.find(id="show-points") is not None
+    dialog = filter_modal.find(class_="modal-dialog")
+    assert dialog is not None
+    assert "modal-dialog-centered" in dialog.get("class", [])
 
 
 def test_tracks_and_points_geojson():
