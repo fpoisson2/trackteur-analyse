@@ -1,7 +1,8 @@
 import os
 import logging
+import threading
 
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_login import (
     LoginManager,
     login_user,
@@ -18,9 +19,12 @@ from datetime import datetime, date, timedelta
 from typing import Iterable, Any
 from werkzeug.datastructures import MultiDict
 
+reanalysis_progress = {"running": False, "current": 0, "total": 0}
+
 
 def create_app():
     app = Flask(__name__)
+    reanalysis_progress.update({"running": False, "current": 0, "total": 0})
     # Configure logging
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
     if not logging.getLogger().handlers:
@@ -310,16 +314,37 @@ def create_app():
     def reanalyze_all():
         if not current_user.is_admin:
             return redirect(url_for('index'))
+        if reanalysis_progress["running"]:
+            return redirect(url_for('admin', msg="Analyse déjà en cours"))
         if request.form:
             devices = zone.fetch_devices()
             save_config(request.form, devices)
 
-        now = datetime.utcnow()
-        start_of_year = datetime(now.year, 1, 1)
-        for eq in Equipment.query.all():
-            zone.process_equipment(eq, since=start_of_year)
+        equipments = Equipment.query.all()
+        reanalysis_progress.update(
+            {"running": True, "current": 0, "total": len(equipments)}
+        )
 
-        return redirect(url_for('admin', msg="Analyse complète terminée"))
+        def run() -> None:
+            with app.app_context():
+                now = datetime.utcnow()
+                start_of_year = datetime(now.year, 1, 1)
+                for idx, eq in enumerate(equipments, start=1):
+                    zone.process_equipment(eq, since=start_of_year)
+                    reanalysis_progress["current"] = idx
+                reanalysis_progress["running"] = False
+
+        threading.Thread(target=run, daemon=True).start()
+        return redirect(
+            url_for('admin', msg="Analyse relancée en arrière-plan")
+        )
+
+    @app.route('/analysis_status')
+    @login_required
+    def analysis_status():
+        if not current_user.is_admin:
+            return jsonify({"running": False}), 403
+        return jsonify(reanalysis_progress)
 
     @app.route('/users', methods=['GET', 'POST'])
     @login_required

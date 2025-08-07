@@ -8,6 +8,7 @@ if ROOT_DIR not in sys.path:
 from app import create_app  # noqa: E402
 from models import db, User, Equipment, Config  # noqa: E402
 import zone  # noqa: E402
+import threading  # noqa: E402
 
 os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
@@ -135,6 +136,40 @@ def test_admin_can_trigger_reanalyze(monkeypatch):
 
     monkeypatch.setattr(zone, "process_equipment", fake_process)
 
+    class InstantThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    monkeypatch.setattr(threading, "Thread", InstantThread)
+
     resp = client.post("/reanalyze_all")
     assert resp.status_code == 302
     assert called == [1]
+    status = client.get("/analysis_status")
+    assert status.json == {"running": False, "current": 1, "total": 1}
+
+
+def test_analysis_status_requires_admin(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        u = User(username="reader", is_admin=False)
+        u.set_password("pwd")
+        db.session.add(u)
+        db.session.commit()
+    client = app.test_client()
+    login(client, "reader", "pwd")
+    resp = client.get("/analysis_status")
+    assert resp.status_code == 403
+
+
+def test_analysis_status_initial(monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    resp = client.get("/analysis_status")
+    assert resp.json == {"running": False, "current": 0, "total": 0}
