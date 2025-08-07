@@ -68,15 +68,13 @@
 
   <div id="legend-popup" class="legend-popup d-none"></div>
 
-  {% if zones %}
+  {% if zones or has_tracks %}
   <div id="info-sheet" class="bottom-sheet" data-sheet="equipment" data-open="false">
     <div class="drag-handle"></div>
     <div class="sheet-content p-3" data-sheet-content>
       <h5 class="mb-3">{{ equipment.name }}</h5>
       <div id="date-nav" class="input-group mb-3">
-        <button id="prev-day" class="btn btn-outline-secondary" {% if not prev_day_url %}disabled{% endif %} data-url="{{ prev_day_url or '' }}">&lt;</button>
         <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
-        <button id="next-day" class="btn btn-outline-secondary" {% if not next_day_url %}disabled{% endif %} data-url="{{ next_day_url or '' }}">&gt;</button>
         <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>📅</button>
       </div>
       <div class="form-check form-switch mb-2">
@@ -435,16 +433,6 @@
           picker.open();
         });
       }
-      const prevBtn = document.getElementById('prev-day');
-      const nextBtn = document.getElementById('next-day');
-      if (prevBtn) prevBtn.addEventListener('click', () => {
-        const url = prevBtn.dataset.url;
-        if (url) window.location.href = url;
-      });
-      if (nextBtn) nextBtn.addEventListener('click', () => {
-        const url = nextBtn.dataset.url;
-        if (url) window.location.href = url;
-      });
     }
 
     function setupInteractions() {

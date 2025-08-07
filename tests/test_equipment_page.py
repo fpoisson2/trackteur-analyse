@@ -228,7 +228,7 @@ def test_day_menu_excludes_days_without_zones():
     assert "!availableDates.includes(end)" in html
 
 
-def test_equipment_page_has_day_navigation():
+def test_equipment_page_has_calendar_control_without_arrows():
     app = make_app()
     client = app.test_client()
     login(client)
@@ -237,8 +237,40 @@ def test_equipment_page_has_day_navigation():
         eq = Equipment.query.first()
         resp = client.get(f"/equipment/{eq.id}")
     html = resp.data.decode()
-    assert 'id="prev-day"' in html
-    assert 'id="next-day"' in html
+    assert 'id="open-calendar"' in html
+    assert 'id="prev-day"' not in html
+    assert 'id="next-day"' not in html
+
+
+def test_calendar_shows_with_tracks_only():
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        DailyZone.query.delete()
+        Track.query.delete()
+        db.session.commit()
+        tr = Track(
+            equipment_id=eq.id,
+            start_time=datetime.combine(
+                date.today(), datetime.min.time()
+            ),
+            end_time=(
+                datetime.combine(date.today(), datetime.min.time())
+                + timedelta(hours=1)
+            ),
+            line_wkt="LINESTRING(0 0,1 1)",
+        )
+        db.session.add(tr)
+        db.session.commit()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    dates = get_js_array(html, "availableDates")
+    assert date.today().isoformat() in dates
+    assert 'Aucune donnée disponible' not in html
+    assert 'id="date-display"' in html
 
 
 def test_tracks_and_points_geojson():
