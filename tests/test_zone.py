@@ -346,6 +346,39 @@ def test_process_equipment_creates_tracks(monkeypatch):
             assert all(p.track_id == track.id for p in positions_db)
 
 
+def test_process_equipment_updates_last_position_from_history(monkeypatch):
+    for app in setup_db():
+        with app.app_context():
+            eq = zone.Equipment(id_traccar=1, name="eq1")
+            zone.db.session.add(eq)
+            zone.db.session.commit()
+
+            from datetime import datetime as dt
+
+            ts = dt(2023, 1, 1, 0, 0, 0)
+            zone.db.session.add(
+                zone.Position(
+                    equipment_id=eq.id,
+                    latitude=0,
+                    longitude=0,
+                    timestamp=ts,
+                )
+            )
+            zone.db.session.commit()
+
+            monkeypatch.setattr(zone, "fetch_positions", lambda *a, **k: [])
+            monkeypatch.setattr(
+                zone, "cluster_positions", lambda pos: ([], {})
+            )
+            monkeypatch.setattr(
+                zone, "aggregate_overlapping_zones", lambda z: z
+            )
+
+            zone.process_equipment(eq)
+
+            assert eq.last_position == ts
+
+
 def test_track_includes_zone_endpoints(monkeypatch):
     for app in setup_db():
         with app.app_context():

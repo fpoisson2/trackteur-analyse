@@ -551,6 +551,14 @@ def process_equipment(eq, since=None):
         latest_naive = latest_position_time.replace(tzinfo=None)
         if not eq.last_position or latest_naive > eq.last_position:
             eq.last_position = latest_naive
+    else:
+        latest = (
+            Position.query.filter_by(equipment_id=eq.id)
+            .order_by(Position.timestamp.desc())
+            .first()
+        )
+        if latest:
+            eq.last_position = latest.timestamp
 
     db.session.commit()
 
