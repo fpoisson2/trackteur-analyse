@@ -1,4 +1,20 @@
 import os
+import warnings
+
+# Silence joblib serial-mode warning emitted in this environment as early as possible
+warnings.filterwarnings(
+    "ignore",
+    message=r".*joblib will operate in serial mode.*",
+    category=UserWarning,
+)
+
+# Silence SQLAlchemy LegacyAPIWarning about Query.get
+from sqlalchemy.exc import LegacyAPIWarning  # type: ignore
+warnings.filterwarnings(
+    "ignore",
+    message=r".*Query.get\(\) method is considered legacy.*",
+    category=LegacyAPIWarning,
+)
 import pytest
 from app import create_app
 from models import db, User, Config, Equipment
@@ -32,6 +48,8 @@ def make_app():
             os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
         else:
             os.environ["SKIP_INITIAL_ANALYSIS"] = original
+
+
 
 
 @pytest.fixture

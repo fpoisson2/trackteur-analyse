@@ -4,7 +4,7 @@ import requests  # type: ignore
 import pandas as pd
 import numpy as np
 import warnings
-from datetime import datetime, timedelta, date as dt_date
+from datetime import datetime, timedelta, date as dt_date, timezone
 from shapely.geometry import (
     Point,
     Polygon,
@@ -15,6 +15,8 @@ from shapely.geometry import (
 from shapely.ops import transform as shp_transform
 import pyproj
 import alphashape
+# Ensure joblib uses a writable temp folder to avoid warnings in CI
+os.environ.setdefault("JOBLIB_TEMP_FOLDER", "/tmp")
 from sklearn.cluster import DBSCAN
 import folium
 from geopandas import GeoDataFrame
@@ -505,7 +507,8 @@ def _boundary_intersection(
 
 def process_equipment(eq, since=None):
     """Analyse et enregistre les zones journalières de l'équipement."""
-    to_dt = datetime.utcnow()
+    # Use UTC now then drop tzinfo to keep naive UTC datetimes across app
+    to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
     from_dt = since if since else to_dt - timedelta(days=1)
     logger.info(
         "Processing equipment %s (%s) from %s to %s",

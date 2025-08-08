@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
@@ -18,7 +18,7 @@ def test_index_sorted_by_score(make_app, monkeypatch):
     app = make_app()
     with app.app_context():
         db.session.query(Equipment).delete()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         eq1 = Equipment(
             id_traccar=1,
             name="T1",

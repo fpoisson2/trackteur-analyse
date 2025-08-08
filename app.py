@@ -25,7 +25,7 @@ from forms import (
 )
 import zone
 
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Iterable, Any
 from werkzeug.datastructures import MultiDict
 
@@ -426,7 +426,7 @@ def create_app(
 
         def run() -> None:
             with app.app_context():
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
                 start_of_year = datetime(now.year, 1, 1)
                 for idx, eq in enumerate(equipments, start=1):
                     reanalysis_progress["equipment"] = eq.name
@@ -521,7 +521,7 @@ def create_app(
 
         # 3) Préparation des données pour l’affichage
         equipment_data = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         for eq in equipments:
             # Fallback pour la dernière position si non renseignée
             last_dt = eq.last_position
@@ -618,7 +618,10 @@ def create_app(
     @app.route('/equipment/<int:equipment_id>')
     @login_required
     def equipment_detail(equipment_id):
-        eq = Equipment.query.get_or_404(equipment_id)
+        from flask import abort
+        eq = db.session.get(Equipment, equipment_id)
+        if not eq:
+            abort(404)
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
         day = request.args.get('day', type=int)
@@ -797,7 +800,9 @@ def create_app(
     @app.route('/equipment/<int:equipment_id>/zones.geojson')
     @login_required
     def equipment_zones_geojson(equipment_id):
-        Equipment.query.get_or_404(equipment_id)
+        from flask import abort
+        if not db.session.get(Equipment, equipment_id):
+            abort(404)
         bbox = request.args.get('bbox')
         zoom = int(request.args.get('zoom', 12))
         year = request.args.get('year', type=int)
@@ -877,7 +882,9 @@ def create_app(
     @login_required
     def equipment_points_geojson(equipment_id):
         """Return a random sample of GPS points for the current map view."""
-        Equipment.query.get_or_404(equipment_id)
+        from flask import abort
+        if not db.session.get(Equipment, equipment_id):
+            abort(404)
         bbox = request.args.get('bbox')
         limit = int(request.args.get('limit', 5000))
         include_all = request.args.get('all') == '1'
@@ -949,7 +956,10 @@ def create_app(
     @app.route('/equipment/<int:equipment_id>/tracks.geojson')
     @login_required
     def equipment_tracks_geojson(equipment_id):
-        eq = Equipment.query.get_or_404(equipment_id)
+        from flask import abort
+        eq = db.session.get(Equipment, equipment_id)
+        if not eq:
+            abort(404)
         if Track.query.filter_by(equipment_id=equipment_id).count() == 0:
             zone.process_equipment(eq)
         bbox = request.args.get('bbox')
@@ -1039,7 +1049,7 @@ def create_app(
                 Equipment.query.all()
             except Exception:
                 return
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             start_of_year = datetime(now.year, 1, 1)
             # Skip if we already have zones for this year
             try:
