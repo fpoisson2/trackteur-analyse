@@ -16,6 +16,13 @@ from flask_login import (
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from models import db, User, Equipment, Position, Config, Track
+from forms import (
+    LoginForm,
+    AdminConfigForm,
+    AddUserForm,
+    ResetPasswordForm,
+    DeleteUserForm,
+)
 import zone
 
 from datetime import datetime, date, timedelta
@@ -173,16 +180,19 @@ def create_app():
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
+        form = LoginForm()
         error = None
         if request.method == 'POST':
-            username = request.form.get('username')
-            password = request.form.get('password')
-            user = User.query.filter_by(username=username).first()
-            if user and user.check_password(password):
-                login_user(user)
-                return redirect(url_for('index'))
-            error = 'Nom d’utilisateur ou mot de passe incorrect'
-        return render_template('login.html', error=error)
+            if form.validate_on_submit():
+                user = User.query.filter_by(username=form.username.data).first()
+                if user and user.check_password(form.password.data):
+                    login_user(user)
+                    return redirect(url_for('index'))
+                error = 'Nom d’utilisateur ou mot de passe incorrect'
+            else:
+                # Generic error string; field-level messages shown in template
+                error = 'Veuillez corriger les erreurs ci-dessous'
+        return render_template('login.html', error=error, form=form)
 
     @app.route('/logout')
     @login_required
@@ -326,6 +336,7 @@ def create_app():
         cfg = Config.query.first()
         message = request.args.get('msg')
         error = None
+        form = AdminConfigForm()
         try:
             devices = zone.fetch_devices()
         except requests.exceptions.HTTPError as exc:
@@ -339,19 +350,31 @@ def create_app():
         selected_ids = {e.id_traccar for e in followed}
 
         if request.method == 'POST':
-            save_config(request.form, devices)
-            cfg = Config.query.first()
-            followed = Equipment.query.all()
-            selected_ids = {e.id_traccar for e in followed}
-            message = "Configuration enregistrée !"
+            if form.validate_on_submit():
+                save_config(request.form, devices)
+                cfg = Config.query.first()
+                followed = Equipment.query.all()
+                selected_ids = {e.id_traccar for e in followed}
+                message = "Configuration enregistrée !"
+            else:
+                error = 'Veuillez corriger les erreurs de validation'
 
         # 👉 Pré‑remplir avec le token du premier équipement si possible
-        existing_token = cfg.traccar_token if cfg else ""
-        existing_url = cfg.traccar_url if cfg else ""
-        existing_eps = cfg.eps_meters if cfg else 25.0
-        existing_surface = cfg.min_surface_ha if cfg else 0.1
-        existing_alpha = cfg.alpha if cfg else 0.02
-        existing_hour = cfg.analysis_hour if cfg else 2
+        if request.method == 'POST' and not form.validate():
+            # Re-show posted values when invalid
+            existing_token = request.form.get('token_global', '')
+            existing_url = request.form.get('base_url', '')
+            existing_eps = request.form.get('eps_meters', '')
+            existing_surface = request.form.get('min_surface', '')
+            existing_alpha = request.form.get('alpha_shape', '')
+            existing_hour = request.form.get('analysis_hour', '')
+        else:
+            existing_token = cfg.traccar_token if cfg else ""
+            existing_url = cfg.traccar_url if cfg else ""
+            existing_eps = cfg.eps_meters if cfg else 25.0
+            existing_surface = cfg.min_surface_ha if cfg else 0.1
+            existing_alpha = cfg.alpha if cfg else 0.02
+            existing_hour = cfg.analysis_hour if cfg else 2
 
         return render_template(
             'admin.html',
@@ -364,7 +387,8 @@ def create_app():
             existing_alpha=existing_alpha,
             existing_hour=existing_hour,
             message=message,
-            error=error
+            error=error,
+            form=form,
         )
 
     @app.route('/reanalyze_all', methods=['POST', 'GET'])
@@ -432,41 +456,53 @@ def create_app():
             return redirect(url_for('index'))
 
         message = None
+        add_form = AddUserForm()
+        reset_form = ResetPasswordForm()
+        delete_form = DeleteUserForm()
         if request.method == 'POST':
             action = request.form.get('action')
             if action == 'add':
-                username = request.form.get('username')
-                password = request.form.get('password')
-                role = request.form.get('role')
-                if username and password:
-                    if User.query.filter_by(username=username).first():
+                if add_form.validate_on_submit():
+                    username = add_form.username.data
+                    password = add_form.password.data
+                    role = request.form.get('role')
+                    if role not in ('read', 'admin'):
+                        message = "Rôle invalide"
+                    elif User.query.filter_by(username=username).first():
                         message = "Utilisateur déjà existant"
                     else:
-                        user = User(
-                            username=username, is_admin=(role == 'admin')
-                        )
+                        user = User(username=username, is_admin=(role == 'admin'))
                         user.set_password(password)
                         db.session.add(user)
                         db.session.commit()
                         message = "Utilisateur ajouté"
+                else:
+                    message = "Veuillez corriger le formulaire d’ajout"
             elif action == 'reset':
-                uid = request.form.get('user_id')
-                password = request.form.get('password')
-                user = db.session.get(User, int(uid)) if uid else None
-                if user and password:
-                    user.set_password(password)
-                    db.session.commit()
-                    message = "Mot de passe réinitialisé"
+                if reset_form.validate_on_submit():
+                    uid = reset_form.user_id.data
+                    password = reset_form.password.data
+                    user = db.session.get(User, int(uid)) if uid else None
+                    if user:
+                        user.set_password(password)
+                        db.session.commit()
+                        message = "Mot de passe réinitialisé"
+                else:
+                    message = "Mot de passe invalide (min 3 caractères)"
             elif action == 'delete':
-                uid = request.form.get('user_id')
-                user = db.session.get(User, int(uid)) if uid else None
-                if user and user != current_user:
-                    db.session.delete(user)
-                    db.session.commit()
-                    message = "Utilisateur supprimé"
+                if delete_form.validate_on_submit():
+                    uid = delete_form.user_id.data
+                    user = db.session.get(User, int(uid)) if uid else None
+                    if user and user != current_user:
+                        db.session.delete(user)
+                        db.session.commit()
+                        message = "Utilisateur supprimé"
 
         users = User.query.all()
-        return render_template('users.html', users=users, message=message)
+        return render_template(
+            'users.html', users=users, message=message,
+            add_form=add_form, reset_form=reset_form, delete_form=delete_form
+        )
 
     @app.route('/')
     @login_required

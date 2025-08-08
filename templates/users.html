@@ -51,14 +51,20 @@
     {% endif %}
 
     <h5 class="mt-4">Ajouter un utilisateur</h5>
-    <form method="post" class="row g-2 mb-4">
+    <form method="post" class="row g-2 mb-4" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="add">
       <div class="col-auto">
-        <input type="text" name="username" class="form-control" placeholder="Nom d'utilisateur" required>
+        <input type="text" name="username" class="form-control {% if add_form and add_form.username.errors %}is-invalid{% endif %}" placeholder="Nom d'utilisateur" required value="{{ add_form.username.data if add_form else '' }}">
+        {% if add_form and add_form.username.errors %}
+        <div class="invalid-feedback">{{ add_form.username.errors[0] }}</div>
+        {% endif %}
       </div>
       <div class="col-auto">
-        <input type="password" name="password" class="form-control" placeholder="Mot de passe" required>
+        <input type="password" name="password" class="form-control {% if add_form and add_form.password.errors %}is-invalid{% endif %}" placeholder="Mot de passe" required>
+        {% if add_form and add_form.password.errors %}
+        <div class="invalid-feedback">{{ add_form.password.errors[0] }}</div>
+        {% endif %}
       </div>
       <div class="col-auto">
         <select name="role" class="form-select">
@@ -87,11 +93,18 @@
             <td>{{ user.username }}</td>
             <td>{{ 'Admin' if user.is_admin else 'Lecture' }}</td>
             <td>
-              <form method="post" class="d-inline">
+              <form method="post" class="d-inline" novalidate>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="reset">
                 <input type="hidden" name="user_id" value="{{ user.id }}">
-                <input type="password" name="password" class="form-control d-inline w-auto" placeholder="Nouveau mot de passe" required>
+                <input type="password"
+                       name="password"
+                       class="form-control d-inline w-auto {% if reset_form and reset_form.password.errors and request.form.get('action') == 'reset' and (request.form.get('user_id')|int == user.id) %}is-invalid{% endif %}"
+                       placeholder="Nouveau mot de passe"
+                       required>
+                {% if reset_form and reset_form.password.errors and request.form.get('action') == 'reset' and (request.form.get('user_id')|int == user.id) %}
+                <div class="invalid-feedback d-inline">{{ reset_form.password.errors[0] }}</div>
+                {% endif %}
                 <button type="submit" class="btn btn-sm btn-warning ms-1">Réinitialiser</button>
               </form>
               {% if user != current_user %}
