@@ -15,7 +15,7 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, Config, Track
+from models import db, User, Equipment, Position, Config, Track, DailyZone
 from forms import (
     LoginForm,
     AdminConfigForm,
@@ -1012,12 +1012,28 @@ def create_app():
 
     def initial_analysis():
         with app.app_context():
+            # Ensure DB is usable
             try:
                 Equipment.query.all()
             except Exception:
                 return
             now = datetime.utcnow()
             start_of_year = datetime(now.year, 1, 1)
+            # Skip if we already have zones for this year
+            try:
+                existing = (
+                    DailyZone.query
+                    .filter(DailyZone.date >= start_of_year.date())
+                    .count()
+                )
+            except Exception:
+                existing = 0
+            if existing > 0:
+                app.logger.info(
+                    "Initial analysis skipped: %d zones already present this year",
+                    existing,
+                )
+                return
             for eq in Equipment.query.all():
                 zone.process_equipment(eq, since=start_of_year)
 
