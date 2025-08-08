@@ -14,6 +14,7 @@ import zone  # noqa: E402
 import sqlite3  # noqa: E402
 from pathlib import Path  # noqa: E402
 import threading  # noqa: E402
+from tests.utils import login, get_csrf  # noqa: E402
 
 
 def make_app():
@@ -35,17 +36,13 @@ def make_app():
     return app
 
 
-def login(client):
-    data = {"username": "admin", "password": "pass"}
-    return client.post("/login", data=data)
-
-
 def test_admin_updates_server_url(monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
     devices = [{"id": 1, "name": "eq"}]
     monkeypatch.setattr(zone, "fetch_devices", lambda: devices)
+    token = get_csrf(client, "/admin")
     resp = client.post(
         "/admin",
         data={
@@ -55,6 +52,7 @@ def test_admin_updates_server_url(monkeypatch):
             "eps_meters": "30",
             "min_surface": "0.2",
             "alpha_shape": "0.05",
+            "csrf_token": token,
         },
     )
     assert resp.status_code == 200
@@ -72,9 +70,10 @@ def test_admin_updates_analysis_hour(monkeypatch):
     client = app.test_client()
     login(client)
     monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    token = get_csrf(client, "/admin")
     resp = client.post(
         "/admin",
-        data={"analysis_hour": "5"},
+        data={"analysis_hour": "5", "csrf_token": token},
     )
     assert resp.status_code == 200
     with app.app_context():
@@ -164,6 +163,7 @@ def test_reanalyze_saves_params(monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
+    token = get_csrf(client, "/admin")
     resp = client.post(
         "/reanalyze_all",
         data={
@@ -173,6 +173,7 @@ def test_reanalyze_saves_params(monkeypatch):
             "eps_meters": "40",
             "min_surface": "0.3",
             "alpha_shape": "0.07",
+            "csrf_token": token,
         },
     )
     assert resp.status_code == 302

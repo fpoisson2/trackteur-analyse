@@ -18,6 +18,7 @@ from app import create_app  # noqa: E402
 from models import db, User, Equipment, Position, Track  # noqa: E402
 from models import DailyZone, Config  # noqa: E402
 import zone  # noqa: E402
+from tests.utils import login  # noqa: E402
 
 
 def make_app():
@@ -122,13 +123,6 @@ def make_app():
         )
         db.session.commit()
     return app
-
-
-def login(client):
-    return client.post(
-        "/login",
-        data={"username": "admin", "password": "pass"},
-    )
 
 
 def get_js_array(html: str, var_name: str):

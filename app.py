@@ -4,6 +4,8 @@ import threading
 
 import requests
 from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFError
 from flask_login import (
     LoginManager,
     login_user,
@@ -30,6 +32,7 @@ reanalysis_progress = {
 
 def create_app():
     app = Flask(__name__)
+    CSRFProtect(app)
     reanalysis_progress.update(
         {"running": False, "current": 0, "total": 0, "equipment": ""}
     )
@@ -158,6 +161,10 @@ def create_app():
         if Equipment.query.count() == 0:
             if current_user.is_authenticated or request.endpoint != 'login':
                 return redirect(url_for('setup'))
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        return 'CSRF token missing or invalid', 400
 
     @login_manager.user_loader
     def load_user(user_id):

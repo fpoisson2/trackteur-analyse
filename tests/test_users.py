@@ -9,6 +9,7 @@ from app import create_app  # noqa: E402
 from models import db, User, Equipment, Config  # noqa: E402
 import zone  # noqa: E402
 import threading  # noqa: E402
+from tests.utils import login, get_csrf  # noqa: E402
 
 os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
@@ -34,13 +35,6 @@ def make_app():
         db.session.add(Equipment(id_traccar=1, name="eq"))
         db.session.commit()
     return app
-
-
-def login(client, username="admin", password="pass"):
-    return client.post(
-        "/login",
-        data={"username": username, "password": password},
-    )
 
 
 def test_non_admin_cannot_access_users():
@@ -73,6 +67,7 @@ def test_admin_add_and_delete_user():
     app = make_app()
     client = app.test_client()
     login(client)
+    token = get_csrf(client, "/users")
     resp = client.post(
         "/users",
         data={
@@ -80,6 +75,7 @@ def test_admin_add_and_delete_user():
             "username": "bob",
             "password": "secret",
             "role": "read",
+            "csrf_token": token,
         },
     )
     assert resp.status_code == 200
@@ -87,7 +83,11 @@ def test_admin_add_and_delete_user():
         user = User.query.filter_by(username="bob").first()
         assert user is not None
         uid = user.id
-    client.post("/users", data={"action": "delete", "user_id": str(uid)})
+    token = get_csrf(client, "/users")
+    client.post(
+        "/users",
+        data={"action": "delete", "user_id": str(uid), "csrf_token": token},
+    )
     with app.app_context():
         assert User.query.filter_by(username="bob").first() is None
 
@@ -102,9 +102,15 @@ def test_password_reset():
         uid = u.id
     client = app.test_client()
     login(client)
+    token = get_csrf(client, "/users")
     client.post(
         "/users",
-        data={"action": "reset", "user_id": str(uid), "password": "new"},
+        data={
+            "action": "reset",
+            "user_id": str(uid),
+            "password": "new",
+            "csrf_token": token,
+        },
     )
     with app.app_context():
         user = db.session.get(User, uid)
@@ -120,7 +126,8 @@ def test_non_admin_cannot_reanalyze():
         db.session.commit()
     client = app.test_client()
     login(client, "reader", "pwd")
-    resp = client.post("/reanalyze_all")
+    token = get_csrf(client, "/login")
+    resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
 
 
@@ -135,6 +142,7 @@ def test_admin_can_trigger_reanalyze(monkeypatch):
         called.append(eq.id_traccar)
 
     monkeypatch.setattr(zone, "process_equipment", fake_process)
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
 
     class InstantThread:
         def __init__(self, target, args=(), kwargs=None, daemon=None):
@@ -147,7 +155,8 @@ def test_admin_can_trigger_reanalyze(monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
-    resp = client.post("/reanalyze_all")
+    token = get_csrf(client, "/admin")
+    resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
     assert called == [1]
     status = client.get("/analysis_status")
@@ -236,7 +245,9 @@ def test_analysis_status_reports_equipment(monkeypatch):
 
     monkeypatch.setattr(zone, "process_equipment", fake_process)
 
-    resp = client.post("/reanalyze_all")
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    token = get_csrf(client, "/admin")
+    resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
 
     assert start_evt.wait(1)
