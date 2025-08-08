@@ -141,11 +141,14 @@
   }
 
   window.openEquipmentSheet = () => {
-    if (!initialized && mql.matches) setup();
+    // Only meaningful on small screens
+    if (!mql.matches) return;
+    if (!initialized) setup();
     snap(true);
   };
 
   window.closeEquipmentSheet = () => {
+    if (!mql.matches) return;
     if (initialized) snap(false);
   };
 })();
