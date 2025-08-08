@@ -37,7 +37,9 @@ reanalysis_progress = {
 }
 
 
-def create_app():
+def create_app(
+    start_scheduler: bool = True, run_initial_analysis: bool = True
+):
     app = Flask(__name__)
     CSRFProtect(app)
     reanalysis_progress.update(
@@ -184,7 +186,9 @@ def create_app():
         error = None
         if request.method == 'POST':
             if form.validate_on_submit():
-                user = User.query.filter_by(username=form.username.data).first()
+                user = User.query.filter_by(
+                    username=form.username.data
+                ).first()
                 if user and user.check_password(form.password.data):
                     login_user(user)
                     return redirect(url_for('index'))
@@ -471,7 +475,9 @@ def create_app():
                     elif User.query.filter_by(username=username).first():
                         message = "Utilisateur déjà existant"
                     else:
-                        user = User(username=username, is_admin=(role == 'admin'))
+                        user = User(
+                            username=username, is_admin=(role == 'admin')
+                        )
                         user.set_password(password)
                         db.session.add(user)
                         db.session.commit()
@@ -998,17 +1004,18 @@ def create_app():
         with app.app_context():
             zone.analyse_quotidienne()
 
-    with app.app_context():
-        # Assurer que la base est prête avant l'analyse initiale
-        db.create_all()
-        upgrade_db()
-        cfg = Config.query.first()
-        hour = cfg.analysis_hour if cfg else 2
+    if start_scheduler:
+        with app.app_context():
+            # Assurer que la base est prête avant l'analyse initiale
+            db.create_all()
+            upgrade_db()
+            cfg = Config.query.first()
+            hour = cfg.analysis_hour if cfg else 2
 
-    scheduler.add_job(
-        scheduled_job, trigger='cron', hour=hour, id='daily_analysis'
-    )
-    scheduler.start()
+        scheduler.add_job(
+            scheduled_job, trigger='cron', hour=hour, id='daily_analysis'
+        )
+        scheduler.start()
 
     def initial_analysis():
         with app.app_context():
@@ -1030,14 +1037,15 @@ def create_app():
                 existing = 0
             if existing > 0:
                 app.logger.info(
-                    "Initial analysis skipped: %d zones already present this year",
+                    "Initial analysis skipped: %d zones already present "
+                    "this year",
                     existing,
                 )
                 return
             for eq in Equipment.query.all():
                 zone.process_equipment(eq, since=start_of_year)
 
-    if not os.environ.get("SKIP_INITIAL_ANALYSIS"):
+    if run_initial_analysis and not os.environ.get("SKIP_INITIAL_ANALYSIS"):
         initial_analysis()
 
     return app

@@ -6,15 +6,13 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from app import create_app  # noqa: E402
-from models import db, User, Config  # noqa: E402
+from models import db, User, Config, Equipment  # noqa: E402
 from tests.utils import login, get_csrf  # noqa: E402
 import zone  # noqa: E402
 
 
 def make_app():
-    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
-    app = create_app()
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+    app = create_app(start_scheduler=False, run_initial_analysis=False)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     with app.app_context():
         db.drop_all()
@@ -25,6 +23,7 @@ def make_app():
         db.session.add(
             Config(traccar_url="http://example.com", traccar_token="dummy")
         )
+        db.session.add(Equipment(id_traccar=1, name="eq"))
         db.session.commit()
     return app
 
@@ -39,7 +38,10 @@ def test_login_shows_field_errors():
     )
     html = resp.get_data(as_text=True)
     assert "Veuillez corriger les erreurs" in html
-    assert "Doit faire entre 3 et 64 caractères" in html or "Nom d’utilisateur requis" in html
+    assert (
+        "Doit faire entre 3 et 64 caractères" in html
+        or "Nom d’utilisateur requis" in html
+    )
     assert "Mot de passe requis" in html
 
 
@@ -83,7 +85,10 @@ def test_users_add_validation_errors():
     )
     html = resp.get_data(as_text=True)
     assert resp.status_code == 200
-    assert "Veuillez corriger le formulaire d’ajout" in html or "3–64 caractères" in html
+    assert (
+        "Veuillez corriger le formulaire d’ajout" in html
+        or "3–64 caractères" in html
+    )
 
 
 def test_users_reset_validation_error():
@@ -109,4 +114,3 @@ def test_users_reset_validation_error():
     html = resp.get_data(as_text=True)
     assert resp.status_code == 200
     assert "Mot de passe invalide" in html
-
