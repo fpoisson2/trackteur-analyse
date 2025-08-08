@@ -59,9 +59,9 @@
       opacity: 0.3;
     }
 
-    /* Desktop layout: side panel on the right */
-    @media (min-width: 992px) {
-      .content-row { display: flex; }
+    /* Desktop/tablet layout: side panel on the right */
+    @media (min-width: 768px) {
+      .content-row { display: flex; flex-direction: row; }
       #map-container { flex: 1 1 auto; }
       .bottom-sheet {
         position: relative;
@@ -72,6 +72,7 @@
         border-radius: 0;
         box-shadow: none;
         border-left: 1px solid #eee;
+        z-index: auto;
       }
       .bottom-sheet .drag-handle { display: none; }
       .bottom-sheet .sheet-content { height: 100%; overflow: auto; }
