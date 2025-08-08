@@ -1,5 +1,6 @@
 from app import create_app  # noqa: E402
 from models import db, User, Equipment, Config
+from tests.utils import login
 
 
 def make_app():
@@ -20,12 +21,6 @@ def make_app():
         db.session.add(Equipment(id_traccar=1, name="tractor"))
         db.session.commit()
     return app
-
-
-def login(client):
-    return client.post(
-        "/login", data={"username": "admin", "password": "pass"}
-    )
 
 
 def test_index_navbar_responsive():

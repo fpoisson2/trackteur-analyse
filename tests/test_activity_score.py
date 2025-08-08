@@ -12,6 +12,7 @@ os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 from app import create_app  # noqa: E402
 from models import db, User, Equipment, DailyZone, Config  # noqa: E402
 import zone  # noqa: E402
+from tests.utils import login  # noqa: E402
 
 
 def make_app():
@@ -64,13 +65,6 @@ def make_app():
         ])
         db.session.commit()
     return app
-
-
-def login(client):
-    return client.post(
-        "/login",
-        data={"username": "admin", "password": "pass"},
-    )
 
 
 def test_index_sorted_by_score(monkeypatch):
