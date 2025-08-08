@@ -18,6 +18,7 @@ import zone
 
 from datetime import datetime, date, timedelta
 from typing import Iterable, Any
+from urllib.parse import urlparse
 from werkzeug.datastructures import MultiDict
 
 reanalysis_progress = {
@@ -168,13 +169,22 @@ def create_app():
     def login():
         error = None
         if request.method == 'POST':
-            username = request.form.get('username')
-            password = request.form.get('password')
-            user = User.query.filter_by(username=username).first()
-            if user and user.check_password(password):
-                login_user(user)
-                return redirect(url_for('index'))
-            error = 'Nom d’utilisateur ou mot de passe incorrect'
+            username = (request.form.get('username') or '').strip()
+            password = request.form.get('password') or ''
+            if not 3 <= len(username) <= 80:
+                error = (
+                    "Nom d’utilisateur doit contenir entre 3 et 80 caractères"
+                )
+            elif not 4 <= len(password) <= 80:
+                error = (
+                    "Mot de passe doit contenir entre 4 et 80 caractères"
+                )
+            else:
+                user = User.query.filter_by(username=username).first()
+                if user and user.check_password(password):
+                    login_user(user)
+                    return redirect(url_for('index'))
+                error = 'Nom d’utilisateur ou mot de passe incorrect'
         return render_template('login.html', error=error)
 
     @app.route('/logout')
@@ -310,6 +320,47 @@ def create_app():
                     'daily_analysis', trigger='cron', hour=int(analysis_hour)
                 )
 
+    def validate_config(form: MultiDict[str, str]) -> tuple[bool, str]:
+        """Validate configuration form inputs."""
+        token = (form.get('token_global') or '').strip()
+        base_url = (form.get('base_url') or '').strip()
+        eps = form.get('eps_meters') or ''
+        min_surface = form.get('min_surface') or ''
+        alpha = form.get('alpha_shape') or ''
+        analysis_hour = form.get('analysis_hour') or ''
+
+        if token and len(token) < 3:
+            return False, "Token trop court"
+        if base_url and not urlparse(base_url).scheme:
+            return False, "URL serveur invalide"
+        if analysis_hour:
+            try:
+                hour = int(analysis_hour)
+            except ValueError:
+                return False, "Heure d'analyse invalide"
+            if not 0 <= hour <= 23:
+                return False, "Heure d'analyse doit être entre 0 et 23"
+        if eps:
+            try:
+                if float(eps) <= 0:
+                    return False, "Distance de clustering doit être positive"
+            except ValueError:
+                return False, "Distance de clustering invalide"
+        if min_surface:
+            try:
+                if float(min_surface) < 0:
+                    return False, "Surface minimale doit être positive"
+            except ValueError:
+                return False, "Surface minimale invalide"
+        if alpha:
+            try:
+                if float(alpha) <= 0:
+                    return False, "Paramètre alpha doit être positif"
+            except ValueError:
+                return False, "Paramètre alpha invalide"
+
+        return True, ""
+
     @app.route('/admin', methods=['GET', 'POST'])
     @login_required
     def admin():
@@ -331,20 +382,50 @@ def create_app():
         followed = Equipment.query.all()
         selected_ids = {e.id_traccar for e in followed}
 
-        if request.method == 'POST':
-            save_config(request.form, devices)
-            cfg = Config.query.first()
-            followed = Equipment.query.all()
-            selected_ids = {e.id_traccar for e in followed}
-            message = "Configuration enregistrée !"
+        if request.method == 'POST' and not error:
+            valid, err = validate_config(request.form)
+            if valid:
+                save_config(request.form, devices)
+                cfg = Config.query.first()
+                followed = Equipment.query.all()
+                selected_ids = {e.id_traccar for e in followed}
+                message = "Configuration enregistrée !"
+            else:
+                error = err
+                selected_ids = {
+                    int(x) for x in request.form.getlist('equip_ids')
+                }
 
-        # 👉 Pré‑remplir avec le token du premier équipement si possible
-        existing_token = cfg.traccar_token if cfg else ""
-        existing_url = cfg.traccar_url if cfg else ""
-        existing_eps = cfg.eps_meters if cfg else 25.0
-        existing_surface = cfg.min_surface_ha if cfg else 0.1
-        existing_alpha = cfg.alpha if cfg else 0.02
-        existing_hour = cfg.analysis_hour if cfg else 2
+        existing_token = (
+            request.form.get('token_global')
+            if request.method == 'POST'
+            else (cfg.traccar_token if cfg else "")
+        )
+        existing_url = (
+            request.form.get('base_url')
+            if request.method == 'POST'
+            else (cfg.traccar_url if cfg else "")
+        )
+        existing_eps = (
+            request.form.get('eps_meters')
+            if request.method == 'POST'
+            else (cfg.eps_meters if cfg else 25.0)
+        )
+        existing_surface = (
+            request.form.get('min_surface')
+            if request.method == 'POST'
+            else (cfg.min_surface_ha if cfg else 0.1)
+        )
+        existing_alpha = (
+            request.form.get('alpha_shape')
+            if request.method == 'POST'
+            else (cfg.alpha if cfg else 0.02)
+        )
+        existing_hour = (
+            request.form.get('analysis_hour')
+            if request.method == 'POST'
+            else (cfg.analysis_hour if cfg else 2)
+        )
 
         return render_template(
             'admin.html',
@@ -425,31 +506,45 @@ def create_app():
             return redirect(url_for('index'))
 
         message = None
+        error = None
         if request.method == 'POST':
             action = request.form.get('action')
             if action == 'add':
-                username = request.form.get('username')
-                password = request.form.get('password')
+                username = (request.form.get('username') or '').strip()
+                password = request.form.get('password') or ''
                 role = request.form.get('role')
-                if username and password:
-                    if User.query.filter_by(username=username).first():
-                        message = "Utilisateur déjà existant"
-                    else:
-                        user = User(
-                            username=username, is_admin=(role == 'admin')
-                        )
-                        user.set_password(password)
-                        db.session.add(user)
-                        db.session.commit()
-                        message = "Utilisateur ajouté"
+                if not 3 <= len(username) <= 80:
+                    error = (
+                        "Nom d’utilisateur doit contenir entre 3 et 80 "
+                        "caractères"
+                    )
+                elif len(password) < 4:
+                    error = (
+                        "Mot de passe doit contenir au moins 4 caractères"
+                    )
+                elif User.query.filter_by(username=username).first():
+                    error = "Utilisateur déjà existant"
+                else:
+                    user = User(
+                        username=username, is_admin=(role == 'admin')
+                    )
+                    user.set_password(password)
+                    db.session.add(user)
+                    db.session.commit()
+                    message = "Utilisateur ajouté"
             elif action == 'reset':
                 uid = request.form.get('user_id')
-                password = request.form.get('password')
+                password = request.form.get('password') or ''
                 user = db.session.get(User, int(uid)) if uid else None
-                if user and password:
-                    user.set_password(password)
-                    db.session.commit()
-                    message = "Mot de passe réinitialisé"
+                if user:
+                    if len(password) < 4:
+                        error = (
+                            "Mot de passe doit contenir au moins 4 caractères"
+                        )
+                    else:
+                        user.set_password(password)
+                        db.session.commit()
+                        message = "Mot de passe réinitialisé"
             elif action == 'delete':
                 uid = request.form.get('user_id')
                 user = db.session.get(User, int(uid)) if uid else None
@@ -459,7 +554,9 @@ def create_app():
                     message = "Utilisateur supprimé"
 
         users = User.query.all()
-        return render_template('users.html', users=users, message=message)
+        return render_template(
+            'users.html', users=users, message=message, error=error
+        )
 
     @app.route('/')
     @login_required

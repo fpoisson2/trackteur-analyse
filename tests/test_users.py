@@ -47,11 +47,11 @@ def test_non_admin_cannot_access_users():
     app = make_app()
     with app.app_context():
         u = User(username="reader", is_admin=False)
-        u.set_password("pwd")
+        u.set_password("pwd1")
         db.session.add(u)
         db.session.commit()
     client = app.test_client()
-    login(client, "reader", "pwd")
+    login(client, "reader", "pwd1")
     resp = client.get("/users")
     assert resp.status_code == 302
 
@@ -60,11 +60,11 @@ def test_non_admin_cannot_access_admin_page():
     app = make_app()
     with app.app_context():
         u = User(username="reader", is_admin=False)
-        u.set_password("pwd")
+        u.set_password("pwd1")
         db.session.add(u)
         db.session.commit()
     client = app.test_client()
-    login(client, "reader", "pwd")
+    login(client, "reader", "pwd1")
     resp = client.get("/admin")
     assert resp.status_code == 302
 
@@ -96,7 +96,7 @@ def test_password_reset():
     app = make_app()
     with app.app_context():
         u = User(username="temp", is_admin=False)
-        u.set_password("old")
+        u.set_password("old1")
         db.session.add(u)
         db.session.commit()
         uid = u.id
@@ -104,22 +104,22 @@ def test_password_reset():
     login(client)
     client.post(
         "/users",
-        data={"action": "reset", "user_id": str(uid), "password": "new"},
+        data={"action": "reset", "user_id": str(uid), "password": "newpass"},
     )
     with app.app_context():
         user = db.session.get(User, uid)
-        assert user.check_password("new")
+        assert user.check_password("newpass")
 
 
 def test_non_admin_cannot_reanalyze():
     app = make_app()
     with app.app_context():
         u = User(username="reader", is_admin=False)
-        u.set_password("pwd")
+        u.set_password("pwd1")
         db.session.add(u)
         db.session.commit()
     client = app.test_client()
-    login(client, "reader", "pwd")
+    login(client, "reader", "pwd1")
     resp = client.post("/reanalyze_all")
     assert resp.status_code == 302
 
@@ -198,11 +198,11 @@ def test_analysis_status_requires_admin(monkeypatch):
     app = make_app()
     with app.app_context():
         u = User(username="reader", is_admin=False)
-        u.set_password("pwd")
+        u.set_password("pwd1")
         db.session.add(u)
         db.session.commit()
     client = app.test_client()
-    login(client, "reader", "pwd")
+    login(client, "reader", "pwd1")
     resp = client.get("/analysis_status")
     assert resp.status_code == 403
 
