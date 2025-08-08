@@ -1,0 +1,39 @@
+import os
+import pytest
+from app import create_app
+from models import db, User, Config, Equipment
+
+
+@pytest.fixture
+def make_app():
+    original = os.environ.get("SKIP_INITIAL_ANALYSIS")
+    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
+
+    def _make_app():
+        app = create_app(start_scheduler=False, run_initial_analysis=False)
+        app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+        with app.app_context():
+            db.drop_all()
+            db.create_all()
+            admin = User(username="admin", is_admin=True)
+            admin.set_password("pass")
+            db.session.add(admin)
+            db.session.add(
+                Config(traccar_url="http://example.com", traccar_token="dummy")
+            )
+            db.session.add(Equipment(id_traccar=1, name="eq"))
+            db.session.commit()
+        return app
+
+    try:
+        yield _make_app
+    finally:
+        if original is None:
+            os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+        else:
+            os.environ["SKIP_INITIAL_ANALYSIS"] = original
+
+
+@pytest.fixture
+def base_make_app(make_app):
+    return make_app

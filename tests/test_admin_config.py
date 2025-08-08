@@ -9,7 +9,7 @@ os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 from app import create_app  # noqa: E402
-from models import db, User, Config, Equipment  # noqa: E402
+from models import Config  # noqa: E402
 import zone  # noqa: E402
 import sqlite3  # noqa: E402
 from pathlib import Path  # noqa: E402
@@ -17,24 +17,7 @@ import threading  # noqa: E402
 from tests.utils import login, get_csrf  # noqa: E402
 
 
-def make_app():
-    app = create_app(start_scheduler=False, run_initial_analysis=False)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    with app.app_context():
-        db.drop_all()
-        db.create_all()
-        admin = User(username="admin", is_admin=True)
-        admin.set_password("pass")
-        db.session.add(admin)
-        db.session.add(
-            Config(traccar_url="http://example.com", traccar_token="dummy")
-        )
-        db.session.add(Equipment(id_traccar=1, name="eq"))
-        db.session.commit()
-    return app
-
-
-def test_admin_updates_server_url(monkeypatch):
+def test_admin_updates_server_url(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -63,7 +46,7 @@ def test_admin_updates_server_url(monkeypatch):
         assert cfg.alpha == 0.05
 
 
-def test_admin_updates_analysis_hour(monkeypatch):
+def test_admin_updates_analysis_hour(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -107,7 +90,7 @@ def test_upgrade_db_adds_config_columns():
     db_path.unlink()
 
 
-def test_admin_handles_fetch_error(monkeypatch):
+def test_admin_handles_fetch_error(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -124,7 +107,7 @@ def test_admin_handles_fetch_error(monkeypatch):
     )
 
 
-def test_admin_page_has_status_poll(monkeypatch):
+def test_admin_page_has_status_poll(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -135,7 +118,7 @@ def test_admin_page_has_status_poll(monkeypatch):
     assert 'id="analysis-banner"' in html
 
 
-def test_reanalyze_saves_params(monkeypatch):
+def test_reanalyze_saves_params(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
