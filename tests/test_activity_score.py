@@ -9,27 +9,15 @@ if ROOT_DIR not in sys.path:
 os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
-from app import create_app  # noqa: E402
-from models import db, User, Equipment, DailyZone, Config  # noqa: E402
+from models import db, Equipment, DailyZone  # noqa: E402
 import zone  # noqa: E402
 from tests.utils import login  # noqa: E402
 
 
-def make_app():
-    app = create_app(start_scheduler=False, run_initial_analysis=False)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+def test_index_sorted_by_score(make_app, monkeypatch):
+    app = make_app()
     with app.app_context():
-        db.drop_all()
-        db.create_all()
-        admin = User(username="admin", is_admin=True)
-        admin.set_password("pass")
-        db.session.add(admin)
-        db.session.add(
-            Config(
-                traccar_url="http://example.com",
-                traccar_token="dummy",
-            )
-        )
+        db.session.query(Equipment).delete()
         now = datetime.utcnow()
         eq1 = Equipment(
             id_traccar=1,
@@ -62,16 +50,10 @@ def make_app():
             ),
         ])
         db.session.commit()
-    return app
+        ids = {e.name: e.id for e in Equipment.query.all()}
 
-
-def test_index_sorted_by_score(monkeypatch):
-    app = make_app()
     client = app.test_client()
     login(client)
-
-    with app.app_context():
-        ids = {e.name: e.id for e in Equipment.query.all()}
 
     def fake_rel(equipment_id: int) -> float:
         return 9.0 if equipment_id == ids["T1"] else 4.0

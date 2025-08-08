@@ -5,29 +5,10 @@ ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from app import create_app  # noqa: E402
-from models import db, User, Config, Equipment  # noqa: E402
 from tests.utils import login  # noqa: E402
 
 
-def make_app():
-    app = create_app(start_scheduler=False, run_initial_analysis=False)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    with app.app_context():
-        db.drop_all()
-        db.create_all()
-        admin = User(username="admin", is_admin=True)
-        admin.set_password("pass")
-        db.session.add(admin)
-        db.session.add(
-            Config(traccar_url="http://example.com", traccar_token="tok")
-        )
-        db.session.add(Equipment(id_traccar=1, name="eq"))
-        db.session.commit()
-    return app
-
-
-def test_post_without_csrf_returns_400():
+def test_post_without_csrf_returns_400(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
