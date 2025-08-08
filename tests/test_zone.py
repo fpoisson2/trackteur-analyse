@@ -292,6 +292,7 @@ def test_process_equipment(monkeypatch):
             assert dz is not None
             assert dz.surface_ha > 0
             assert eq.total_hectares == dz.surface_ha
+            assert eq.last_position == datetime(2023, 1, 1, 0, 2, 0)
 
 
 def test_process_equipment_creates_tracks(monkeypatch):
