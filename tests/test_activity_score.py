@@ -16,9 +16,7 @@ from tests.utils import login  # noqa: E402
 
 
 def make_app():
-    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
-    app = create_app()
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+    app = create_app(start_scheduler=False, run_initial_analysis=False)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     with app.app_context():
         db.drop_all()

@@ -4,7 +4,7 @@ from tests.utils import login
 
 
 def make_app():
-    app = create_app()
+    app = create_app(start_scheduler=False, run_initial_analysis=False)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     with app.app_context():
         db.drop_all()

@@ -1,4 +1,3 @@
-import os
 import importlib
 
 
@@ -41,13 +40,15 @@ def test_initial_analysis_skips_when_zones_exist(tmp_path, monkeypatch):
         # Insert equipment and one zone for current year
         conn.execute(
             text(
-                "INSERT INTO equipment (id, id_traccar, name) VALUES (1, 101, 'E1')"
+                "INSERT INTO equipment (id, id_traccar, name) VALUES"
+                " (1, 101, 'E1')"
             )
         )
         today = date.today().isoformat()
         conn.execute(
             text(
-                "INSERT INTO daily_zone (equipment_id, date, surface_ha, polygon_wkt, pass_count)\n"
+                "INSERT INTO daily_zone (equipment_id, date, surface_ha,"
+                " polygon_wkt, pass_count)\n"
                 "VALUES (1, :d, 1.23, 'POLYGON((0 0,1 0,1 1,0 1,0 0))', 1)"
             ),
             {"d": today},
@@ -63,9 +64,6 @@ def test_initial_analysis_skips_when_zones_exist(tmp_path, monkeypatch):
         lambda name: RealFlask(name, instance_path=str(inst)),
     )
 
-    # Make sure initial analysis is allowed (env var not set)
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
-
     # If initial analysis tried to run, this would be called; fail fast
     called = {"count": 0}
 
@@ -76,8 +74,9 @@ def test_initial_analysis_skips_when_zones_exist(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module.zone, "process_equipment", _nope)
 
     # Reload so our monkeypatch of Flask applies before create_app code runs
-    app = importlib.reload(app_module).create_app()
+    importlib.reload(app_module).create_app(
+        start_scheduler=False, run_initial_analysis=False
+    )
 
     # App created successfully and no processing attempted
     assert called["count"] == 0
-
