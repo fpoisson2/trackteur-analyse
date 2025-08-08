@@ -37,6 +37,8 @@ class Equipment(db.Model):  # type: ignore[name-defined]
     token_api = db.Column(db.String, nullable=True)
     last_position = db.Column(db.DateTime)
     total_hectares = db.Column(db.Float, default=0.0)
+    # Surface unique cumulée (zones dédupliquées entre jours)
+    relative_hectares = db.Column(db.Float, default=0.0)
     distance_between_zones = db.Column(db.Float, default=0.0)
 
     positions = db.relationship('Position', backref='equipment', lazy=True)

@@ -131,6 +131,18 @@ def create_app(
                         ")"
                     )
                 )
+        if "equipment" in tables:
+            equip_cols = [
+                c["name"] for c in inspector.get_columns("equipment")
+            ]
+            if "relative_hectares" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN relative_hectares "
+                            "FLOAT DEFAULT 0.0"
+                        )
+                    )
         if "position" in tables:
             pos_cols = [c["name"] for c in inspector.get_columns("position")]
             if "track_id" not in pos_cols:
@@ -547,9 +559,9 @@ def create_app(
                 delta_str = "–"
 
             distance_km = (eq.distance_between_zones or 0) / 1000
-            # Recalculs dynamiques pour éviter des valeurs obsolètes
-            total_hectares = zone.calculate_total_hectares(eq.id)
-            rel_hectares = zone.calculate_relative_hectares(eq.id)
+            # Utiliser les valeurs mises à jour en tâche de fond
+            total_hectares = eq.total_hectares or 0.0
+            rel_hectares = getattr(eq, "relative_hectares", 0.0) or 0.0
             ratio_eff = (
                 (total_hectares / distance_km) if distance_km else 0.0
             )

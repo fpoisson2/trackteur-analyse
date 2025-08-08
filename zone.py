@@ -712,6 +712,23 @@ def process_equipment(eq, since=None):
     eq.total_hectares = total
     eq.distance_between_zones = calculate_distance_between_zones(daily_polys)
 
+    # Calcul des hectares relatifs (surface unique sur l'ensemble des jours)
+    daily_for_aggregate = [
+        {
+            "geometry": wkt.loads(dz.polygon_wkt),
+            "dates": [str(dz.date)] * (dz.pass_count or 1),
+        }
+        for dz in all_zones
+        if dz.polygon_wkt
+    ]
+    if daily_for_aggregate:
+        aggregated = aggregate_overlapping_zones(daily_for_aggregate)
+        eq.relative_hectares = (
+            sum(z["geometry"].area for z in aggregated) / 1e4
+        )
+    else:
+        eq.relative_hectares = 0.0
+
     logger.debug("Computed %d daily zones", len(all_zones))
     logger.info(
         "Totals for %s: %.2f ha, distance %.0f m",
