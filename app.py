@@ -523,9 +523,20 @@ def create_app(
         equipment_data = []
         now = datetime.utcnow()
         for eq in equipments:
-            if eq.last_position:
-                last = eq.last_position.strftime('%Y-%m-%d %H:%M:%S')
-                delta = now - eq.last_position
+            # Fallback pour la dernière position si non renseignée
+            last_dt = eq.last_position
+            if last_dt is None:
+                last_pos = (
+                    Position.query.filter_by(equipment_id=eq.id)
+                    .order_by(Position.timestamp.desc())
+                    .first()
+                )
+                if last_pos:
+                    last_dt = last_pos.timestamp
+
+            if last_dt:
+                last = last_dt.strftime('%Y-%m-%d %H:%M:%S')
+                delta = now - last_dt
                 delta_seconds = delta.total_seconds()
                 hours = delta.seconds // 3600
                 minutes = (delta.seconds % 3600) // 60
@@ -536,14 +547,18 @@ def create_app(
                 delta_str = "–"
 
             distance_km = (eq.distance_between_zones or 0) / 1000
+            # Recalculs dynamiques pour éviter des valeurs obsolètes
+            total_hectares = zone.calculate_total_hectares(eq.id)
             rel_hectares = zone.calculate_relative_hectares(eq.id)
-            ratio_eff = eq.total_hectares / distance_km if distance_km else 0.0
+            ratio_eff = (
+                (total_hectares / distance_km) if distance_km else 0.0
+            )
 
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
                 "last_seen": last,
-                "total_hectares": round(eq.total_hectares or 0, 2),
+                "total_hectares": round(total_hectares or 0, 2),
                 "relative_hectares": round(rel_hectares, 2),
                 "distance_km": round(distance_km, 2),
                 "delta_seconds": delta_seconds,

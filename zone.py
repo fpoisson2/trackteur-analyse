@@ -831,6 +831,33 @@ def calculate_relative_hectares(equipment_id):
     return total
 
 
+def calculate_total_hectares(equipment_id: int) -> float:
+    """Calcule les hectares traités (somme des unions journalières).
+
+    Pour chaque date, on fait l'union des polygones de la journée afin de ne
+    pas compter deux fois des recouvrements sur la même journée, puis on
+    additionne les surfaces de chaque journée. Le résultat est en hectares.
+    """
+    zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+    if not zones:
+        return 0.0
+
+    from shapely import wkt
+    from shapely.ops import unary_union
+
+    by_date: dict = {}
+    for z in zones:
+        if not z.polygon_wkt:
+            continue
+        by_date.setdefault(z.date, []).append(wkt.loads(z.polygon_wkt))
+
+    total = 0.0
+    for _, polys in sorted(by_date.items()):
+        union = unary_union(polys) if len(polys) > 1 else polys[0]
+        total += union.area / 1e4
+    return float(total)
+
+
 # ✅ FONCTION DE DEBUG : Pour voir ce qui se passe
 def debug_hectares_calculation(equipment_id):
     """Affiche des infos de debug sur le calcul des hectares."""
