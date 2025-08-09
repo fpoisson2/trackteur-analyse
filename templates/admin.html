@@ -101,7 +101,7 @@
           Distance de clustering (m)
           <span class="text-info" data-bs-toggle="tooltip" title="Distance maximale entre deux points pour appartenir au même cluster.">?</span>
         </label>
-        <input type="number" class="form-control {% if form and form.eps_meters.errors %}is-invalid{% endif %}" id="eps_meters" name="eps_meters" step="1" min="1" value="{{ existing_eps }}">
+        <input type="number" class="form-control {% if form and form.eps_meters.errors %}is-invalid{% endif %}" id="eps_meters" name="eps_meters" step="0.1" min="1" value="{{ existing_eps }}">
         {% if form and form.eps_meters.errors %}
         <div class="invalid-feedback">{{ form.eps_meters.errors[0] }}</div>
         {% endif %}

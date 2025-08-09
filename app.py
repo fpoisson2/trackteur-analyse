@@ -293,12 +293,17 @@ def create_app(
         form: MultiDict[str, str], devices: Iterable[dict[str, Any]]
     ) -> None:
         """Persist configuration parameters and selected devices."""
+        def norm_decimal(val: str | None) -> str | None:
+            if val is None:
+                return None
+            return val.replace(',', '.').strip()
+
         token_global = form.get('token_global')
         base_url = form.get('base_url')
         checked_ids = {int(x) for x in form.getlist('equip_ids')}
-        eps = form.get('eps_meters')
-        min_surface = form.get('min_surface')
-        alpha = form.get('alpha_shape')
+        eps = norm_decimal(form.get('eps_meters'))
+        min_surface = norm_decimal(form.get('min_surface'))
+        alpha = norm_decimal(form.get('alpha_shape'))
         analysis_hour = form.get('analysis_hour')
 
         cfg = Config.query.first()

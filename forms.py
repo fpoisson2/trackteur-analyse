@@ -17,6 +17,18 @@ from wtforms.validators import (
 )
 
 
+class LocalizedFloatField(FloatField):
+    """Float field that accepts French comma decimals (e.g., '25,0')."""
+
+    def process_formdata(self, valuelist):  # type: ignore[override]
+        if valuelist:
+            valuelist = [
+                (v.replace(",", ".") if isinstance(v, str) else v)
+                for v in valuelist
+            ]
+        super().process_formdata(valuelist)
+
+
 class LoginForm(FlaskForm):
     username = StringField(
         "Nom d’utilisateur",
@@ -41,15 +53,15 @@ class AdminConfigForm(FlaskForm):
         "Heure d'analyse",
         validators=[Optional(), NumberRange(min=0, max=23, message="Doit être entre 0 et 23")],
     )
-    eps_meters = IntegerField(
+    eps_meters = LocalizedFloatField(
         "Distance de clustering",
         validators=[Optional(), NumberRange(min=1, max=10000, message="Doit être >= 1")],
     )
-    min_surface = FloatField(
+    min_surface = LocalizedFloatField(
         "Surface minimale",
         validators=[Optional(), NumberRange(min=0, max=100000, message="Doit être >= 0")],
     )
-    alpha_shape = FloatField(
+    alpha_shape = LocalizedFloatField(
         "Paramètre alpha",
         validators=[Optional(), NumberRange(min=0, max=10, message="Doit être >= 0")],
     )
@@ -84,4 +96,3 @@ class ResetPasswordForm(FlaskForm):
 class DeleteUserForm(FlaskForm):
     action = HiddenField(default="delete")
     user_id = IntegerField("ID utilisateur", validators=[DataRequired()])
-
