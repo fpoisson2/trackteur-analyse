@@ -139,8 +139,8 @@ def create_app(
                 with db.engine.begin() as conn:
                     conn.execute(
                         text(
-                            "ALTER TABLE equipment ADD COLUMN relative_hectares "
-                            "FLOAT DEFAULT 0.0"
+                            "ALTER TABLE equipment ADD COLUMN "
+                            "relative_hectares FLOAT DEFAULT 0.0"
                         )
                     )
         if "position" in tables:
@@ -426,12 +426,12 @@ def create_app(
                 )
             save_config(request.form, devices)
 
-        equipments = Equipment.query.all()
+        equipment_ids = [e.id for e in Equipment.query.all()]
         reanalysis_progress.update(
             {
                 "running": True,
                 "current": 0,
-                "total": len(equipments),
+                "total": len(equipment_ids),
                 "equipment": "",
             }
         )
@@ -440,9 +440,13 @@ def create_app(
             with app.app_context():
                 now = datetime.now(timezone.utc).replace(tzinfo=None)
                 start_of_year = datetime(now.year, 1, 1)
-                for idx, eq in enumerate(equipments, start=1):
+                for idx, equipment_id in enumerate(equipment_ids, start=1):
+                    eq = db.session.get(Equipment, equipment_id)
+                    if not eq:
+                        continue
                     reanalysis_progress["equipment"] = eq.name
                     zone.process_equipment(eq, since=start_of_year)
+                    db.session.commit()
                     reanalysis_progress["current"] = idx
                 reanalysis_progress["running"] = False
                 reanalysis_progress["equipment"] = ""
@@ -560,7 +564,9 @@ def create_app(
 
             distance_km = (eq.distance_between_zones or 0) / 1000
             # Utiliser les valeurs mises à jour en tâche de fond
-            total_hectares = eq.total_hectares or 0.0
+            total_hectares = (
+                eq.total_hectares or zone.calculate_total_hectares(eq.id)
+            )
             rel_hectares = getattr(eq, "relative_hectares", 0.0) or 0.0
             ratio_eff = (
                 (total_hectares / distance_km) if distance_km else 0.0
