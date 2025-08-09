@@ -385,7 +385,7 @@ def test_tracks_and_points_geojson(make_app):
     assert data["features"][0]["geometry"]["type"] == "LineString"
 
 
-def test_tracks_endpoint_triggers_analysis(make_app, monkeypatch):
+def test_tracks_endpoint_does_not_trigger_processing(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -394,27 +394,18 @@ def test_tracks_endpoint_triggers_analysis(make_app, monkeypatch):
         eq = Equipment.query.first()
         Track.query.delete()
         db.session.commit()
-
         called = {"count": 0}
 
-        def fake_process(equipment, since=None):
+        def fake_process(*args, **kwargs):
             called["count"] += 1
-            tr = Track(
-                equipment_id=equipment.id,
-                start_time=date.today(),
-                end_time=date.today(),
-                line_wkt="LINESTRING(0 0,1 1)",
-            )
-            db.session.add(tr)
-            db.session.commit()
 
         monkeypatch.setattr(zone, "process_equipment", fake_process)
         eqid = eq.id
 
     resp = client.get(f"/equipment/{eqid}/tracks.geojson")
     data = resp.get_json()
-    assert called["count"] == 1
-    assert len(data["features"]) == 1
+    assert called["count"] == 0
+    assert data["features"] == []
 
 
 def test_legend_modal_present(make_app):

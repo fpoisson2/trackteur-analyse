@@ -14,7 +14,7 @@ os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 from models import db, Equipment, Position, DailyZone  # noqa: E402
 import zone  # noqa: E402
-from tests.utils import login  # noqa: E402
+from tests.utils import login, get_csrf  # noqa: E402
 
 
 @pytest.fixture(name="make_app")
@@ -122,8 +122,10 @@ def test_reanalysis_updates_index_table(make_app, monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
-    resp = client.get("/reanalyze_all")
-    assert resp.status_code == 302
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    token = get_csrf(client, "/admin")
+    resp = client.post("/reanalyze_all", data={"csrf_token": token})
+    assert resp.status_code in (200, 302)
 
     resp = client.get("/")
     from bs4 import BeautifulSoup

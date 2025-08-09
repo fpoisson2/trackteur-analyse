@@ -145,7 +145,7 @@ def test_admin_can_trigger_reanalyze(make_app, monkeypatch):
     }
 
 
-def test_admin_can_reanalyze_via_get(make_app, monkeypatch):
+def test_admin_can_reanalyze_via_post(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -168,7 +168,9 @@ def test_admin_can_reanalyze_via_get(make_app, monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
-    resp = client.get("/reanalyze_all")
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    token = get_csrf(client, "/admin")
+    resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
     assert called == [1]
     status = client.get("/analysis_status")

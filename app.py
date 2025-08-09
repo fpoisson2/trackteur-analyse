@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 import threading
 
 import requests
@@ -62,11 +63,59 @@ def create_app(
         'sqlite:///' + os.path.join(app.instance_path, 'trackteur.db')
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # Secure cookies (configurable via env)
+    # Activer en prod via SECURE_COOKIES=1
+    secure_cookies = os.environ.get('SECURE_COOKIES') == '1'
+    app.config['SESSION_COOKIE_SECURE'] = secure_cookies
+    app.config['REMEMBER_COOKIE_SECURE'] = secure_cookies
+    app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+    app.config['REMEMBER_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+    if secure_cookies:
+        app.config['PREFERRED_URL_SCHEME'] = 'https'
     os.makedirs(app.instance_path, exist_ok=True)
     db.init_app(app)
     login_manager = LoginManager(app)
     login_manager.login_view = 'login'
     scheduler = BackgroundScheduler()
+
+    # --- Simple login rate limiting (in-memory) ---
+    try:
+        max_attempts = int(os.environ.get("LOGIN_MAX_ATTEMPTS", "10"))
+    except Exception:
+        max_attempts = 10
+    try:
+        window_seconds = int(os.environ.get("LOGIN_WINDOW_SECONDS", "900"))
+    except Exception:
+        window_seconds = 900
+    _login_attempts: dict[str, list[float]] = {}
+    _login_lock = threading.Lock()
+
+    def _client_ip() -> str:
+        xf = request.headers.get("X-Forwarded-For", "")
+        if xf:
+            return xf.split(",")[0].strip()
+        return request.remote_addr or "unknown"
+
+    def _too_many_attempts(keys: list[str]) -> bool:
+        now = time.time()
+        with _login_lock:
+            # Clean window and count combined attempts across keys
+            total = 0
+            for k in keys:
+                arr = [t for t in _login_attempts.get(k, []) if now - t < window_seconds]
+                _login_attempts[k] = arr
+                total += len(arr)
+            if total >= max_attempts:
+                return True
+            # Record one attempt on primary key (first)
+            primary = keys[0]
+            _login_attempts.setdefault(primary, []).append(now)
+            return False
+
+    def _reset_attempts(keys: list[str]) -> None:
+        with _login_lock:
+            for k in keys:
+                _login_attempts.pop(k, None)
 
     def upgrade_db() -> None:
         """Ensure the database schema includes recent columns."""
@@ -197,12 +246,22 @@ def create_app(
         form = LoginForm()
         error = None
         if request.method == 'POST':
+            username_try = request.form.get('username', '') or ''
+            keys = [f"ip:{_client_ip()}"]
+            if username_try:
+                keys.append(f"user:{username_try}")
+            if _too_many_attempts(keys):
+                return (
+                    render_template('login.html', error='Trop de tentatives, réessayez plus tard', form=form),
+                    429,
+                )
             if form.validate_on_submit():
                 user = User.query.filter_by(
                     username=form.username.data
                 ).first()
                 if user and user.check_password(form.password.data):
                     login_user(user)
+                    _reset_attempts(keys)
                     return redirect(url_for('index'))
                 error = 'Nom d’utilisateur ou mot de passe incorrect'
             else:
@@ -210,7 +269,7 @@ def create_app(
                 error = 'Veuillez corriger les erreurs ci-dessous'
         return render_template('login.html', error=error, form=form)
 
-    @app.route('/logout')
+    @app.route('/logout', methods=['POST'])
     @login_required
     def logout():
         logout_user()
@@ -219,6 +278,9 @@ def create_app(
     @app.route('/setup', methods=['GET', 'POST'])
     def setup():
         """Assistant de première configuration."""
+        # Option de verrouillage complet du setup en production
+        if os.environ.get('SETUP_DISABLED') == '1':
+            return ('Setup désactivé', 403)
         # Détermination de l'étape
         if User.query.count() == 0:
             step = 1
@@ -412,14 +474,14 @@ def create_app(
             form=form,
         )
 
-    @app.route('/reanalyze_all', methods=['POST', 'GET'])
+    @app.route('/reanalyze_all', methods=['POST'])
     @login_required
     def reanalyze_all():
         if not current_user.is_admin:
             return redirect(url_for('index'))
         if reanalysis_progress["running"]:
             return redirect(url_for('admin', msg="Analyse déjà en cours"))
-        if request.method == 'POST' and request.form:
+        if request.form:
             try:
                 devices = zone.fetch_devices()
             except requests.exceptions.HTTPError:
@@ -909,7 +971,11 @@ def create_app(
         if not db.session.get(Equipment, equipment_id):
             abort(404)
         bbox = request.args.get('bbox')
-        limit = int(request.args.get('limit', 5000))
+        try:
+            limit = int(request.args.get('limit', 5000))
+        except Exception:
+            limit = 5000
+        limit = max(0, min(limit, 10000))
         include_all = request.args.get('all') == '1'
         west = south = east = north = None
         if bbox:
@@ -983,8 +1049,6 @@ def create_app(
         eq = db.session.get(Equipment, equipment_id)
         if not eq:
             abort(404)
-        if Track.query.filter_by(equipment_id=equipment_id).count() == 0:
-            zone.process_equipment(eq)
         bbox = request.args.get('bbox')
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
@@ -1052,7 +1116,7 @@ def create_app(
         with app.app_context():
             zone.analyse_quotidienne()
 
-    if start_scheduler:
+    if start_scheduler and os.environ.get("START_SCHEDULER", "1") != "0":
         with app.app_context():
             # Assurer que la base est prête avant l'analyse initiale
             db.create_all()
@@ -1096,9 +1160,32 @@ def create_app(
     if run_initial_analysis and not os.environ.get("SKIP_INITIAL_ANALYSIS"):
         initial_analysis()
 
+    @app.after_request
+    def set_security_headers(resp):
+        resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        resp.headers.setdefault('X-Frame-Options', 'DENY')
+        resp.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        resp.headers.setdefault('Permissions-Policy', 'geolocation=(), camera=(), microphone=()')
+        # HSTS uniquement en HTTPS ou si forcé
+        if request.is_secure or os.environ.get('FORCE_HTTPS') == '1':
+            resp.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        # CSP permissive mais utile; ajuster au besoin
+        csp = (
+            "default-src 'self' https: data: blob; "
+            "script-src 'self' https: 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' https: 'unsafe-inline'; "
+            "img-src 'self' https: data: blob; "
+            "connect-src 'self' https:; "
+            "frame-ancestors 'none'"
+        )
+        resp.headers.setdefault('Content-Security-Policy', csp)
+        return resp
+
     return app
 
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True, host='0.0.0.0')
+    debug = os.environ.get('FLASK_DEBUG') == '1'
+    host = '127.0.0.1'
+    app.run(debug=debug, host=host)

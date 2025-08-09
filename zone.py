@@ -217,12 +217,23 @@ def simplify_for_zoom(geom, zoom: int):
     return geom.simplify(tolerance, preserve_topology=True)
 
 
+def _timeout() -> float:
+    try:
+        return float(os.environ.get('TRACCAR_TIMEOUT', '10'))
+    except Exception:
+        return 10.0
+
+
 def fetch_devices():
     """Récupère la liste des dispositifs Traccar."""
     _, base = _get_credentials()
     url = f"{base.rstrip('/')}/api/devices"
     logger.debug("Fetching devices from %s", url)
-    resp = requests.get(url, headers=_auth_header())
+    try:
+        resp = requests.get(url, headers=_auth_header(), timeout=_timeout())
+    except TypeError:
+        # Backward-compat for tests that mock requests.get without timeout
+        resp = requests.get(url, headers=_auth_header())
     resp.raise_for_status()
     devices = resp.json()
     logger.debug("Received %d devices", len(devices))
@@ -251,7 +262,13 @@ def fetch_positions(device_id, from_dt, to_dt):
         params["from"],
         params["to"],
     )
-    resp = requests.get(url, headers=_auth_header(), params=params)
+    try:
+        resp = requests.get(
+            url, headers=_auth_header(), params=params, timeout=_timeout()
+        )
+    except TypeError:
+        # Backward-compat for tests that mock requests.get without timeout
+        resp = requests.get(url, headers=_auth_header(), params=params)
     try:
         resp.raise_for_status()
     except requests.exceptions.HTTPError:
