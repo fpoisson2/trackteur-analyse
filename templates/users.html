@@ -10,11 +10,10 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body>
-  <nav class="navbar navbar-expand-md top-bar mb-4">
+  <nav class="navbar navbar-expand-md navbar-light top-bar mb-4">
     <div class="container-fluid">
       <a class="navbar-brand d-flex align-items-center" href="{{ url_for('index') }}">
-        <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="40" class="me-2">
-        <span class="fw-bold">Trackteur Analyse</span>
+        <img src="{{ url_for('static', filename='logo.png') }}" alt="Accueil" height="40">
       </a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
@@ -34,9 +33,12 @@
           </li>
           {% endif %}
           <li class="nav-item">
-            <a class="nav-link d-flex align-items-center" href="{{ url_for('logout') }}">
-              <i class="bi bi-box-arrow-right me-1"></i> Déconnexion
-            </a>
+            <form method="post" action="{{ url_for('logout') }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="nav-link btn btn-link p-0 d-flex align-items-center">
+                <i class="bi bi-box-arrow-right me-1"></i> Déconnexion
+              </button>
+            </form>
           </li>
         </ul>
       </div>
@@ -51,13 +53,20 @@
     {% endif %}
 
     <h5 class="mt-4">Ajouter un utilisateur</h5>
-    <form method="post" class="row g-2 mb-4">
+    <form method="post" class="row g-2 mb-4" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="add">
       <div class="col-auto">
-        <input type="text" name="username" class="form-control" placeholder="Nom d'utilisateur" required>
+        <input type="text" name="username" class="form-control {% if add_form and add_form.username.errors %}is-invalid{% endif %}" placeholder="Nom d'utilisateur" required value="{{ add_form.username.data if add_form else '' }}">
+        {% if add_form and add_form.username.errors %}
+        <div class="invalid-feedback">{{ add_form.username.errors[0] }}</div>
+        {% endif %}
       </div>
       <div class="col-auto">
-        <input type="password" name="password" class="form-control" placeholder="Mot de passe" required>
+        <input type="password" name="password" class="form-control {% if add_form and add_form.password.errors %}is-invalid{% endif %}" placeholder="Mot de passe" required>
+        {% if add_form and add_form.password.errors %}
+        <div class="invalid-feedback">{{ add_form.password.errors[0] }}</div>
+        {% endif %}
       </div>
       <div class="col-auto">
         <select name="role" class="form-select">
@@ -72,7 +81,7 @@
 
     <h5 class="mt-4">Utilisateurs existants</h5>
     <div class="table-responsive">
-      <table class="table table-bordered align-middle">
+      <table class="table table-hover align-middle">
         <thead class="table-light">
           <tr>
             <th>Nom</th>
@@ -86,14 +95,23 @@
             <td>{{ user.username }}</td>
             <td>{{ 'Admin' if user.is_admin else 'Lecture' }}</td>
             <td>
-              <form method="post" class="d-inline">
+              <form method="post" class="d-inline" novalidate>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="reset">
                 <input type="hidden" name="user_id" value="{{ user.id }}">
-                <input type="password" name="password" class="form-control d-inline w-auto" placeholder="Nouveau mot de passe" required>
+                <input type="password"
+                       name="password"
+                       class="form-control d-inline w-auto {% if reset_form and reset_form.password.errors and request.form.get('action') == 'reset' and (request.form.get('user_id')|int == user.id) %}is-invalid{% endif %}"
+                       placeholder="Nouveau mot de passe"
+                       required>
+                {% if reset_form and reset_form.password.errors and request.form.get('action') == 'reset' and (request.form.get('user_id')|int == user.id) %}
+                <div class="invalid-feedback d-inline">{{ reset_form.password.errors[0] }}</div>
+                {% endif %}
                 <button type="submit" class="btn btn-sm btn-warning ms-1">Réinitialiser</button>
               </form>
               {% if user != current_user %}
               <form method="post" class="d-inline ms-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="user_id" value="{{ user.id }}">
                 <button type="submit" class="btn btn-sm btn-danger">Supprimer</button>
@@ -107,5 +125,11 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Améliore la navigation sur mobile (tap unique)
+    document.querySelectorAll('.navbar a').forEach(a => {
+      a.addEventListener('touchend', function () { window.location.href = this.href; });
+    });
+  </script>
 </body>
 </html>

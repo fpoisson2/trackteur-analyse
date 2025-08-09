@@ -15,6 +15,7 @@
     </header>
     <h1 class="mb-4">Connexion au serveur Traccar</h1>
     <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">
         <label for="base_url" class="form-label">Adresse du serveur</label>
         <input type="text" class="form-control" id="base_url" name="base_url" required>

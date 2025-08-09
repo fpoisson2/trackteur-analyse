@@ -1,9 +1,12 @@
 import os
 import logging
+import time
 import threading
 
 import requests
 from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFError
 from flask_login import (
     LoginManager,
     login_user,
@@ -13,10 +16,17 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, Config, Track
+from models import db, User, Equipment, Position, Config, Track, DailyZone
+from forms import (
+    LoginForm,
+    AdminConfigForm,
+    AddUserForm,
+    ResetPasswordForm,
+    DeleteUserForm,
+)
 import zone
 
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Iterable, Any
 from werkzeug.datastructures import MultiDict
 
@@ -28,8 +38,11 @@ reanalysis_progress = {
 }
 
 
-def create_app():
+def create_app(
+    start_scheduler: bool = True, run_initial_analysis: bool = True
+):
     app = Flask(__name__)
+    CSRFProtect(app)
     reanalysis_progress.update(
         {"running": False, "current": 0, "total": 0, "equipment": ""}
     )
@@ -50,11 +63,59 @@ def create_app():
         'sqlite:///' + os.path.join(app.instance_path, 'trackteur.db')
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # Secure cookies (configurable via env)
+    # Activer en prod via SECURE_COOKIES=1
+    secure_cookies = os.environ.get('SECURE_COOKIES') == '1'
+    app.config['SESSION_COOKIE_SECURE'] = secure_cookies
+    app.config['REMEMBER_COOKIE_SECURE'] = secure_cookies
+    app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+    app.config['REMEMBER_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+    if secure_cookies:
+        app.config['PREFERRED_URL_SCHEME'] = 'https'
     os.makedirs(app.instance_path, exist_ok=True)
     db.init_app(app)
     login_manager = LoginManager(app)
     login_manager.login_view = 'login'
     scheduler = BackgroundScheduler()
+
+    # --- Simple login rate limiting (in-memory) ---
+    try:
+        max_attempts = int(os.environ.get("LOGIN_MAX_ATTEMPTS", "10"))
+    except Exception:
+        max_attempts = 10
+    try:
+        window_seconds = int(os.environ.get("LOGIN_WINDOW_SECONDS", "900"))
+    except Exception:
+        window_seconds = 900
+    _login_attempts: dict[str, list[float]] = {}
+    _login_lock = threading.Lock()
+
+    def _client_ip() -> str:
+        xf = request.headers.get("X-Forwarded-For", "")
+        if xf:
+            return xf.split(",")[0].strip()
+        return request.remote_addr or "unknown"
+
+    def _too_many_attempts(keys: list[str]) -> bool:
+        now = time.time()
+        with _login_lock:
+            # Clean window and count combined attempts across keys
+            total = 0
+            for k in keys:
+                arr = [t for t in _login_attempts.get(k, []) if now - t < window_seconds]
+                _login_attempts[k] = arr
+                total += len(arr)
+            if total >= max_attempts:
+                return True
+            # Record one attempt on primary key (first)
+            primary = keys[0]
+            _login_attempts.setdefault(primary, []).append(now)
+            return False
+
+    def _reset_attempts(keys: list[str]) -> None:
+        with _login_lock:
+            for k in keys:
+                _login_attempts.pop(k, None)
 
     def upgrade_db() -> None:
         """Ensure the database schema includes recent columns."""
@@ -119,6 +180,18 @@ def create_app():
                         ")"
                     )
                 )
+        if "equipment" in tables:
+            equip_cols = [
+                c["name"] for c in inspector.get_columns("equipment")
+            ]
+            if "relative_hectares" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN "
+                            "relative_hectares FLOAT DEFAULT 0.0"
+                        )
+                    )
         if "position" in tables:
             pos_cols = [c["name"] for c in inspector.get_columns("position")]
             if "track_id" not in pos_cols:
@@ -159,6 +232,10 @@ def create_app():
             if current_user.is_authenticated or request.endpoint != 'login':
                 return redirect(url_for('setup'))
 
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        return 'CSRF token missing or invalid', 400
+
     @login_manager.user_loader
     def load_user(user_id):
         """Retrieve a user for Flask-Login without legacy API warnings."""
@@ -166,18 +243,33 @@ def create_app():
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
+        form = LoginForm()
         error = None
         if request.method == 'POST':
-            username = request.form.get('username')
-            password = request.form.get('password')
-            user = User.query.filter_by(username=username).first()
-            if user and user.check_password(password):
-                login_user(user)
-                return redirect(url_for('index'))
-            error = 'Nom d’utilisateur ou mot de passe incorrect'
-        return render_template('login.html', error=error)
+            username_try = request.form.get('username', '') or ''
+            keys = [f"ip:{_client_ip()}"]
+            if username_try:
+                keys.append(f"user:{username_try}")
+            if _too_many_attempts(keys):
+                return (
+                    render_template('login.html', error='Trop de tentatives, réessayez plus tard', form=form),
+                    429,
+                )
+            if form.validate_on_submit():
+                user = User.query.filter_by(
+                    username=form.username.data
+                ).first()
+                if user and user.check_password(form.password.data):
+                    login_user(user)
+                    _reset_attempts(keys)
+                    return redirect(url_for('index'))
+                error = 'Nom d’utilisateur ou mot de passe incorrect'
+            else:
+                # Generic error string; field-level messages shown in template
+                error = 'Veuillez corriger les erreurs ci-dessous'
+        return render_template('login.html', error=error, form=form)
 
-    @app.route('/logout')
+    @app.route('/logout', methods=['POST'])
     @login_required
     def logout():
         logout_user()
@@ -186,6 +278,9 @@ def create_app():
     @app.route('/setup', methods=['GET', 'POST'])
     def setup():
         """Assistant de première configuration."""
+        # Option de verrouillage complet du setup en production
+        if os.environ.get('SETUP_DISABLED') == '1':
+            return ('Setup désactivé', 403)
         # Détermination de l'étape
         if User.query.count() == 0:
             step = 1
@@ -260,12 +355,17 @@ def create_app():
         form: MultiDict[str, str], devices: Iterable[dict[str, Any]]
     ) -> None:
         """Persist configuration parameters and selected devices."""
+        def norm_decimal(val: str | None) -> str | None:
+            if val is None:
+                return None
+            return val.replace(',', '.').strip()
+
         token_global = form.get('token_global')
         base_url = form.get('base_url')
         checked_ids = {int(x) for x in form.getlist('equip_ids')}
-        eps = form.get('eps_meters')
-        min_surface = form.get('min_surface')
-        alpha = form.get('alpha_shape')
+        eps = norm_decimal(form.get('eps_meters'))
+        min_surface = norm_decimal(form.get('min_surface'))
+        alpha = norm_decimal(form.get('alpha_shape'))
         analysis_hour = form.get('analysis_hour')
 
         cfg = Config.query.first()
@@ -319,6 +419,7 @@ def create_app():
         cfg = Config.query.first()
         message = request.args.get('msg')
         error = None
+        form = AdminConfigForm()
         try:
             devices = zone.fetch_devices()
         except requests.exceptions.HTTPError as exc:
@@ -332,19 +433,31 @@ def create_app():
         selected_ids = {e.id_traccar for e in followed}
 
         if request.method == 'POST':
-            save_config(request.form, devices)
-            cfg = Config.query.first()
-            followed = Equipment.query.all()
-            selected_ids = {e.id_traccar for e in followed}
-            message = "Configuration enregistrée !"
+            if form.validate_on_submit():
+                save_config(request.form, devices)
+                cfg = Config.query.first()
+                followed = Equipment.query.all()
+                selected_ids = {e.id_traccar for e in followed}
+                message = "Configuration enregistrée !"
+            else:
+                error = 'Veuillez corriger les erreurs de validation'
 
         # 👉 Pré‑remplir avec le token du premier équipement si possible
-        existing_token = cfg.traccar_token if cfg else ""
-        existing_url = cfg.traccar_url if cfg else ""
-        existing_eps = cfg.eps_meters if cfg else 25.0
-        existing_surface = cfg.min_surface_ha if cfg else 0.1
-        existing_alpha = cfg.alpha if cfg else 0.02
-        existing_hour = cfg.analysis_hour if cfg else 2
+        if request.method == 'POST' and not form.validate():
+            # Re-show posted values when invalid
+            existing_token = request.form.get('token_global', '')
+            existing_url = request.form.get('base_url', '')
+            existing_eps = request.form.get('eps_meters', '')
+            existing_surface = request.form.get('min_surface', '')
+            existing_alpha = request.form.get('alpha_shape', '')
+            existing_hour = request.form.get('analysis_hour', '')
+        else:
+            existing_token = cfg.traccar_token if cfg else ""
+            existing_url = cfg.traccar_url if cfg else ""
+            existing_eps = cfg.eps_meters if cfg else 25.0
+            existing_surface = cfg.min_surface_ha if cfg else 0.1
+            existing_alpha = cfg.alpha if cfg else 0.02
+            existing_hour = cfg.analysis_hour if cfg else 2
 
         return render_template(
             'admin.html',
@@ -357,17 +470,18 @@ def create_app():
             existing_alpha=existing_alpha,
             existing_hour=existing_hour,
             message=message,
-            error=error
+            error=error,
+            form=form,
         )
 
-    @app.route('/reanalyze_all', methods=['POST', 'GET'])
+    @app.route('/reanalyze_all', methods=['POST'])
     @login_required
     def reanalyze_all():
         if not current_user.is_admin:
             return redirect(url_for('index'))
         if reanalysis_progress["running"]:
             return redirect(url_for('admin', msg="Analyse déjà en cours"))
-        if request.method == 'POST' and request.form:
+        if request.form:
             try:
                 devices = zone.fetch_devices()
             except requests.exceptions.HTTPError:
@@ -379,23 +493,27 @@ def create_app():
                 )
             save_config(request.form, devices)
 
-        equipments = Equipment.query.all()
+        equipment_ids = [e.id for e in Equipment.query.all()]
         reanalysis_progress.update(
             {
                 "running": True,
                 "current": 0,
-                "total": len(equipments),
+                "total": len(equipment_ids),
                 "equipment": "",
             }
         )
 
         def run() -> None:
             with app.app_context():
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
                 start_of_year = datetime(now.year, 1, 1)
-                for idx, eq in enumerate(equipments, start=1):
+                for idx, equipment_id in enumerate(equipment_ids, start=1):
+                    eq = db.session.get(Equipment, equipment_id)
+                    if not eq:
+                        continue
                     reanalysis_progress["equipment"] = eq.name
                     zone.process_equipment(eq, since=start_of_year)
+                    db.session.commit()
                     reanalysis_progress["current"] = idx
                 reanalysis_progress["running"] = False
                 reanalysis_progress["equipment"] = ""
@@ -425,14 +543,19 @@ def create_app():
             return redirect(url_for('index'))
 
         message = None
+        add_form = AddUserForm()
+        reset_form = ResetPasswordForm()
+        delete_form = DeleteUserForm()
         if request.method == 'POST':
             action = request.form.get('action')
             if action == 'add':
-                username = request.form.get('username')
-                password = request.form.get('password')
-                role = request.form.get('role')
-                if username and password:
-                    if User.query.filter_by(username=username).first():
+                if add_form.validate_on_submit():
+                    username = add_form.username.data
+                    password = add_form.password.data
+                    role = request.form.get('role')
+                    if role not in ('read', 'admin'):
+                        message = "Rôle invalide"
+                    elif User.query.filter_by(username=username).first():
                         message = "Utilisateur déjà existant"
                     else:
                         user = User(
@@ -442,24 +565,33 @@ def create_app():
                         db.session.add(user)
                         db.session.commit()
                         message = "Utilisateur ajouté"
+                else:
+                    message = "Veuillez corriger le formulaire d’ajout"
             elif action == 'reset':
-                uid = request.form.get('user_id')
-                password = request.form.get('password')
-                user = db.session.get(User, int(uid)) if uid else None
-                if user and password:
-                    user.set_password(password)
-                    db.session.commit()
-                    message = "Mot de passe réinitialisé"
+                if reset_form.validate_on_submit():
+                    uid = reset_form.user_id.data
+                    password = reset_form.password.data
+                    user = db.session.get(User, int(uid)) if uid else None
+                    if user:
+                        user.set_password(password)
+                        db.session.commit()
+                        message = "Mot de passe réinitialisé"
+                else:
+                    message = "Mot de passe invalide (min 3 caractères)"
             elif action == 'delete':
-                uid = request.form.get('user_id')
-                user = db.session.get(User, int(uid)) if uid else None
-                if user and user != current_user:
-                    db.session.delete(user)
-                    db.session.commit()
-                    message = "Utilisateur supprimé"
+                if delete_form.validate_on_submit():
+                    uid = delete_form.user_id.data
+                    user = db.session.get(User, int(uid)) if uid else None
+                    if user and user != current_user:
+                        db.session.delete(user)
+                        db.session.commit()
+                        message = "Utilisateur supprimé"
 
         users = User.query.all()
-        return render_template('users.html', users=users, message=message)
+        return render_template(
+            'users.html', users=users, message=message,
+            add_form=add_form, reset_form=reset_form, delete_form=delete_form
+        )
 
     @app.route('/')
     @login_required
@@ -472,11 +604,22 @@ def create_app():
 
         # 3) Préparation des données pour l’affichage
         equipment_data = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         for eq in equipments:
-            if eq.last_position:
-                last = eq.last_position.strftime('%Y-%m-%d %H:%M:%S')
-                delta = now - eq.last_position
+            # Fallback pour la dernière position si non renseignée
+            last_dt = eq.last_position
+            if last_dt is None:
+                last_pos = (
+                    Position.query.filter_by(equipment_id=eq.id)
+                    .order_by(Position.timestamp.desc())
+                    .first()
+                )
+                if last_pos:
+                    last_dt = last_pos.timestamp
+
+            if last_dt:
+                last = last_dt.strftime('%Y-%m-%d %H:%M:%S')
+                delta = now - last_dt
                 delta_seconds = delta.total_seconds()
                 hours = delta.seconds // 3600
                 minutes = (delta.seconds % 3600) // 60
@@ -487,14 +630,20 @@ def create_app():
                 delta_str = "–"
 
             distance_km = (eq.distance_between_zones or 0) / 1000
-            rel_hectares = zone.calculate_relative_hectares(eq.id)
-            ratio_eff = eq.total_hectares / distance_km if distance_km else 0.0
+            # Utiliser les valeurs mises à jour en tâche de fond
+            total_hectares = (
+                eq.total_hectares or zone.calculate_total_hectares(eq.id)
+            )
+            rel_hectares = getattr(eq, "relative_hectares", 0.0) or 0.0
+            ratio_eff = (
+                (total_hectares / distance_km) if distance_km else 0.0
+            )
 
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
                 "last_seen": last,
-                "total_hectares": round(eq.total_hectares or 0, 2),
+                "total_hectares": round(total_hectares or 0, 2),
                 "relative_hectares": round(rel_hectares, 2),
                 "distance_km": round(distance_km, 2),
                 "delta_seconds": delta_seconds,
@@ -554,7 +703,10 @@ def create_app():
     @app.route('/equipment/<int:equipment_id>')
     @login_required
     def equipment_detail(equipment_id):
-        eq = Equipment.query.get_or_404(equipment_id)
+        from flask import abort
+        eq = db.session.get(Equipment, equipment_id)
+        if not eq:
+            abort(404)
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
         day = request.args.get('day', type=int)
@@ -733,7 +885,9 @@ def create_app():
     @app.route('/equipment/<int:equipment_id>/zones.geojson')
     @login_required
     def equipment_zones_geojson(equipment_id):
-        Equipment.query.get_or_404(equipment_id)
+        from flask import abort
+        if not db.session.get(Equipment, equipment_id):
+            abort(404)
         bbox = request.args.get('bbox')
         zoom = int(request.args.get('zoom', 12))
         year = request.args.get('year', type=int)
@@ -813,9 +967,15 @@ def create_app():
     @login_required
     def equipment_points_geojson(equipment_id):
         """Return a random sample of GPS points for the current map view."""
-        Equipment.query.get_or_404(equipment_id)
+        from flask import abort
+        if not db.session.get(Equipment, equipment_id):
+            abort(404)
         bbox = request.args.get('bbox')
-        limit = int(request.args.get('limit', 5000))
+        try:
+            limit = int(request.args.get('limit', 5000))
+        except Exception:
+            limit = 5000
+        limit = max(0, min(limit, 10000))
         include_all = request.args.get('all') == '1'
         west = south = east = north = None
         if bbox:
@@ -885,9 +1045,10 @@ def create_app():
     @app.route('/equipment/<int:equipment_id>/tracks.geojson')
     @login_required
     def equipment_tracks_geojson(equipment_id):
-        eq = Equipment.query.get_or_404(equipment_id)
-        if Track.query.filter_by(equipment_id=equipment_id).count() == 0:
-            zone.process_equipment(eq)
+        from flask import abort
+        eq = db.session.get(Equipment, equipment_id)
+        if not eq:
+            abort(404)
         bbox = request.args.get('bbox')
         year = request.args.get('year', type=int)
         month = request.args.get('month', type=int)
@@ -955,35 +1116,76 @@ def create_app():
         with app.app_context():
             zone.analyse_quotidienne()
 
-    with app.app_context():
-        # Assurer que la base est prête avant l'analyse initiale
-        db.create_all()
-        upgrade_db()
-        cfg = Config.query.first()
-        hour = cfg.analysis_hour if cfg else 2
+    if start_scheduler and os.environ.get("START_SCHEDULER", "1") != "0":
+        with app.app_context():
+            # Assurer que la base est prête avant l'analyse initiale
+            db.create_all()
+            upgrade_db()
+            cfg = Config.query.first()
+            hour = cfg.analysis_hour if cfg else 2
 
-    scheduler.add_job(
-        scheduled_job, trigger='cron', hour=hour, id='daily_analysis'
-    )
-    scheduler.start()
+        scheduler.add_job(
+            scheduled_job, trigger='cron', hour=hour, id='daily_analysis'
+        )
+        scheduler.start()
 
     def initial_analysis():
         with app.app_context():
+            # Ensure DB is usable
             try:
                 Equipment.query.all()
             except Exception:
                 return
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             start_of_year = datetime(now.year, 1, 1)
+            # Skip if we already have zones for this year
+            try:
+                existing = (
+                    DailyZone.query
+                    .filter(DailyZone.date >= start_of_year.date())
+                    .count()
+                )
+            except Exception:
+                existing = 0
+            if existing > 0:
+                app.logger.info(
+                    "Initial analysis skipped: %d zones already present "
+                    "this year",
+                    existing,
+                )
+                return
             for eq in Equipment.query.all():
                 zone.process_equipment(eq, since=start_of_year)
 
-    if not os.environ.get("SKIP_INITIAL_ANALYSIS"):
+    if run_initial_analysis and not os.environ.get("SKIP_INITIAL_ANALYSIS"):
         initial_analysis()
+
+    @app.after_request
+    def set_security_headers(resp):
+        resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        resp.headers.setdefault('X-Frame-Options', 'DENY')
+        resp.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        resp.headers.setdefault('Permissions-Policy', 'geolocation=(), camera=(), microphone=()')
+        # HSTS uniquement en HTTPS ou si forcé
+        if request.is_secure or os.environ.get('FORCE_HTTPS') == '1':
+            resp.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        # CSP permissive mais utile; ajuster au besoin
+        csp = (
+            "default-src 'self' https: data: blob; "
+            "script-src 'self' https: 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' https: 'unsafe-inline'; "
+            "img-src 'self' https: data: blob; "
+            "connect-src 'self' https:; "
+            "frame-ancestors 'none'"
+        )
+        resp.headers.setdefault('Content-Security-Policy', csp)
+        return resp
 
     return app
 
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True, host='0.0.0.0')
+    debug = os.environ.get('FLASK_DEBUG') == '1'
+    host = '127.0.0.1'
+    app.run(debug=debug, host=host)
