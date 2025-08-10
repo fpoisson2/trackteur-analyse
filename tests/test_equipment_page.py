@@ -5,6 +5,7 @@ import re
 from datetime import date, timedelta, datetime
 from pathlib import Path
 
+import pytest
 from pytest import approx
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -14,121 +15,103 @@ if ROOT_DIR not in sys.path:
 os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
-from app import create_app  # noqa: E402
-from models import db, User, Equipment, Position, Track  # noqa: E402
-from models import DailyZone, Config  # noqa: E402
+from models import db, Equipment, Position, Track, DailyZone  # noqa: E402
 import zone  # noqa: E402
+from tests.utils import login  # noqa: E402
 
 
-def make_app():
-    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
-    app = create_app()
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    with app.app_context():
-        db.drop_all()
-        db.create_all()
-        admin = User(username="admin", is_admin=True)
-        admin.set_password("pass")
-        db.session.add(admin)
-        db.session.add(
-            Config(
-                traccar_url="http://example.com",
-                traccar_token="dummy",
+@pytest.fixture(name="make_app")
+def make_app_fixture(base_make_app):
+    def _make_app():
+        app = base_make_app()
+        with app.app_context():
+            eq = Equipment.query.first()
+            eq.name = "tractor"
+            today = date.today()
+            prev_month = (
+                today.replace(day=1) - timedelta(days=1)
+            ).replace(day=1)
+            prev_year = today - timedelta(days=365)
+            yesterday = today - timedelta(days=1)
+            dz1 = DailyZone(
+                equipment_id=eq.id,
+                date=today,
+                surface_ha=1.0,
+                polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
             )
-        )
-        eq = Equipment(id_traccar=1, name="tractor")
-        db.session.add(eq)
-        db.session.commit()
-
-        today = date.today()
-        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
-        prev_year = today - timedelta(days=365)
-        yesterday = today - timedelta(days=1)
-        dz1 = DailyZone(
-            equipment_id=eq.id,
-            date=today,
-            surface_ha=1.0,
-            polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
-        )
-        dz2 = DailyZone(
-            equipment_id=eq.id,
-            date=today,
-            surface_ha=1.0,
-            polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
-        )
-        dz_yesterday = DailyZone(
-            equipment_id=eq.id,
-            date=yesterday,
-            surface_ha=1.0,
-            polygon_wkt='POLYGON((2 0,3 0,3 1,2 1,2 0))',
-        )
-        dz_prev_month = DailyZone(
-            equipment_id=eq.id,
-            date=prev_month,
-            surface_ha=1.0,
-            polygon_wkt='POLYGON((2 2,3 2,3 3,2 3,2 2))',
-        )
-        dz_prev_year = DailyZone(
-            equipment_id=eq.id,
-            date=prev_year,
-            surface_ha=1.0,
-            polygon_wkt='POLYGON((4 0,5 0,5 1,4 1,4 0))',
-        )
-        db.session.add_all(
-            [dz1, dz2, dz_yesterday, dz_prev_month, dz_prev_year]
-        )
-        for i in range(3):
+            dz2 = DailyZone(
+                equipment_id=eq.id,
+                date=today,
+                surface_ha=1.0,
+                polygon_wkt="POLYGON((0 0,1 0,1 1,0 1,0 0))",
+            )
+            dz_yesterday = DailyZone(
+                equipment_id=eq.id,
+                date=yesterday,
+                surface_ha=1.0,
+                polygon_wkt='POLYGON((2 0,3 0,3 1,2 1,2 0))',
+            )
+            dz_prev_month = DailyZone(
+                equipment_id=eq.id,
+                date=prev_month,
+                surface_ha=1.0,
+                polygon_wkt='POLYGON((2 2,3 2,3 3,2 3,2 2))',
+            )
+            dz_prev_year = DailyZone(
+                equipment_id=eq.id,
+                date=prev_year,
+                surface_ha=1.0,
+                polygon_wkt='POLYGON((4 0,5 0,5 1,4 1,4 0))',
+            )
+            db.session.add_all(
+                [dz1, dz2, dz_yesterday, dz_prev_month, dz_prev_year]
+            )
+            for i in range(3):
+                db.session.add(
+                    Position(
+                        equipment_id=eq.id,
+                        latitude=0.0,
+                        longitude=0.0,
+                        timestamp=today,
+                    )
+                )
             db.session.add(
                 Position(
                     equipment_id=eq.id,
-                    latitude=0.0,
-                    longitude=0.0,
-                    timestamp=today,
+                    latitude=0.5,
+                    longitude=2.5,
+                    timestamp=yesterday,
                 )
             )
-        db.session.add(
-            Position(
-                equipment_id=eq.id,
-                latitude=0.5,
-                longitude=2.5,
-                timestamp=yesterday,
+            db.session.add(
+                Position(
+                    equipment_id=eq.id,
+                    latitude=2.5,
+                    longitude=2.5,
+                    timestamp=prev_month,
+                )
             )
-        )
-        db.session.add(
-            Position(
-                equipment_id=eq.id,
-                latitude=2.5,
-                longitude=2.5,
-                timestamp=prev_month,
+            db.session.add(
+                Position(
+                    equipment_id=eq.id,
+                    latitude=4.0,
+                    longitude=0.0,
+                    timestamp=prev_year,
+                )
             )
-        )
-        db.session.add(
-            Position(
-                equipment_id=eq.id,
-                latitude=4.0,
-                longitude=0.0,
-                timestamp=prev_year,
+            nozone_day = today - timedelta(days=2)
+            db.session.add(
+                Position(
+                    equipment_id=eq.id,
+                    latitude=6.0,
+                    longitude=0.0,
+                    timestamp=nozone_day,
+                )
             )
-        )
-        nozone_day = today - timedelta(days=2)
-        db.session.add(
-            Position(
-                equipment_id=eq.id,
-                latitude=6.0,
-                longitude=0.0,
-                timestamp=nozone_day,
-            )
-        )
-        db.session.commit()
-    return app
+            db.session.commit()
+        return app
 
-
-def login(client):
-    return client.post(
-        "/login",
-        data={"username": "admin", "password": "pass"},
-    )
+    return _make_app
 
 
 def get_js_array(html: str, var_name: str):
@@ -137,7 +120,7 @@ def get_js_array(html: str, var_name: str):
     return json.loads(match.group(1))
 
 
-def test_header_has_clickable_logo_and_no_buttons():
+def test_header_has_clickable_logo_and_no_buttons(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -162,7 +145,7 @@ def test_header_has_clickable_logo_and_no_buttons():
     assert logo_link.find("img", alt="Trackteur Analyse") is not None
 
 
-def test_equipment_detail_page_loads():
+def test_equipment_detail_page_loads(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -177,7 +160,7 @@ def test_equipment_detail_page_loads():
     assert html.find('id="map-container"') < html.find('id="zones-table"')
 
 
-def test_equipment_defaults_to_last_day():
+def test_equipment_defaults_to_last_day(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -190,7 +173,7 @@ def test_equipment_defaults_to_last_day():
     assert f'value="{today.isoformat()}"' in html
 
 
-def test_multi_pass_zone_included():
+def test_multi_pass_zone_included(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -213,7 +196,7 @@ def test_multi_pass_zone_included():
     assert cells[1].text.strip() == "1"
 
 
-def test_day_menu_excludes_days_without_zones():
+def test_day_menu_excludes_days_without_zones(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -234,7 +217,7 @@ def test_day_menu_excludes_days_without_zones():
     assert "!availableDates.includes(end)" in html
 
 
-def test_equipment_page_has_calendar_control_without_arrows():
+def test_equipment_page_has_calendar_control_without_arrows(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -248,7 +231,7 @@ def test_equipment_page_has_calendar_control_without_arrows():
     assert 'id="next-day"' not in html
 
 
-def test_calendar_shows_with_tracks_only():
+def test_calendar_shows_with_tracks_only(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -279,7 +262,7 @@ def test_calendar_shows_with_tracks_only():
     assert 'id="date-display"' in html
 
 
-def test_single_day_request_with_tracks():
+def test_single_day_request_with_tracks(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -307,7 +290,7 @@ def test_single_day_request_with_tracks():
     assert f'value="{d.isoformat()}"' in html
 
 
-def test_date_selector_outside_info_sheet():
+def test_date_selector_outside_info_sheet(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -326,7 +309,7 @@ def test_date_selector_outside_info_sheet():
     assert info_sheet.find(id="date-nav") is None
 
 
-def test_points_filter_modal_present():
+def test_points_filter_modal_present(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -352,7 +335,7 @@ def test_points_filter_modal_present():
     assert "modal-dialog-centered" in dialog.get("class", [])
 
 
-def test_tracks_and_points_geojson():
+def test_tracks_and_points_geojson(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -402,7 +385,7 @@ def test_tracks_and_points_geojson():
     assert data["features"][0]["geometry"]["type"] == "LineString"
 
 
-def test_tracks_endpoint_triggers_analysis(monkeypatch):
+def test_tracks_endpoint_does_not_trigger_processing(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -411,30 +394,21 @@ def test_tracks_endpoint_triggers_analysis(monkeypatch):
         eq = Equipment.query.first()
         Track.query.delete()
         db.session.commit()
-
         called = {"count": 0}
 
-        def fake_process(equipment, since=None):
+        def fake_process(*args, **kwargs):
             called["count"] += 1
-            tr = Track(
-                equipment_id=equipment.id,
-                start_time=date.today(),
-                end_time=date.today(),
-                line_wkt="LINESTRING(0 0,1 1)",
-            )
-            db.session.add(tr)
-            db.session.commit()
 
         monkeypatch.setattr(zone, "process_equipment", fake_process)
         eqid = eq.id
 
     resp = client.get(f"/equipment/{eqid}/tracks.geojson")
     data = resp.get_json()
-    assert called["count"] == 1
-    assert len(data["features"]) == 1
+    assert called["count"] == 0
+    assert data["features"] == []
 
 
-def test_legend_modal_present():
+def test_legend_modal_present(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -456,7 +430,7 @@ def test_legend_modal_present():
     assert "modal-dialog-centered" in dialog.get("class", [])
 
 
-def test_zones_geojson_endpoint():
+def test_zones_geojson_endpoint(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -473,7 +447,7 @@ def test_zones_geojson_endpoint():
     assert "dz_ids" in data["features"][0]["properties"]
 
 
-def test_points_geojson_endpoint():
+def test_points_geojson_endpoint(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -488,7 +462,7 @@ def test_points_geojson_endpoint():
     assert len(data["features"]) <= 2
 
 
-def test_equipment_page_contains_highlight_zone():
+def test_equipment_page_contains_highlight_zone(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -505,7 +479,7 @@ def test_equipment_page_contains_highlight_zone():
     assert "return Promise.resolve()" in snippet
 
 
-def test_equipment_page_contains_highlight_rows():
+def test_equipment_page_contains_highlight_rows(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -523,7 +497,7 @@ def test_equipment_page_contains_highlight_rows():
     assert "parseInt" not in snippet
 
 
-def test_map_container_allows_touch():
+def test_map_container_allows_touch(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -538,7 +512,7 @@ def test_map_container_allows_touch():
     assert "touch-action: none" not in tag
 
 
-def test_equipment_sheet_has_data_attributes_and_script():
+def test_equipment_sheet_has_data_attributes_and_script(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -553,7 +527,7 @@ def test_equipment_sheet_has_data_attributes_and_script():
     assert 'equipment-sheet.js' in html
 
 
-def test_row_click_fits_bounds_without_zoom_out():
+def test_row_click_fits_bounds_without_zoom_out(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -570,7 +544,7 @@ def test_row_click_fits_bounds_without_zoom_out():
     assert "fetchData().then" in html
 
 
-def test_row_click_calls_fit_bounds():
+def test_row_click_calls_fit_bounds(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -582,7 +556,7 @@ def test_row_click_calls_fit_bounds():
     assert "map.fitBounds(bounds" in html
 
 
-def test_row_click_does_not_zoom_out():
+def test_row_click_does_not_zoom_out(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -595,7 +569,7 @@ def test_row_click_does_not_zoom_out():
     assert "autoZoomed" not in html
 
 
-def test_row_click_calls_highlight_zone_with_popup():
+def test_row_click_calls_highlight_zone_with_popup(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -618,7 +592,7 @@ def test_row_click_calls_highlight_zone_with_popup():
     assert "parseInt" not in snippet
 
 
-def test_select_zone_calls_highlight_and_popup():
+def test_select_zone_calls_highlight_and_popup(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -635,7 +609,7 @@ def test_select_zone_calls_highlight_and_popup():
     assert "parseInt" not in snippet
 
 
-def test_highlight_zone_offsets_for_open_sheet():
+def test_highlight_zone_offsets_for_open_sheet(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -654,7 +628,7 @@ def test_highlight_zone_offsets_for_open_sheet():
     assert "map.panBy([0, -offset" not in snippet
 
 
-def test_rebuild_date_layers_uses_properties_id():
+def test_rebuild_date_layers_uses_properties_id(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -670,7 +644,7 @@ def test_rebuild_date_layers_uses_properties_id():
     assert "layer.feature.id" in snippet
 
 
-def test_polygon_click_calls_select_zone_without_opening_sheet():
+def test_polygon_click_calls_select_zone_without_opening_sheet(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -690,7 +664,7 @@ def test_polygon_click_calls_select_zone_without_opening_sheet():
     assert "openEquipmentSheet()" not in snippet
 
 
-def test_bounds_check_before_zooming():
+def test_bounds_check_before_zooming(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -702,7 +676,7 @@ def test_bounds_check_before_zooming():
     assert "getBounds().contains" not in html
 
 
-def test_zone_rows_have_ids():
+def test_zone_rows_have_ids(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -714,7 +688,7 @@ def test_zone_rows_have_ids():
     assert 'data-zone-id="' in html
 
 
-def test_equipment_table_columns():
+def test_equipment_table_columns(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -728,7 +702,7 @@ def test_equipment_table_columns():
     assert "Hectares travaillés" in html
 
 
-def test_table_shows_aggregated_pass_count():
+def test_table_shows_aggregated_pass_count(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -746,7 +720,7 @@ def test_table_shows_aggregated_pass_count():
     assert cells[1].text.strip() == "1"
 
 
-def test_fetch_data_uses_token():
+def test_fetch_data_uses_token(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -759,7 +733,7 @@ def test_fetch_data_uses_token():
     assert "token !== fetchToken" in html
 
 
-def test_zones_loaded_once_on_page_load():
+def test_zones_loaded_once_on_page_load(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -773,7 +747,7 @@ def test_zones_loaded_once_on_page_load():
     assert "zones.geojson" in html
 
 
-def test_equipment_page_has_period_selectors():
+def test_equipment_page_has_period_selectors(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -786,7 +760,7 @@ def test_equipment_page_has_period_selectors():
     assert 'id="open-calendar"' in html
 
 
-def test_zones_geojson_filters_by_day():
+def test_zones_geojson_filters_by_day(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -803,7 +777,7 @@ def test_zones_geojson_filters_by_day():
         assert all(d == today.isoformat() for d in feat["properties"]["dates"])
 
 
-def test_zones_geojson_filters_by_range():
+def test_zones_geojson_filters_by_range(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -824,7 +798,7 @@ def test_zones_geojson_filters_by_range():
             assert yesterday <= dd <= today
 
 
-def test_zones_geojson_range_with_gap():
+def test_zones_geojson_range_with_gap(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -847,7 +821,7 @@ def test_zones_geojson_range_with_gap():
     assert prev_month.isoformat() in all_dates
 
 
-def test_zones_geojson_uses_global_ids():
+def test_zones_geojson_uses_global_ids(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -870,7 +844,7 @@ def test_zones_geojson_uses_global_ids():
     assert feat["properties"]["id"] == str(full_idx)
 
 
-def test_zone_ids_match_between_table_and_geojson():
+def test_zone_ids_match_between_table_and_geojson(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -910,7 +884,7 @@ def test_zone_ids_match_between_table_and_geojson():
         assert row_id in feature_ids
 
 
-def test_zone_id_consistency_with_overlaps():
+def test_zone_id_consistency_with_overlaps(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -958,7 +932,7 @@ def test_zone_id_consistency_with_overlaps():
         assert row_id in feature_ids
 
 
-def test_points_geojson_filters_by_day():
+def test_points_geojson_filters_by_day(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -975,7 +949,7 @@ def test_points_geojson_filters_by_day():
     assert len(data["features"]) == 1
 
 
-def test_points_geojson_range_with_gap():
+def test_points_geojson_range_with_gap(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -994,7 +968,7 @@ def test_points_geojson_range_with_gap():
     assert data["features"]
 
 
-def test_tracks_geojson_filters_cross_day():
+def test_tracks_geojson_filters_cross_day(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1040,7 +1014,7 @@ def test_tracks_geojson_filters_cross_day():
     assert len(data["features"]) == 1
 
 
-def test_tracks_geojson_range_with_gap():
+def test_tracks_geojson_range_with_gap(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1073,7 +1047,7 @@ def test_tracks_geojson_range_with_gap():
     assert data["features"]
 
 
-def test_equipment_detail_filters_by_period():
+def test_equipment_detail_filters_by_period(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1096,7 +1070,7 @@ def test_equipment_detail_filters_by_period():
     assert prev_month.isoformat() in rows[0].find_all("td")[0].text
 
 
-def test_equipment_detail_filters_by_day():
+def test_equipment_detail_filters_by_day(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1117,7 +1091,7 @@ def test_equipment_detail_filters_by_day():
     assert today.isoformat() in rows[0].find_all("td")[0].text
 
 
-def test_equipment_page_exposes_year_month_day():
+def test_equipment_page_exposes_year_month_day(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1136,7 +1110,7 @@ def test_equipment_page_exposes_year_month_day():
     assert f"const day = {today.day}" in html
 
 
-def test_map_and_table_zones_match_for_day():
+def test_map_and_table_zones_match_for_day(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1166,7 +1140,7 @@ def test_map_and_table_zones_match_for_day():
     assert table_ids == feature_ids
 
 
-def test_initial_bounds_reflect_selected_day():
+def test_initial_bounds_reflect_selected_day(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1191,7 +1165,7 @@ def test_initial_bounds_reflect_selected_day():
     assert bounds_day[1] == approx(bounds_all[1])
 
 
-def test_single_day_bounds_with_tracks_only():
+def test_single_day_bounds_with_tracks_only(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1238,7 +1212,7 @@ def test_single_day_bounds_with_tracks_only():
     assert bounds_day[1] == approx(0)
 
 
-def test_equipment_detail_filters_by_range():
+def test_equipment_detail_filters_by_range(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1263,7 +1237,7 @@ def test_equipment_detail_filters_by_range():
     assert any(today.isoformat() in d for d in dates)
 
 
-def test_equipment_detail_range_with_gap():
+def test_equipment_detail_range_with_gap(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1289,7 +1263,7 @@ def test_equipment_detail_range_with_gap():
     assert any(today.isoformat() in d for d in dates)
 
 
-def test_initial_bounds_include_tracks():
+def test_initial_bounds_include_tracks(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1310,7 +1284,7 @@ def test_initial_bounds_include_tracks():
     assert bounds[2] > 9
 
 
-def test_overlay_bundle_guard_present():
+def test_overlay_bundle_guard_present(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1328,7 +1302,7 @@ def test_overlay_bundle_guard_present():
     assert "customElements.get('mce-autosize-textarea')" in content
 
 
-def test_map_click_does_not_open_sheet():
+def test_map_click_does_not_open_sheet(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1341,7 +1315,7 @@ def test_map_click_does_not_open_sheet():
     assert html.count("openEquipmentSheet()") == 1
 
 
-def test_calendar_allows_single_day_selection():
+def test_calendar_allows_single_day_selection(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1358,7 +1332,7 @@ def test_calendar_allows_single_day_selection():
     assert "dateInput.addEventListener('click', openPicker)" in html
 
 
-def test_track_and_point_requests_use_day_params():
+def test_track_and_point_requests_use_day_params(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -1376,7 +1350,7 @@ def test_track_and_point_requests_use_day_params():
     assert "pointParams.set('year', year)" in html
 
 
-def test_overlapping_zones_across_days_show_three_rows():
+def test_overlapping_zones_across_days_show_three_rows(make_app):
     app = make_app()
     client = app.test_client()
     login(client)

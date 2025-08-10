@@ -5,45 +5,16 @@ ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from app import create_app  # noqa: E402
-from models import db, User, Equipment, Config  # noqa: E402
+from models import db, User  # noqa: E402
 import zone  # noqa: E402
 import threading  # noqa: E402
+from tests.utils import login, get_csrf  # noqa: E402
 
 os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 
-def make_app():
-    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
-    app = create_app()
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    with app.app_context():
-        db.drop_all()
-        db.create_all()
-        admin = User(username="admin", is_admin=True)
-        admin.set_password("pass")
-        db.session.add(admin)
-        db.session.add(
-            Config(
-                traccar_url="http://example.com",
-                traccar_token="dummy",
-            )
-        )
-        db.session.add(Equipment(id_traccar=1, name="eq"))
-        db.session.commit()
-    return app
-
-
-def login(client, username="admin", password="pass"):
-    return client.post(
-        "/login",
-        data={"username": username, "password": password},
-    )
-
-
-def test_non_admin_cannot_access_users():
+def test_non_admin_cannot_access_users(make_app):
     app = make_app()
     with app.app_context():
         u = User(username="reader", is_admin=False)
@@ -56,7 +27,7 @@ def test_non_admin_cannot_access_users():
     assert resp.status_code == 302
 
 
-def test_non_admin_cannot_access_admin_page():
+def test_non_admin_cannot_access_admin_page(make_app):
     app = make_app()
     with app.app_context():
         u = User(username="reader", is_admin=False)
@@ -69,10 +40,11 @@ def test_non_admin_cannot_access_admin_page():
     assert resp.status_code == 302
 
 
-def test_admin_add_and_delete_user():
+def test_admin_add_and_delete_user(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
+    token = get_csrf(client, "/users")
     resp = client.post(
         "/users",
         data={
@@ -80,6 +52,7 @@ def test_admin_add_and_delete_user():
             "username": "bob",
             "password": "secret",
             "role": "read",
+            "csrf_token": token,
         },
     )
     assert resp.status_code == 200
@@ -87,12 +60,16 @@ def test_admin_add_and_delete_user():
         user = User.query.filter_by(username="bob").first()
         assert user is not None
         uid = user.id
-    client.post("/users", data={"action": "delete", "user_id": str(uid)})
+    token = get_csrf(client, "/users")
+    client.post(
+        "/users",
+        data={"action": "delete", "user_id": str(uid), "csrf_token": token},
+    )
     with app.app_context():
         assert User.query.filter_by(username="bob").first() is None
 
 
-def test_password_reset():
+def test_password_reset(make_app):
     app = make_app()
     with app.app_context():
         u = User(username="temp", is_admin=False)
@@ -102,16 +79,22 @@ def test_password_reset():
         uid = u.id
     client = app.test_client()
     login(client)
+    token = get_csrf(client, "/users")
     client.post(
         "/users",
-        data={"action": "reset", "user_id": str(uid), "password": "new"},
+        data={
+            "action": "reset",
+            "user_id": str(uid),
+            "password": "new",
+            "csrf_token": token,
+        },
     )
     with app.app_context():
         user = db.session.get(User, uid)
         assert user.check_password("new")
 
 
-def test_non_admin_cannot_reanalyze():
+def test_non_admin_cannot_reanalyze(make_app):
     app = make_app()
     with app.app_context():
         u = User(username="reader", is_admin=False)
@@ -120,11 +103,49 @@ def test_non_admin_cannot_reanalyze():
         db.session.commit()
     client = app.test_client()
     login(client, "reader", "pwd")
-    resp = client.post("/reanalyze_all")
+    token = get_csrf(client, "/login")
+    resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
 
 
-def test_admin_can_trigger_reanalyze(monkeypatch):
+def test_admin_can_trigger_reanalyze(make_app, monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    called = []
+
+    def fake_process(eq, since=None):
+        called.append(eq.id_traccar)
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+
+    class InstantThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    monkeypatch.setattr(threading, "Thread", InstantThread)
+
+    token = get_csrf(client, "/admin")
+    resp = client.post("/reanalyze_all", data={"csrf_token": token})
+    assert resp.status_code == 302
+    assert called == [1]
+    status = client.get("/analysis_status")
+    assert status.json == {
+        "running": False,
+        "current": 1,
+        "total": 1,
+        "equipment": "",
+    }
+
+
+def test_admin_can_reanalyze_via_post(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -147,7 +168,9 @@ def test_admin_can_trigger_reanalyze(monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
-    resp = client.post("/reanalyze_all")
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    token = get_csrf(client, "/admin")
+    resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
     assert called == [1]
     status = client.get("/analysis_status")
@@ -159,42 +182,7 @@ def test_admin_can_trigger_reanalyze(monkeypatch):
     }
 
 
-def test_admin_can_reanalyze_via_get(monkeypatch):
-    app = make_app()
-    client = app.test_client()
-    login(client)
-
-    called = []
-
-    def fake_process(eq, since=None):
-        called.append(eq.id_traccar)
-
-    monkeypatch.setattr(zone, "process_equipment", fake_process)
-
-    class InstantThread:
-        def __init__(self, target, args=(), kwargs=None, daemon=None):
-            self.target = target
-            self.args = args
-            self.kwargs = kwargs or {}
-
-        def start(self):
-            self.target(*self.args, **self.kwargs)
-
-    monkeypatch.setattr(threading, "Thread", InstantThread)
-
-    resp = client.get("/reanalyze_all")
-    assert resp.status_code == 302
-    assert called == [1]
-    status = client.get("/analysis_status")
-    assert status.json == {
-        "running": False,
-        "current": 1,
-        "total": 1,
-        "equipment": "",
-    }
-
-
-def test_analysis_status_requires_admin(monkeypatch):
+def test_analysis_status_requires_admin(make_app, monkeypatch):
     app = make_app()
     with app.app_context():
         u = User(username="reader", is_admin=False)
@@ -207,7 +195,7 @@ def test_analysis_status_requires_admin(monkeypatch):
     assert resp.status_code == 403
 
 
-def test_analysis_status_initial(monkeypatch):
+def test_analysis_status_initial(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -220,7 +208,7 @@ def test_analysis_status_initial(monkeypatch):
     }
 
 
-def test_analysis_status_reports_equipment(monkeypatch):
+def test_analysis_status_reports_equipment(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -236,7 +224,9 @@ def test_analysis_status_reports_equipment(monkeypatch):
 
     monkeypatch.setattr(zone, "process_equipment", fake_process)
 
-    resp = client.post("/reanalyze_all")
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    token = get_csrf(client, "/admin")
+    resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
 
     assert start_evt.wait(1)

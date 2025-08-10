@@ -1,7 +1,7 @@
 import os
 import sys
 import types
-from datetime import datetime, date as dt_date
+from datetime import datetime, date as dt_date, timezone
 
 import pytest
 from shapely.geometry import Polygon, Point, LineString
@@ -114,7 +114,7 @@ def test_fetch_positions_success(monkeypatch):
         return DummyResponse(json_data=resp_data)
 
     monkeypatch.setattr(zone.requests, "get", fake_get)
-    result = zone.fetch_positions(1, datetime.utcnow(), datetime.utcnow())
+    result = zone.fetch_positions(1, datetime.now(timezone.utc), datetime.now(timezone.utc))
     assert result == resp_data
 
 
@@ -123,7 +123,7 @@ def test_fetch_positions_404(monkeypatch):
         return DummyResponse(status_code=404)
 
     monkeypatch.setattr(zone.requests, "get", fake_get)
-    result = zone.fetch_positions(1, datetime.utcnow(), datetime.utcnow())
+    result = zone.fetch_positions(1, datetime.now(timezone.utc), datetime.now(timezone.utc))
     assert result == []
 
 
@@ -139,7 +139,7 @@ def test_add_joggle_changes_points():
 # ---------- cluster_positions ----------
 
 def test_cluster_positions_returns_zones():
-    now = datetime.utcnow().strftime("%Y-%m-%d")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     positions = []
     for i in range(3):
         positions.append(

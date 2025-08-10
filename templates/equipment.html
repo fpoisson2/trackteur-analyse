@@ -16,8 +16,9 @@
       margin: 0;
       overscroll-behavior-y: none;
     }
-    body { display: flex; flex-direction: column; }
-    #map-container { flex: 1; }
+    body { display: flex; flex-direction: column; min-height: 100vh; }
+    #map-container { flex: 1; min-height: 300px; }
+    .content-row { display: flex; flex-direction: column; flex: 1; min-height: 0; }
     .zone-row { cursor: pointer; }
     .zone-row.highlighted { outline: 2px solid #0d6efd; }
     .legend { background: white; padding: 6px 8px; line-height: 18px; color: #555; }
@@ -57,6 +58,38 @@
     .flatpickr-day.no-data {
       opacity: 0.3;
     }
+
+    /* Desktop/tablet layout: side panel on the right */
+    @media (min-width: 768px) {
+      .content-row { display: flex; flex-direction: row; }
+      #map-container { flex: 1 1 auto; }
+      /* Keep the date picker compact and non-stretching on desktop */
+      #date-nav { flex: 0 0 auto; }
+      #date-nav .form-control {
+        flex: 0 0 auto;
+        width: auto;
+        min-width: 12ch;
+        max-width: 28ch;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #date-nav .btn { flex: 0 0 auto; }
+      .bottom-sheet {
+        position: relative;
+        left: auto; right: auto; bottom: auto;
+        height: auto;
+        width: 420px;
+        max-width: 40vw;
+        border-radius: 0;
+        box-shadow: none;
+        border-left: 1px solid #eee;
+        z-index: auto;
+      }
+      .bottom-sheet .drag-handle { display: none; }
+      .bottom-sheet .sheet-content { height: 100%; overflow: auto; }
+      .table-responsive thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+    }
   </style>
 </head>
 <body class="m-0 d-flex flex-column">
@@ -73,7 +106,8 @@
     </div>
     {% endif %}
   </header>
-  <div id="map-container" class="flex-fill"></div>
+  <div class="content-row">
+    <div id="map-container" class="flex-fill"></div>
 
   {% if zones or has_tracks %}
   <div class="modal fade" id="legend-modal" tabindex="-1" aria-labelledby="legendModalLabel" aria-hidden="true">
@@ -113,9 +147,28 @@
   <div id="info-sheet" class="bottom-sheet" data-sheet="equipment" data-open="false">
     <div class="drag-handle"></div>
     <div class="sheet-content p-3" data-sheet-content>
-      <h5 class="mb-3">{{ equipment.name }}</h5>
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h5 class="mb-0">{{ equipment.name }}</h5>
+        <div class="d-none d-lg-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#legend-modal" title="Légende">
+            <i class="bi bi-question-circle"></i>
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#filter-modal" title="Filtres">
+            <i class="bi bi-funnel"></i>
+          </button>
+        </div>
+      </div>
+      <div class="small text-muted mb-3">
+        {% if date_value %}
+          Période: <span class="fw-semibold">{{ date_value }}</span>
+        {% elif show_all %}
+          Période: <span class="fw-semibold">Toutes les données</span>
+        {% else %}
+          <span class="fw-semibold">Sélectionnez une date</span>
+        {% endif %}
+      </div>
       <div class="table-responsive">
-        <table id="zones-table" class="table table-striped">
+        <table id="zones-table" class="table table-striped table-hover">
           <thead>
             <tr>
               <th>Date(s)</th>
@@ -136,13 +189,13 @@
       </div>
     </div>
   </div>
-
   <!-- Calendar handled directly by flatpickr; modal removed -->
   {% else %}
   <div class="position-absolute top-50 start-50 translate-middle text-center bg-white p-3 rounded" style="z-index:1000;">
     <p>Aucune donnée disponible pour cet équipement.</p>
   </div>
   {% endif %}
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

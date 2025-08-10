@@ -12,9 +12,10 @@ Trackteur Analyse interroge l'API Traccar, agrège les positions par jour et cal
 3. [Installation](#installation)
 4. [Configuration](#configuration)
 5. [Utilisation](#utilisation)
-6. [Structure du projet](#structure-du-projet)
-7. [Contribution](#contribution)
-8. [Licence](#licence)
+6. [Production](#production)
+7. [Structure du projet](#structure-du-projet)
+8. [Contribution](#contribution)
+9. [Licence](#licence)
 
 ## Fonctionnalités
 - Authentification avec gestion d'un utilisateur administrateur
@@ -93,6 +94,44 @@ Pour exécuter l'application comme un service systemd :
    sudo systemctl enable --now trackteur-analyse.service
    ```
 Accédez à [http://localhost:5000](http://localhost:5000). La page d'accueil liste les équipements, leur dernière position et les surfaces calculées. Vous pouvez lancer une analyse manuelle ou consulter le détail d'un équipement (zones par jour et carte interactive). Une analyse automatique a lieu chaque nuit à 2 h.
+
+## Production
+
+Voici les recommandations et étapes pour un déploiement sécurisé :
+
+- Reverse proxy HTTPS:
+  - Terminer TLS (nginx/traefik) devant l’app (Gunicorn).
+  - Forcer HTTPS et ajouter `Strict-Transport-Security` (déjà géré si `FORCE_HTTPS=1`).
+
+- Variables d’environnement clés:
+  - `FLASK_SECRET_KEY`: clé secrète obligatoire (longue et aléatoire).
+  - `TRACCAR_AUTH_TOKEN`, `TRACCAR_BASE_URL` (et `TRACCAR_DEVICE_NAME` optionnel) pour l’accès Traccar.
+  - `TRACCAR_TIMEOUT` (par défaut 10s) pour borner les appels réseau.
+  - `SECURE_COOKIES=1` pour sécuriser les cookies (`Secure`, `SameSite=Lax`).
+  - `SESSION_COOKIE_SAMESITE` pour ajuster la stratégie (`Lax`/`Strict`).
+  - `START_SCHEDULER=0` dans les workers web; lancer la tâche planifiée dans un processus dédié (voir ci‑dessous).
+  - `SKIP_INITIAL_ANALYSIS=1` pour éviter l’analyse initiale au boot si non désirée.
+  - `SETUP_DISABLED=1` pour désactiver l’assistant `/setup` en production après initialisation.
+  - (Optionnel) `LOGIN_MAX_ATTEMPTS` (défaut 10), `LOGIN_WINDOW_SECONDS` (défaut 900) pour le rate‑limit de `/login`.
+
+- Scheduler (analyse quotidienne):
+  - Ne démarrez PAS l’APScheduler dans tous les workers.
+  - Lancer un seul processus dédié avec `START_SCHEDULER=1`, et `START_SCHEDULER=0` ailleurs.
+  - Alternativement, exécuter l’analyse via un cron/worker externe qui appelle une commande dédiée (à ajouter si besoin).
+
+- Lancement service (exemple):
+  - Web: `START_SCHEDULER=0 SECURE_COOKIES=1 gunicorn wsgi:app -w 2 -b 0.0.0.0:8000`
+  - Scheduler: `START_SCHEDULER=1 SECURE_COOKIES=1 gunicorn wsgi:app -w 1 -b 127.0.0.1:8001`
+
+- Bonnes pratiques sécurité:
+  - Ne jamais utiliser `python app.py` en prod (debugger Werkzeug dangereux).
+  - Masquer le token Traccar (l’UI n’affiche plus la valeur enregistrée).
+  - Les actions mutantes utilisent POST + CSRF (déconnexion, relance d’analyse).
+  - `points.geojson` plafonné pour prévenir les abus; limitez l’accès ou activez du rate‑limit au besoin.
+
+- Sauvegarde/stockage:
+  - La base SQLite est stockée sous `instance/trackteur.db`. Sauvegardez‑la régulièrement.
+  - Protégez le dossier `instance/` (droits système), et éviter de l’exposer au serveur HTTP.
 
 ## Structure du projet
 ```

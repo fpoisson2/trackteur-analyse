@@ -13,9 +13,7 @@ from models import db, User  # noqa: E402
 
 
 def test_setup_without_db():
-    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
-    app = create_app()
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+    app = create_app(start_scheduler=False, run_initial_analysis=False)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     with app.app_context():
         db.drop_all()
@@ -61,9 +59,7 @@ def test_schema_upgrade_adds_pass_count(tmp_path):
             )
         )
 
-    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
-    app = create_app()
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+    app = create_app(start_scheduler=False, run_initial_analysis=False)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_file}"
     client = app.test_client()
     client.get("/setup")
@@ -105,9 +101,7 @@ def test_schema_upgrade_adds_tracks(tmp_path):
             )
         )
 
-    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
-    app = create_app()
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+    app = create_app(start_scheduler=False, run_initial_analysis=False)
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_file}"
     client = app.test_client()
     client.get("/setup")
@@ -170,8 +164,7 @@ def test_initial_analysis_upgrades_before_processing(tmp_path, monkeypatch):
         lambda *a, **k: None,
     )
 
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
-    app = importlib.reload(app_module).create_app()
+    app = importlib.reload(app_module).create_app(start_scheduler=False)
 
     with app.app_context():
         from sqlalchemy import inspect

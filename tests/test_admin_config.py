@@ -9,43 +9,21 @@ os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
 from app import create_app  # noqa: E402
-from models import db, User, Config, Equipment  # noqa: E402
+from models import Config  # noqa: E402
 import zone  # noqa: E402
 import sqlite3  # noqa: E402
 from pathlib import Path  # noqa: E402
 import threading  # noqa: E402
+from tests.utils import login, get_csrf  # noqa: E402
 
 
-def make_app():
-    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
-    app = create_app()
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    with app.app_context():
-        db.drop_all()
-        db.create_all()
-        admin = User(username="admin", is_admin=True)
-        admin.set_password("pass")
-        db.session.add(admin)
-        db.session.add(
-            Config(traccar_url="http://example.com", traccar_token="dummy")
-        )
-        db.session.add(Equipment(id_traccar=1, name="eq"))
-        db.session.commit()
-    return app
-
-
-def login(client):
-    data = {"username": "admin", "password": "pass"}
-    return client.post("/login", data=data)
-
-
-def test_admin_updates_server_url(monkeypatch):
+def test_admin_updates_server_url(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
     devices = [{"id": 1, "name": "eq"}]
     monkeypatch.setattr(zone, "fetch_devices", lambda: devices)
+    token = get_csrf(client, "/admin")
     resp = client.post(
         "/admin",
         data={
@@ -55,6 +33,7 @@ def test_admin_updates_server_url(monkeypatch):
             "eps_meters": "30",
             "min_surface": "0.2",
             "alpha_shape": "0.05",
+            "csrf_token": token,
         },
     )
     assert resp.status_code == 200
@@ -67,14 +46,15 @@ def test_admin_updates_server_url(monkeypatch):
         assert cfg.alpha == 0.05
 
 
-def test_admin_updates_analysis_hour(monkeypatch):
+def test_admin_updates_analysis_hour(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
     monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    token = get_csrf(client, "/admin")
     resp = client.post(
         "/admin",
-        data={"analysis_hour": "5"},
+        data={"analysis_hour": "5", "csrf_token": token},
     )
     assert resp.status_code == 200
     with app.app_context():
@@ -98,9 +78,7 @@ def test_upgrade_db_adds_config_columns():
     conn.commit()
     conn.close()
 
-    os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
-    app = create_app()
-    os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
+    app = create_app(start_scheduler=False, run_initial_analysis=False)
     client = app.test_client()
     client.get("/setup")
     with app.app_context():
@@ -112,7 +90,7 @@ def test_upgrade_db_adds_config_columns():
     db_path.unlink()
 
 
-def test_admin_handles_fetch_error(monkeypatch):
+def test_admin_handles_fetch_error(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -129,7 +107,7 @@ def test_admin_handles_fetch_error(monkeypatch):
     )
 
 
-def test_admin_page_has_status_poll(monkeypatch):
+def test_admin_page_has_status_poll(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -140,7 +118,7 @@ def test_admin_page_has_status_poll(monkeypatch):
     assert 'id="analysis-banner"' in html
 
 
-def test_reanalyze_saves_params(monkeypatch):
+def test_reanalyze_saves_params(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -164,6 +142,7 @@ def test_reanalyze_saves_params(monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
+    token = get_csrf(client, "/admin")
     resp = client.post(
         "/reanalyze_all",
         data={
@@ -173,6 +152,7 @@ def test_reanalyze_saves_params(monkeypatch):
             "eps_meters": "40",
             "min_surface": "0.3",
             "alpha_shape": "0.07",
+            "csrf_token": token,
         },
     )
     assert resp.status_code == 302
@@ -191,3 +171,78 @@ def test_reanalyze_saves_params(monkeypatch):
         "total": 1,
         "equipment": "",
     }
+
+
+def test_admin_accepts_decimal_comma(make_app, monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    devices = [{"id": 1, "name": "eq"}]
+    monkeypatch.setattr(zone, "fetch_devices", lambda: devices)
+    token = get_csrf(client, "/admin")
+    resp = client.post(
+        "/admin",
+        data={
+            "base_url": "http://new.com",
+            "token_global": "tok",
+            "equip_ids": ["1"],
+            "eps_meters": "40,0",
+            "analysis_hour": "3",
+            "csrf_token": token,
+        },
+    )
+    assert resp.status_code == 200
+    with app.app_context():
+        cfg = Config.query.first()
+        assert cfg.traccar_url == "http://new.com"
+        assert cfg.traccar_token == "tok"
+        assert cfg.eps_meters == 40.0
+
+
+def test_reanalyze_accepts_decimal_comma(make_app, monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    devices = [{"id": 1, "name": "eq"}]
+    monkeypatch.setattr(zone, "fetch_devices", lambda: devices)
+
+    class InstantThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    monkeypatch.setattr(threading, "Thread", InstantThread)
+
+    # Empêche tout accès réseau en court-circuitant le traitement
+    called = []
+
+    def fake_process(eq, since=None):
+        called.append(eq.id_traccar)
+
+    monkeypatch.setattr(zone, "process_equipment", fake_process)
+
+    token = get_csrf(client, "/admin")
+    resp = client.post(
+        "/reanalyze_all",
+        data={
+            "base_url": "http://new.com",
+            "token_global": "tok",
+            "equip_ids": ["1"],
+            "eps_meters": "40,0",
+            "min_surface": "0,3",
+            "alpha_shape": "0,07",
+            "analysis_hour": "4",
+            "csrf_token": token,
+        },
+    )
+    assert resp.status_code in (200, 302)
+    with app.app_context():
+        cfg = Config.query.first()
+        assert cfg.eps_meters == 40.0
+        assert cfg.min_surface_ha == 0.3
+        assert cfg.alpha == 0.07
+    assert called == [1]

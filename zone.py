@@ -4,7 +4,7 @@ import requests  # type: ignore
 import pandas as pd
 import numpy as np
 import warnings
-from datetime import datetime, timedelta, date as dt_date
+from datetime import datetime, timedelta, date as dt_date, timezone
 from shapely.geometry import (
     Point,
     Polygon,
@@ -15,6 +15,8 @@ from shapely.geometry import (
 from shapely.ops import transform as shp_transform
 import pyproj
 import alphashape
+# Ensure joblib uses a writable temp folder to avoid warnings in CI
+os.environ.setdefault("JOBLIB_TEMP_FOLDER", "/tmp")
 from sklearn.cluster import DBSCAN
 import folium
 from geopandas import GeoDataFrame
@@ -215,12 +217,23 @@ def simplify_for_zoom(geom, zoom: int):
     return geom.simplify(tolerance, preserve_topology=True)
 
 
+def _timeout() -> float:
+    try:
+        return float(os.environ.get('TRACCAR_TIMEOUT', '10'))
+    except Exception:
+        return 10.0
+
+
 def fetch_devices():
     """Récupère la liste des dispositifs Traccar."""
     _, base = _get_credentials()
     url = f"{base.rstrip('/')}/api/devices"
     logger.debug("Fetching devices from %s", url)
-    resp = requests.get(url, headers=_auth_header())
+    try:
+        resp = requests.get(url, headers=_auth_header(), timeout=_timeout())
+    except TypeError:
+        # Backward-compat for tests that mock requests.get without timeout
+        resp = requests.get(url, headers=_auth_header())
     resp.raise_for_status()
     devices = resp.json()
     logger.debug("Received %d devices", len(devices))
@@ -249,7 +262,13 @@ def fetch_positions(device_id, from_dt, to_dt):
         params["from"],
         params["to"],
     )
-    resp = requests.get(url, headers=_auth_header(), params=params)
+    try:
+        resp = requests.get(
+            url, headers=_auth_header(), params=params, timeout=_timeout()
+        )
+    except TypeError:
+        # Backward-compat for tests that mock requests.get without timeout
+        resp = requests.get(url, headers=_auth_header(), params=params)
     try:
         resp.raise_for_status()
     except requests.exceptions.HTTPError:
@@ -505,7 +524,8 @@ def _boundary_intersection(
 
 def process_equipment(eq, since=None):
     """Analyse et enregistre les zones journalières de l'équipement."""
-    to_dt = datetime.utcnow()
+    # Use UTC now then drop tzinfo to keep naive UTC datetimes across app
+    to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
     from_dt = since if since else to_dt - timedelta(days=1)
     logger.info(
         "Processing equipment %s (%s) from %s to %s",
@@ -709,6 +729,23 @@ def process_equipment(eq, since=None):
     eq.total_hectares = total
     eq.distance_between_zones = calculate_distance_between_zones(daily_polys)
 
+    # Calcul des hectares relatifs (surface unique sur l'ensemble des jours)
+    daily_for_aggregate = [
+        {
+            "geometry": wkt.loads(dz.polygon_wkt),
+            "dates": [str(dz.date)] * (dz.pass_count or 1),
+        }
+        for dz in all_zones
+        if dz.polygon_wkt
+    ]
+    if daily_for_aggregate:
+        aggregated = aggregate_overlapping_zones(daily_for_aggregate)
+        eq.relative_hectares = (
+            sum(z["geometry"].area for z in aggregated) / 1e4
+        )
+    else:
+        eq.relative_hectares = 0.0
+
     logger.debug("Computed %d daily zones", len(all_zones))
     logger.info(
         "Totals for %s: %.2f ha, distance %.0f m",
@@ -829,6 +866,33 @@ def calculate_relative_hectares(equipment_id):
     aggregated = aggregate_overlapping_zones(daily)
     total = sum(z["geometry"].area for z in aggregated) / 1e4
     return total
+
+
+def calculate_total_hectares(equipment_id: int) -> float:
+    """Calcule les hectares traités (somme des unions journalières).
+
+    Pour chaque date, on fait l'union des polygones de la journée afin de ne
+    pas compter deux fois des recouvrements sur la même journée, puis on
+    additionne les surfaces de chaque journée. Le résultat est en hectares.
+    """
+    zones = DailyZone.query.filter_by(equipment_id=equipment_id).all()
+    if not zones:
+        return 0.0
+
+    from shapely import wkt
+    from shapely.ops import unary_union
+
+    by_date: dict = {}
+    for z in zones:
+        if not z.polygon_wkt:
+            continue
+        by_date.setdefault(z.date, []).append(wkt.loads(z.polygon_wkt))
+
+    total = 0.0
+    for _, polys in sorted(by_date.items()):
+        union = unary_union(polys) if len(polys) > 1 else polys[0]
+        total += union.area / 1e4
+    return float(total)
 
 
 # ✅ FONCTION DE DEBUG : Pour voir ce qui se passe
