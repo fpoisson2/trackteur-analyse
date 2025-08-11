@@ -104,8 +104,8 @@
         <i class="bi bi-calendar3"></i>
       </button>
     </div>
-    {% endif %}
-  </header>
+      {% endif %}
+    </header>
   <div class="content-row">
     <div id="map-container" class="flex-fill"></div>
 
@@ -135,6 +135,28 @@
           <div class="form-check form-switch">
             <input class="form-check-input" type="checkbox" id="show-points">
             <label class="form-check-label" for="show-points">Afficher les points GPS</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="layer-modal" tabindex="-1" aria-labelledby="layerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="layerModalLabel">Type de carte</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="btn-group" role="group" aria-label="Choisir le fond de carte">
+            <input type="radio" class="btn-check" name="map-type" id="map-hybrid" value="hybrid" autocomplete="off" checked>
+            <label class="btn btn-outline-primary" for="map-hybrid">Hybride</label>
+            <input type="radio" class="btn-check" name="map-type" id="map-roadmap" value="roadmap" autocomplete="off">
+            <label class="btn btn-outline-primary" for="map-roadmap">Plan</label>
           </div>
         </div>
         <div class="modal-footer">
@@ -375,14 +397,26 @@
       return Promise.all(promises);
     }
 
-    function setupMap() {
-      map = L.map('map-container', { zoomControl: false });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
-      L.control.zoom({ position: 'topright' }).addTo(map);
-      L.control.scale().addTo(map);
-      zoneLayer = L.geoJSON(null, {
+      function setupMap() {
+        map = L.map('map-container', { zoomControl: false });
+        const baseLayers = {
+          // Google satellite imagery with labels
+          hybrid: L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: '&copy; Google'
+          }),
+          // Google roadmap tiles
+          roadmap: L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: '&copy; Google'
+          })
+        };
+        let currentBase = baseLayers.hybrid.addTo(map);
+        L.control.zoom({ position: 'topright' }).addTo(map);
+        L.control.scale().addTo(map);
+        zoneLayer = L.geoJSON(null, {
         style: f => {
           const count = f.properties.count || 1;
           const col = colors[Math.min(count - 1, colors.length - 1)];
@@ -463,6 +497,42 @@
         return div;
       };
       filterBtn.addTo(map);
+      const layerBtn = L.control({ position: 'topright' });
+      layerBtn.onAdd = () => {
+        const div = L.DomUtil.create('div', 'layer-btn-container');
+        const button = L.DomUtil.create('button', '', div);
+        button.id = 'layer-btn';
+        button.type = 'button';
+        button.title = 'Changer le fond de carte';
+        button.innerHTML = '<i class="bi bi-layers"></i>';
+        L.DomEvent.disableClickPropagation(button);
+        L.DomEvent.on(button, 'click', () => {
+          const modalEl = document.getElementById('layer-modal');
+          if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+          }
+        });
+        return div;
+      };
+      layerBtn.addTo(map);
+
+      const layerModalEl = document.getElementById('layer-modal');
+      if (layerModalEl) {
+        layerModalEl.addEventListener('show.bs.modal', () => {
+          document.getElementById('map-hybrid').checked = currentBase === baseLayers.hybrid;
+          document.getElementById('map-roadmap').checked = currentBase === baseLayers.roadmap;
+        });
+        document.querySelectorAll('input[name="map-type"]').forEach(radio => {
+          radio.addEventListener('change', e => {
+            const next = e.target.value;
+            if (currentBase !== baseLayers[next]) {
+              map.removeLayer(currentBase);
+              currentBase = baseLayers[next].addTo(map);
+            }
+          });
+        });
+      }
       map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
         const b = L.latLngBounds(

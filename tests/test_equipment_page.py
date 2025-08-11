@@ -160,6 +160,22 @@ def test_equipment_detail_page_loads(make_app):
     assert html.find('id="map-container"') < html.find('id="zones-table"')
 
 
+def test_equipment_page_has_layer_modal(make_app):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        resp = client.get(f"/equipment/{eq.id}")
+    html = resp.data.decode()
+    assert "button.id = 'layer-btn'" in html
+    assert 'id="layer-modal"' in html
+    assert 'name="map-type"' in html
+    assert "google.com/vt/lyrs=y" in html
+    assert "google.com/vt/lyrs=m" in html
+
+
 def test_equipment_defaults_to_last_day(make_app):
     app = make_app()
     client = app.test_client()
