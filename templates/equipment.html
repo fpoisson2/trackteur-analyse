@@ -105,10 +105,6 @@
       </button>
     </div>
       {% endif %}
-      <select id="map-type" class="form-select form-select-sm ms-2" style="width: auto;">
-        <option value="hybrid" selected>Hybride</option>
-        <option value="roadmap">Plan</option>
-      </select>
     </header>
   <div class="content-row">
     <div id="map-container" class="flex-fill"></div>
@@ -395,12 +391,7 @@
             attribution: '&copy; Google'
           })
         };
-        const selector = document.getElementById('map-type');
-        baseLayers[selector.value].addTo(map);
-        selector.addEventListener('change', () => {
-          Object.values(baseLayers).forEach(l => map.removeLayer(l));
-          baseLayers[selector.value].addTo(map);
-        });
+        let currentBase = baseLayers.hybrid.addTo(map);
         L.control.zoom({ position: 'topright' }).addTo(map);
         L.control.scale().addTo(map);
         zoneLayer = L.geoJSON(null, {
@@ -484,6 +475,23 @@
         return div;
       };
       filterBtn.addTo(map);
+      const layerBtn = L.control({ position: 'topright' });
+      layerBtn.onAdd = () => {
+        const div = L.DomUtil.create('div', 'layer-btn-container');
+        const button = L.DomUtil.create('button', '', div);
+        button.id = 'layer-btn';
+        button.type = 'button';
+        button.title = 'Changer le fond de carte';
+        button.innerHTML = '<i class="bi bi-layers"></i>';
+        L.DomEvent.disableClickPropagation(button);
+        L.DomEvent.on(button, 'click', () => {
+          const next = currentBase === baseLayers.hybrid ? 'roadmap' : 'hybrid';
+          map.removeLayer(currentBase);
+          currentBase = baseLayers[next].addTo(map);
+        });
+        return div;
+      };
+      layerBtn.addTo(map);
       map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
         const b = L.latLngBounds(
