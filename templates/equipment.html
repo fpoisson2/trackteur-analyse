@@ -144,6 +144,28 @@
     </div>
   </div>
 
+  <div class="modal fade" id="layer-modal" tabindex="-1" aria-labelledby="layerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="layerModalLabel">Type de carte</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="btn-group" role="group" aria-label="Choisir le fond de carte">
+            <input type="radio" class="btn-check" name="map-type" id="map-hybrid" value="hybrid" autocomplete="off" checked>
+            <label class="btn btn-outline-primary" for="map-hybrid">Hybride</label>
+            <input type="radio" class="btn-check" name="map-type" id="map-roadmap" value="roadmap" autocomplete="off">
+            <label class="btn btn-outline-primary" for="map-roadmap">Plan</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="info-sheet" class="bottom-sheet" data-sheet="equipment" data-open="false">
     <div class="drag-handle"></div>
     <div class="sheet-content p-3" data-sheet-content>
@@ -485,13 +507,32 @@
         button.innerHTML = '<i class="bi bi-layers"></i>';
         L.DomEvent.disableClickPropagation(button);
         L.DomEvent.on(button, 'click', () => {
-          const next = currentBase === baseLayers.hybrid ? 'roadmap' : 'hybrid';
-          map.removeLayer(currentBase);
-          currentBase = baseLayers[next].addTo(map);
+          const modalEl = document.getElementById('layer-modal');
+          if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+          }
         });
         return div;
       };
       layerBtn.addTo(map);
+
+      const layerModalEl = document.getElementById('layer-modal');
+      if (layerModalEl) {
+        layerModalEl.addEventListener('show.bs.modal', () => {
+          document.getElementById('map-hybrid').checked = currentBase === baseLayers.hybrid;
+          document.getElementById('map-roadmap').checked = currentBase === baseLayers.roadmap;
+        });
+        document.querySelectorAll('input[name="map-type"]').forEach(radio => {
+          radio.addEventListener('change', e => {
+            const next = e.target.value;
+            if (currentBase !== baseLayers[next]) {
+              map.removeLayer(currentBase);
+              currentBase = baseLayers[next].addTo(map);
+            }
+          });
+        });
+      }
       map.on('moveend zoomend', () => { if (!skipFetch) fetchData(); });
       if (initialBounds) {
         const b = L.latLngBounds(

@@ -15,31 +15,6 @@
   border: none;
 }
 
-#legend-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #6c757d;
-  color: #fff;
-  border: none;
-  border-radius: 50%;
-  padding: 0;
-}
-
-#filter-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #6c757d;
-  color: #fff;
-  border: none;
-  border-radius: 50%;
-  padding: 0;
-}
 
 /* Barre supérieure cohérente pour toutes les pages */
 .top-bar {
@@ -175,7 +150,8 @@ a:hover { color: var(--primary-600); text-decoration: underline; text-underline-
 
 /* Map UI controls */
 #legend-btn,
-#filter-btn {
+#filter-btn,
+#layer-btn {
   width: 40px;
   height: 40px;
   display: flex;
@@ -190,7 +166,8 @@ a:hover { color: var(--primary-600); text-decoration: underline; text-underline-
   transition: transform 120ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
 #legend-btn:hover,
-#filter-btn:hover { transform: translateY(-1px); background: var(--primary-800); }
+#filter-btn:hover,
+#layer-btn:hover { transform: translateY(-1px); background: var(--primary-800); }
 
 /* Bottom sheet polish */
 .bottom-sheet {
