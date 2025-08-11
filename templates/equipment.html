@@ -104,8 +104,12 @@
         <i class="bi bi-calendar3"></i>
       </button>
     </div>
-    {% endif %}
-  </header>
+      {% endif %}
+      <select id="map-type" class="form-select form-select-sm ms-2" style="width: auto;">
+        <option value="hybrid" selected>Hybride</option>
+        <option value="roadmap">Plan</option>
+      </select>
+    </header>
   <div class="content-row">
     <div id="map-container" class="flex-fill"></div>
 
@@ -375,16 +379,31 @@
       return Promise.all(promises);
     }
 
-    function setupMap() {
-      map = L.map('map-container', { zoomControl: false });
-      L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-        maxZoom: 20,
-        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-        attribution: '&copy; Google'
-      }).addTo(map);
-      L.control.zoom({ position: 'topright' }).addTo(map);
-      L.control.scale().addTo(map);
-      zoneLayer = L.geoJSON(null, {
+      function setupMap() {
+        map = L.map('map-container', { zoomControl: false });
+        const baseLayers = {
+          // Google satellite imagery with labels
+          hybrid: L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: '&copy; Google'
+          }),
+          // Google roadmap tiles
+          roadmap: L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: '&copy; Google'
+          })
+        };
+        const selector = document.getElementById('map-type');
+        baseLayers[selector.value].addTo(map);
+        selector.addEventListener('change', () => {
+          Object.values(baseLayers).forEach(l => map.removeLayer(l));
+          baseLayers[selector.value].addTo(map);
+        });
+        L.control.zoom({ position: 'topright' }).addTo(map);
+        L.control.scale().addTo(map);
+        zoneLayer = L.geoJSON(null, {
         style: f => {
           const count = f.properties.count || 1;
           const col = colors[Math.min(count - 1, colors.length - 1)];
