@@ -6,23 +6,42 @@ document.addEventListener('DOMContentLoaded', () => {
       `[data-last-delta][data-equipment-id="${equipmentId}"]`,
     );
 
-    async function update() {
+    let lastTs = null;
+
+    const existing = cell.textContent.trim();
+    if (existing && existing !== '–') {
+      lastTs = Date.parse(`${existing.replace(' ', 'T')}Z`);
+    }
+
+    function formatLocal(dt) {
+      const pad = (n) => String(n).padStart(2, '0');
+      return (
+        `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}` +
+        ` ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`
+      );
+    }
+
+    function updateDelta() {
+      if (!deltaCell || !lastTs) {
+        return;
+      }
+      const delta = Math.max(0, Date.now() - lastTs);
+      const days = Math.floor(delta / 86400000);
+      const hours = Math.floor((delta % 86400000) / 3600000);
+      const minutes = Math.floor((delta % 3600000) / 60000);
+      deltaCell.textContent = `${days} j ${hours} h ${minutes} min`;
+    }
+
+    async function fetchLast() {
       try {
         const resp = await fetch(`/equipment/${equipmentId}/last.geojson`);
         const data = await resp.json();
-        if (!data.features || data.features.length === 0) {
-          return;
-        }
-        const ts = data.features[0].properties.timestamp;
-        const dt = new Date(ts);
-        cell.textContent = dt.toISOString().replace('T', ' ').substring(0, 19);
-        const now = new Date();
-        const delta = now.getTime() - dt.getTime();
-        const days = Math.floor(delta / 86400000);
-        const hours = Math.floor((delta % 86400000) / 3600000);
-        const minutes = Math.floor((delta % 3600000) / 60000);
-        if (deltaCell) {
-          deltaCell.textContent = `${days} j ${hours} h ${minutes} min`;
+        if (data.features && data.features.length > 0) {
+          const ts = data.features[0].properties.timestamp;
+          const dt = new Date(ts);
+          lastTs = dt.getTime();
+          cell.textContent = formatLocal(dt);
+          updateDelta();
         }
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -30,8 +49,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    update();
-    setInterval(update, 60000);
+    fetchLast();
+    setInterval(fetchLast, 60000);
+    updateDelta();
+    setInterval(updateDelta, 60000);
   });
 });
 
