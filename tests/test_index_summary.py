@@ -41,6 +41,7 @@ def test_index_shows_last_seen_from_positions(make_app):
             )
         )
         db.session.commit()
+        eq_id = eq.id
 
     resp = client.get("/")
     assert resp.status_code == 200
@@ -53,7 +54,13 @@ def test_index_shows_last_seen_from_positions(make_app):
     assert row is not None
     cells = row.find_all("td")
     # Dernière position is the 2nd column
-    assert cells[1].text.strip().startswith("2023-01-01 12:00:00")
+    last_cell = cells[1]
+    assert last_cell.text.strip().startswith("2023-01-01 12:00:00")
+    assert "data-last-position" in last_cell.attrs
+    assert last_cell["data-equipment-id"] == str(eq_id)
+    delta_cell = cells[5]
+    assert "data-last-delta" in delta_cell.attrs
+    assert delta_cell["data-equipment-id"] == str(eq_id)
 
 
 def test_index_uses_computed_total_hectares(make_app):
