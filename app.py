@@ -589,12 +589,10 @@ def create_app(
         if not eq:
             return redirect(url_for('admin', msg='Équipement introuvable'))
         include = request.form.get('include')
-        if include is None:
-            # Fallback: toggle if value not provided
-            eq.include_in_analysis = not bool(getattr(eq, 'include_in_analysis', True))
-        else:
-            # treat '1'/'true' as True, else False
-            eq.include_in_analysis = str(include).lower() in ('1', 'true', 'on', 'yes')
+        # Include in analysis if checkbox present in POST data, otherwise exclude
+        eq.include_in_analysis = str(include).lower() in (
+            '1', 'true', 'on', 'yes'
+        )
         db.session.commit()
         return redirect(url_for('admin', msg='Préférence enregistrée'))
 
