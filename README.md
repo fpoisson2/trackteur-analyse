@@ -131,6 +131,7 @@ Notes:
 
 - Les timestamps acceptés: UNIX (en secondes ou millisecondes), ISO8601 (`...Z` ou `+00:00`), ou `YYYY-MM-DD HH:MM:SS`.
 - Les champs `latitude`/`longitude` peuvent être fournis soit directement, soit via `coords: { latitude, longitude }`.
+- Le champ optionnel `battery` (ou `batt`) permet de transmettre le niveau de batterie de l'appareil.
 - L’ingestion OsmAnd met à jour `Equipment.last_position` et ajoute des lignes `Position` mais ne déclenche pas d’analyse immédiate (elle reste planifiée).
 
 ## Production

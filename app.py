@@ -220,6 +220,13 @@ def create_app(
                             "VARCHAR DEFAULT 'tractor'"
                         )
                     )
+            if "battery_level" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN battery_level FLOAT"
+                        )
+                    )
         if "position" in tables:
             pos_cols = [c["name"] for c in inspector.get_columns("position")]
             if "track_id" not in pos_cols:
@@ -752,6 +759,7 @@ def create_app(
                 if lat is None or lon is None:
                     continue
                 ts_val = entry.get('timestamp') or entry.get('time')
+                batt_val = entry.get('battery') or entry.get('batt')
                 try:
                     ts = _parse_timestamp(ts_val) if ts_val is not None else datetime.utcnow()
                 except BadRequest:
@@ -774,6 +782,11 @@ def create_app(
                     )
                 if latest_ts is None or ts_naive > latest_ts:
                     latest_ts = ts_naive
+                if batt_val is not None:
+                    try:
+                        eq.battery_level = float(batt_val)
+                    except (TypeError, ValueError):
+                        pass
             if latest_ts is not None:
                 eq.last_position = latest_ts
 
@@ -817,6 +830,7 @@ def create_app(
                     'longitude': float(form.get('lon')),
                 },
                 'timestamp': ts or datetime.utcnow().isoformat() + 'Z',
+                'battery': form.get('battery') or form.get('batt'),
             })
         elif form.get('location'):
             try:
@@ -828,6 +842,7 @@ def create_app(
                         'longitude': float(lon_s.strip()),
                     },
                     'timestamp': ts or datetime.utcnow().isoformat() + 'Z',
+                    'battery': form.get('battery') or form.get('batt'),
                 })
             except Exception:
                 raise BadRequest('Invalid location parameter')
@@ -903,6 +918,7 @@ def create_app(
                 "delta_seconds": delta_seconds,
                 "ratio_eff": ratio_eff,
                 "delta_str": delta_str,
+                "battery_level": eq.battery_level,
             })
 
         # Normalisation des critères
