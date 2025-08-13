@@ -18,6 +18,7 @@ def test_index_source_badge_and_last_geojson(make_app):
         eq = Equipment.query.first()
         eq.id_traccar = eq.id_traccar or 1
         eq.osmand_id = None
+        eq.marker_icon = 'car'
         # Add a last position
         ts = datetime(2023, 1, 1, 15, 0, 0)
         db.session.add(Position(equipment_id=eq.id, latitude=1.0, longitude=2.0, timestamp=ts))
@@ -45,9 +46,11 @@ def test_index_source_badge_and_last_geojson(make_app):
     data = r2.get_json()
     assert data["type"] == "FeatureCollection"
     assert len(data["features"]) == 1
-    geom = data["features"][0]["geometry"]
+    feature = data["features"][0]
+    geom = feature["geometry"]
     assert geom["type"] == "Point"
     assert geom["coordinates"] == [2.0, 1.0]
+    assert feature["properties"]["icon"] == "car"
 
 
 @pytest.mark.usefixtures("base_make_app")
