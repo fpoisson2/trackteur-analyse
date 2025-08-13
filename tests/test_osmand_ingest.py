@@ -1,4 +1,5 @@
 import json
+import gzip
 from datetime import datetime
 
 import pytest
@@ -64,6 +65,38 @@ def test_osmand_json_creates_position(make_app):
         assert pos is not None
         assert abs(pos.latitude - 45.0) < 1e-9
         assert abs(pos.longitude - 3.0) < 1e-9
+
+
+@pytest.mark.usefixtures("base_make_app")
+def test_osmand_gzip_json_creates_positions(make_app):
+    app = make_app()
+    with app.app_context():
+        client = app.test_client()
+        payload = {
+            "device_id": "gz-1",
+            "locations": [
+                {
+                    "coords": {"latitude": 1.0, "longitude": 2.0},
+                    "timestamp": "2024-01-01T00:00:00Z",
+                },
+                {
+                    "coords": {"latitude": 1.1, "longitude": 2.1},
+                    "timestamp": "2024-01-01T00:01:00Z",
+                },
+            ],
+        }
+        body = gzip.compress(json.dumps(payload).encode("utf-8"))
+        resp = client.post(
+            "/osmand",
+            data=body,
+            content_type="application/json",
+            headers={"Content-Encoding": "gzip"},
+        )
+        assert resp.status_code == 200
+        eq = Equipment.query.filter_by(osmand_id="gz-1").first()
+        assert eq is not None
+        cnt = Position.query.filter_by(equipment_id=eq.id).count()
+        assert cnt == 2
 
 
 @pytest.mark.usefixtures("base_make_app")

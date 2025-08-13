@@ -112,7 +112,7 @@ Exemples d’appels:
 /osmand?deviceid=48241179&lat=45.1234&lon=3.9876&timestamp=2024-08-10T12:34:56Z&token=SECRETTOKEN
 ```
 
-- JSON pour un seul appareil:
+- JSON pour un seul appareil (optionnellement compressé en gzip avec `Content-Encoding: gzip`):
 
 ```
 POST /osmand
@@ -126,21 +126,7 @@ Content-Type: application/json
   ]
 }
 ```
-
-- JSON “bulk” pour plusieurs appareils:
-
-```
-POST /osmand
-Content-Type: application/json
-
-{
-  "devices": [
-    { "device_id": "48241179", "locations": [ {"latitude": 45.1, "longitude": 3.9} ] },
-    { "device_id": "tractor-b", "locations": [ {"coords": {"latitude": 45.2, "longitude": 4.0}, "time": "2024-08-10 13:00:00"} ] }
-  ]
-}
-```
-
+Le même JSON peut être envoyé compressé en gzip en ajoutant l'en-tête `Content-Encoding: gzip`.
 Notes:
 
 - Les timestamps acceptés: UNIX (en secondes ou millisecondes), ISO8601 (`...Z` ou `+00:00`), ou `YYYY-MM-DD HH:MM:SS`.

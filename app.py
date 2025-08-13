@@ -2,6 +2,8 @@ import os
 import logging
 import time
 import threading
+import json
+import gzip
 
 import requests
 from flask import Flask, render_template, request, redirect, url_for, jsonify
@@ -733,7 +735,7 @@ def create_app(
     @csrf.exempt
     @app.route('/osmand', methods=['GET', 'POST'])
     def osmand_ingest():
-        # Accept OsmAnd-like payloads: query params, single JSON, or bulk devices JSON
+        # Accept OsmAnd-like payloads: query params or JSON for a single device
         def ingest_one(device_id: str, locs: list[dict]) -> None:
             eq = _ensure_equipment(str(device_id))
             if not _auth_ok(eq):
@@ -775,19 +777,21 @@ def create_app(
             if latest_ts is not None:
                 eq.last_position = latest_ts
 
-        if request.is_json:
-            data = request.get_json(silent=True) or {}
-            # Bulk shape: { devices: [ { device_id, locations: [...] }, ... ] }
+        raw = request.get_data() or b""
+        if request.headers.get('Content-Encoding') == 'gzip':
+            try:
+                raw = gzip.decompress(raw)
+            except OSError:
+                raise BadRequest('Invalid gzip payload')
+        data = None
+        if raw:
+            try:
+                data = json.loads(raw.decode('utf-8'))
+            except Exception:
+                data = None
+        if isinstance(data, dict):
             if isinstance(data.get('devices'), list):
-                for dev in data['devices']:
-                    did = dev.get('device_id') or dev.get('deviceid') or dev.get('id')
-                    locs = dev.get('locations') or []
-                    if not did or not isinstance(locs, list):
-                        continue
-                    ingest_one(str(did), locs)
-                db.session.commit()
-                return ("OK", 200)
-            # Single device payload
+                return ("Multiple devices not supported", 400)
             device_id = data.get('device_id') or data.get('deviceid') or data.get('id')
             locations: list[dict] = []
             if 'locations' in data and isinstance(data['locations'], list):
