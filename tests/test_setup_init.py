@@ -110,7 +110,39 @@ def test_schema_upgrade_adds_tracks(tmp_path):
         insp = inspect(db.engine)
         assert "track" in insp.get_table_names()
         cols = [c["name"] for c in insp.get_columns("position")]
-        assert "track_id" in cols
+    assert "track_id" in cols
+
+
+def test_schema_upgrade_adds_marker_icon(tmp_path):
+    """Old databases are upgraded with marker_icon column."""
+    db_file = tmp_path / "old_icon.db"
+    from sqlalchemy import create_engine, text, inspect
+
+    engine = create_engine(f"sqlite:///{db_file}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE equipment (\n"
+                "id INTEGER PRIMARY KEY,\n"
+                "id_traccar INTEGER NOT NULL,\n"
+                "name VARCHAR NOT NULL,\n"
+                "token_api VARCHAR,\n"
+                "last_position DATETIME,\n"
+                "total_hectares FLOAT,\n"
+                "distance_between_zones FLOAT\n"
+                ")"
+            )
+        )
+
+    app = create_app(start_scheduler=False, run_initial_analysis=False)
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_file}"
+    client = app.test_client()
+    client.get("/setup")
+
+    with app.app_context():
+        insp = inspect(db.engine)
+        cols = [c["name"] for c in insp.get_columns("equipment")]
+    assert "marker_icon" in cols
 
 
 def test_initial_analysis_upgrades_before_processing(tmp_path, monkeypatch):

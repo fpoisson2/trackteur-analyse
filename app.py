@@ -210,6 +210,14 @@ def create_app(
                             "BOOLEAN DEFAULT 1"
                         )
                     )
+            if "marker_icon" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN marker_icon "
+                            "VARCHAR DEFAULT 'tractor'"
+                        )
+                    )
         if "position" in tables:
             pos_cols = [c["name"] for c in inspector.get_columns("position")]
             if "track_id" not in pos_cols:
