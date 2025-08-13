@@ -7,9 +7,12 @@ Ce fichier `Agents.md` fournit des directives claires pour OpenAI Codex et autre
 ## 📁 Structure du projet pour Codex
 
 - `/` (racine) :
-  - `app.py` : application Flask principale et routes
+  - `app.py` : application Flask (factory) et enregistrement des blueprints + planificateur
   - `models.py` : modèles SQLAlchemy (User, Equipment, Position, DailyZone)
   - `zone.py` : logique principale pour le clustering GPS et le calcul de surfaces
+- `/routes` : modules de routes (évolution en cours)
+  - `osmand.py` : point d’entrée d’ingestion OsmAnd (JSON/batch)
+  - `equipment.py` : endpoints cartes/GeoJSON par équipement (à terme)
 - `/templates` : gabarits Jinja2 utilisés par Flask
 - `/static` : fichiers statiques (exports de carte, CSS)
 - `/instance` : base de données SQLite locale (`trackteur.db`)
@@ -30,7 +33,7 @@ Ce fichier `Agents.md` fournit des directives claires pour OpenAI Codex et autre
 ### Bonnes pratiques Flask
 
 - Utiliser **Flask-Login** pour la gestion des utilisateurs
-- Ajouter les nouvelles routes dans `app.py` (ou via Blueprint futur)
+- Ajouter les nouvelles routes via des Blueprints dans `/routes` (préféré) ou `app.py` si exceptionnel
 - Réutiliser les layouts Bootstrap existants dans les templates HTML
 - L'initialisation de la base s'effectue via `@app.before_first_request`
 - Restreindre les routes d'administration (`/admin`, `/users`, `/initdb`)
@@ -53,6 +56,7 @@ Les agents peuvent être exécutés automatiquement ou manuellement :
 | Agent                      | Fréquence        | Déclenchement |
 |----------------------------|------------------|----------------|
 | `analyseur_zones_journalières` | chaque nuit      | APScheduler    |
+| `suivi_positions_temps_réel`   | chaque minute    | APScheduler    |
 | `analyse_initiale`         | au démarrage     | automatique |
 | `rapport_par_tracteur`     | futur            | script manuel  |
 | `verificateur_inactivite`  | futur            | planifié       |
@@ -115,3 +119,13 @@ pytest --cov=.
 3. S’assurer que tous les tests passent
 4. Ne pas exposer d’informations sensibles
 5. Limiter chaque PR à une seule fonctionnalité
+### Détails des agents
+
+- `suivi_positions_temps_réel`:
+  - Récupère les positions les plus récentes depuis Traccar pour chaque équipement associé (sans lancer d’analyse)
+  - Met à jour `Position` et le champ `Equipment.last_position`
+  - Fréquence: intervalle 1 minute
+
+### Champs du modèle Equipment
+
+- `include_in_analysis` (bool): permet d’exclure un équipement de l’analyse tout en continuant de suivre sa position (Traccar ou OsmAnd). Modifiable depuis l’admin.

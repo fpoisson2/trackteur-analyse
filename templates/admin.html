@@ -130,24 +130,78 @@
       </div>
 
       <!-- Cases à cocher -->
-      <h5 class="mb-2">Équipements disponibles :</h5>
-      <div class="mb-4">
-        {% for dev in devices %}
-        <div class="form-check form-check-inline mb-2">
-          <input class="form-check-input"
-                 type="checkbox"
-                 name="equip_ids"
-                 value="{{ dev.id }}"
-                 id="dev{{ dev.id }}"
-                 {% if dev.id in selected_ids %}checked{% endif %}>
-          <label class="form-check-label" for="dev{{ dev.id }}">{{ dev.name }}</label>
+      <div class="card mb-4">
+        <div class="card-header fw-bold">Équipements disponibles</div>
+        <div class="card-body">
+          {% if devices %}
+          {% for dev in devices %}
+          <div class="form-check form-check-inline mb-2">
+            <input class="form-check-input"
+                   type="checkbox"
+                   name="equip_ids"
+                   value="{{ dev.id }}"
+                   id="dev{{ dev.id }}"
+                   {% if dev.id in selected_ids %}checked{% endif %}>
+            <label class="form-check-label" for="dev{{ dev.id }}">{{ dev.name }}</label>
+          </div>
+          {% endfor %}
+          {% else %}
+          <div class="text-muted">Aucun équipement Traccar détecté pour le moment.</div>
+          {% endif %}
         </div>
-        {% endfor %}
       </div>
 
       <button type="submit" class="btn btn-primary">Enregistrer la configuration</button>
       <button type="submit" formaction="{{ url_for('reanalyze_all') }}" formmethod="post" class="btn btn-danger ms-2">Tout réanalyser</button>
     </form>
+
+    <hr class="my-4">
+    <div class="card">
+      <div class="card-header fw-bold">Ajouter un appareil via OsmAnd</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('add_osmand_device') }}" class="row g-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-md-4">
+            <label class="form-label">Nom</label>
+            <input type="text" class="form-control" name="osmand_name" placeholder="Tracteur 1" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">ID appareil</label>
+            <input type="text" class="form-control" name="osmand_id" placeholder="ex: 48241179" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Token (optionnel)</label>
+            <input type="text" class="form-control" name="osmand_token" placeholder="Clé secrète">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-success" type="submit">Ajouter</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% if osmand_devices %}
+    <div class="mt-4">
+      <div class="card">
+        <div class="card-header fw-bold">Appareils OsmAnd configurés</div>
+        <ul class="list-group list-group-flush">
+        {% for e in osmand_devices %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <span>
+            <strong>{{ e.name }}</strong>
+            <small class="text-muted">(ID : {{ e.osmand_id }})</small>
+          </span>
+          {% if e.token_api %}
+          <span class="badge text-bg-secondary">token requis</span>
+          {% else %}
+          <span class="badge text-bg-light">sans token</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -191,5 +245,47 @@
     }
     checkStatus();
   </script>
+
+  <div class="container mt-4">
+    <h5 class="mb-3">Options par équipement</h5>
+    {% if all_equipments %}
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Source</th>
+            <th>Inclure dans l'analyse</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in all_equipments %}
+          <tr>
+            <td>{{ e.name }}</td>
+            <td>
+              {% if e.osmand_id and e.id_traccar == 0 %}
+                <span class="badge text-bg-info">OsmAnd</span>
+              {% else %}
+                <span class="badge text-bg-secondary">Traccar</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('toggle_analysis', eq_id=e.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="include" value="{{ 1 if e.include_in_analysis else 0 }}">
+                <div class="form-check form-switch d-inline-flex align-items-center">
+                  <input class="form-check-input" type="checkbox" role="switch"
+                         {% if e.include_in_analysis %}checked{% endif %}
+                         onchange="this.previousElementSibling.value=this.checked?1:0; this.form.submit();">
+                </div>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
 </body>
 </html>

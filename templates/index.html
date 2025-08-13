@@ -72,6 +72,14 @@
               <a href="{{ url_for('equipment_detail', equipment_id=eq.id) }}">
                 {{ eq.name }}
               </a>
+              {% if eq.source == 'traccar' %}
+                <span class="badge text-bg-secondary ms-1">Traccar</span>
+              {% else %}
+                <span class="badge text-bg-info ms-1">OsmAnd</span>
+              {% endif %}
+              {% if not eq.include_in_analysis %}
+                <span class="badge text-bg-warning ms-1">suivi seul</span>
+              {% endif %}
             </td>
             <td>{{ eq.last_seen or '–' }}</td>
             <td>{{ eq.total_hectares|round(2) }}</td>

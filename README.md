@@ -16,6 +16,7 @@ Trackteur Analyse interroge l'API Traccar, agrège les positions par jour et cal
 7. [Structure du projet](#structure-du-projet)
 8. [Contribution](#contribution)
 9. [Licence](#licence)
+10. [OsmAnd](#osmand)
 
 ## Fonctionnalités
 - Authentification avec gestion d'un utilisateur administrateur
@@ -94,6 +95,57 @@ Pour exécuter l'application comme un service systemd :
    sudo systemctl enable --now trackteur-analyse.service
    ```
 Accédez à [http://localhost:5000](http://localhost:5000). La page d'accueil liste les équipements, leur dernière position et les surfaces calculées. Vous pouvez lancer une analyse manuelle ou consulter le détail d'un équipement (zones par jour et carte interactive). Une analyse automatique a lieu chaque nuit à 2 h.
+
+## OsmAnd
+
+En plus de Traccar, l’application peut ingérer des positions via un endpoint compatible OsmAnd.
+
+- Endpoint: `POST /osmand` (JSON) ou `GET /osmand` (query)
+- Authentification: par équipement via le champ `token_api` (facultatif). Si un token est renseigné sur l’équipement, il doit être fourni soit en paramètre `token=...`, soit dans l’en-tête `Authorization: Bearer ...` ou `X-Token: ...`.
+- Appairage: créez un équipement OsmAnd dans la page Admin (champ “ID appareil”). Si un ID inconnu envoie des positions, un équipement est créé automatiquement avec `id_traccar=0` et `osmand_id`.
+
+Exemples d’appels:
+
+- Requête GET simple:
+
+```
+/osmand?deviceid=48241179&lat=45.1234&lon=3.9876&timestamp=2024-08-10T12:34:56Z&token=SECRETTOKEN
+```
+
+- JSON pour un seul appareil:
+
+```
+POST /osmand
+Content-Type: application/json
+
+{
+  "device_id": "48241179",
+  "locations": [
+    { "coords": {"latitude": 45.12, "longitude": 3.98}, "timestamp": "2024-08-10T12:34:56Z" },
+    { "latitude": 45.13, "longitude": 3.99, "timestamp": 1723290000 }
+  ]
+}
+```
+
+- JSON “bulk” pour plusieurs appareils:
+
+```
+POST /osmand
+Content-Type: application/json
+
+{
+  "devices": [
+    { "device_id": "48241179", "locations": [ {"latitude": 45.1, "longitude": 3.9} ] },
+    { "device_id": "tractor-b", "locations": [ {"coords": {"latitude": 45.2, "longitude": 4.0}, "time": "2024-08-10 13:00:00"} ] }
+  ]
+}
+```
+
+Notes:
+
+- Les timestamps acceptés: UNIX (en secondes ou millisecondes), ISO8601 (`...Z` ou `+00:00`), ou `YYYY-MM-DD HH:MM:SS`.
+- Les champs `latitude`/`longitude` peuvent être fournis soit directement, soit via `coords: { latitude, longitude }`.
+- L’ingestion OsmAnd met à jour `Equipment.last_position` et ajoute des lignes `Position` mais ne déclenche pas d’analyse immédiate (elle reste planifiée).
 
 ## Production
 

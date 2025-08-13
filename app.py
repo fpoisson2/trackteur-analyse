@@ -29,6 +29,7 @@ import zone
 from datetime import datetime, date, timedelta, timezone
 from typing import Iterable, Any
 from werkzeug.datastructures import MultiDict
+from werkzeug.exceptions import BadRequest
 
 reanalysis_progress = {
     "running": False,
@@ -42,7 +43,8 @@ def create_app(
     start_scheduler: bool = True, run_initial_analysis: bool = True
 ):
     app = Flask(__name__)
-    CSRFProtect(app)
+    csrf = CSRFProtect()
+    csrf.init_app(app)
     reanalysis_progress.update(
         {"running": False, "current": 0, "total": 0, "equipment": ""}
     )
@@ -190,6 +192,22 @@ def create_app(
                         text(
                             "ALTER TABLE equipment ADD COLUMN "
                             "relative_hectares FLOAT DEFAULT 0.0"
+                        )
+                    )
+            if "osmand_id" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN osmand_id "
+                            "VARCHAR UNIQUE"
+                        )
+                    )
+            if "include_in_analysis" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN include_in_analysis "
+                            "BOOLEAN DEFAULT 1"
                         )
                     )
         if "position" in tables:
@@ -422,7 +440,7 @@ def create_app(
         form = AdminConfigForm()
         try:
             devices = zone.fetch_devices()
-        except requests.exceptions.HTTPError as exc:
+        except (requests.exceptions.HTTPError, requests.exceptions.RequestException) as exc:
             app.logger.error("Device fetch failed: %s", exc)
             devices = []
             error = (
@@ -472,7 +490,29 @@ def create_app(
             message=message,
             error=error,
             form=form,
+            osmand_devices=Equipment.query.filter(Equipment.osmand_id.isnot(None)).all(),
+            all_equipments=Equipment.query.all(),
         )
+
+    @app.route('/admin/add_osmand', methods=['POST'])
+    @login_required
+    def add_osmand_device():
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+        name = request.form.get('osmand_name', '').strip()
+        devid = request.form.get('osmand_id', '').strip()
+        token = request.form.get('osmand_token', '').strip()
+        if not name or not devid:
+            return redirect(url_for('admin', msg='Nom et ID requis'))
+        existing = Equipment.query.filter_by(osmand_id=devid).first()
+        if existing:
+            return redirect(url_for('admin', msg='ID déjà existant'))
+        eq = Equipment(id_traccar=0, name=name, osmand_id=devid)
+        if token:
+            eq.token_api = token
+        db.session.add(eq)
+        db.session.commit()
+        return redirect(url_for('admin', msg='Appareil OsmAnd ajouté'))
 
     @app.route('/reanalyze_all', methods=['POST'])
     @login_required
@@ -493,7 +533,10 @@ def create_app(
                 )
             save_config(request.form, devices)
 
-        equipment_ids = [e.id for e in Equipment.query.all()]
+        equipment_ids = [
+            e.id for e in Equipment.query.all()
+            if getattr(e, 'include_in_analysis', True)
+        ]
         reanalysis_progress.update(
             {
                 "running": True,
@@ -512,7 +555,21 @@ def create_app(
                     if not eq:
                         continue
                     reanalysis_progress["equipment"] = eq.name
-                    zone.process_equipment(eq, since=start_of_year)
+                    # Skip excluded equipments
+                    if hasattr(eq, 'include_in_analysis') and not (eq.include_in_analysis or False):
+                        reanalysis_progress["current"] = idx
+                        continue
+                    # Use Traccar fetch or local positions depending on equipment
+                    if getattr(eq, 'id_traccar', None):
+                        try:
+                            zone.process_equipment(eq, since=start_of_year)
+                        except Exception as exc:
+                            app.logger.exception("process_equipment failed: %s", exc)
+                    else:
+                        try:
+                            zone.recalculate_hectares_from_positions(eq.id, since_date=start_of_year)
+                        except Exception as exc:
+                            app.logger.exception("recalculate failed: %s", exc)
                     db.session.commit()
                     reanalysis_progress["current"] = idx
                 reanalysis_progress["running"] = False
@@ -522,6 +579,24 @@ def create_app(
         return redirect(
             url_for('admin', msg="Analyse relancée en arrière-plan")
         )
+
+    @app.route('/admin/toggle_analysis/<int:eq_id>', methods=['POST'])
+    @login_required
+    def toggle_analysis(eq_id: int):
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+        eq = db.session.get(Equipment, eq_id)
+        if not eq:
+            return redirect(url_for('admin', msg='Équipement introuvable'))
+        include = request.form.get('include')
+        if include is None:
+            # Fallback: toggle if value not provided
+            eq.include_in_analysis = not bool(getattr(eq, 'include_in_analysis', True))
+        else:
+            # treat '1'/'true' as True, else False
+            eq.include_in_analysis = str(include).lower() in ('1', 'true', 'on', 'yes')
+        db.session.commit()
+        return redirect(url_for('admin', msg='Préférence enregistrée'))
 
     @app.route('/analysis_status')
     @login_required
@@ -593,6 +668,164 @@ def create_app(
             add_form=add_form, reset_form=reset_form, delete_form=delete_form
         )
 
+    # -------------------- OsmAnd ingest endpoint --------------------
+    def _parse_timestamp(val: str | int | float) -> datetime:
+        if isinstance(val, (int, float)):
+            # seconds or milliseconds
+            ts = float(val)
+            if ts > 1e12:
+                ts /= 1000.0
+            return datetime.utcfromtimestamp(ts)
+        s = str(val).strip()
+        # epoch
+        if s.isdigit():
+            ts = float(s)
+            if ts > 1e12:
+                ts /= 1000.0
+            return datetime.utcfromtimestamp(ts)
+        # ISO8601
+        try:
+            if s.endswith('Z'):
+                s = s.replace('Z', '+00:00')
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+        except Exception:
+            pass
+        # Fallback format yyyy-MM-dd HH:mm:ss
+        try:
+            return datetime.strptime(s, '%Y-%m-%d %H:%M:%S')
+        except Exception:
+            raise BadRequest('Invalid timestamp format')
+
+    def _ensure_equipment(device_id: str) -> Equipment:
+        eq = Equipment.query.filter_by(osmand_id=device_id).first()
+        if eq:
+            return eq
+        # Create new equipment tracked via OsmAnd; use id_traccar=0
+        name = f"Device {device_id}"
+        eq = Equipment(id_traccar=0, name=name, osmand_id=device_id)
+        db.session.add(eq)
+        db.session.commit()
+        return eq
+
+    def _auth_ok(eq: Equipment) -> bool:
+        token = request.args.get('token') or request.headers.get('X-Token')
+        if not token:
+            auth = request.headers.get('Authorization', '')
+            if auth.lower().startswith('bearer '):
+                token = auth.split(' ', 1)[1].strip()
+        if eq.token_api:
+            return token == eq.token_api
+        # No token configured: accept
+        return True
+
+    @csrf.exempt
+    @app.route('/osmand', methods=['GET', 'POST'])
+    def osmand_ingest():
+        # Accept OsmAnd-like payloads: query params, single JSON, or bulk devices JSON
+        def ingest_one(device_id: str, locs: list[dict]) -> None:
+            eq = _ensure_equipment(str(device_id))
+            if not _auth_ok(eq):
+                raise BadRequest('Unauthorized')
+            latest_ts = None
+            for entry in locs:
+                # Normalize structure from JSON payload
+                if 'coords' in entry:
+                    lat = entry['coords'].get('latitude')
+                    lon = entry['coords'].get('longitude')
+                else:
+                    lat = entry.get('latitude')
+                    lon = entry.get('longitude')
+                if lat is None or lon is None:
+                    continue
+                ts_val = entry.get('timestamp') or entry.get('time')
+                try:
+                    ts = _parse_timestamp(ts_val) if ts_val is not None else datetime.utcnow()
+                except BadRequest:
+                    continue
+                ts_naive = ts.replace(tzinfo=None)
+                existing = Position.query.filter_by(
+                    equipment_id=eq.id,
+                    latitude=float(lat),
+                    longitude=float(lon),
+                    timestamp=ts_naive,
+                ).first()
+                if not existing:
+                    db.session.add(
+                        Position(
+                            equipment_id=eq.id,
+                            latitude=float(lat),
+                            longitude=float(lon),
+                            timestamp=ts_naive,
+                        )
+                    )
+                if latest_ts is None or ts_naive > latest_ts:
+                    latest_ts = ts_naive
+            if latest_ts is not None:
+                eq.last_position = latest_ts
+
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            # Bulk shape: { devices: [ { device_id, locations: [...] }, ... ] }
+            if isinstance(data.get('devices'), list):
+                for dev in data['devices']:
+                    did = dev.get('device_id') or dev.get('deviceid') or dev.get('id')
+                    locs = dev.get('locations') or []
+                    if not did or not isinstance(locs, list):
+                        continue
+                    ingest_one(str(did), locs)
+                db.session.commit()
+                return ("OK", 200)
+            # Single device payload
+            device_id = data.get('device_id') or data.get('deviceid') or data.get('id')
+            locations: list[dict] = []
+            if 'locations' in data and isinstance(data['locations'], list):
+                locations = list(data['locations'])
+            elif 'location' in data and isinstance(data['location'], dict):
+                locations = [data['location']]
+            if not device_id:
+                return ("Missing device id", 400)
+            if not locations:
+                return ("No locations", 400)
+            ingest_one(str(device_id), locations)
+            db.session.commit()
+            return ("OK", 200)
+        # Query/form encoding (single fix)
+        form = request.values
+        device_id = form.get('deviceid') or form.get('id')
+        locations: list[dict] = []
+        if form.get('lat') and form.get('lon'):
+            ts = form.get('timestamp') or form.get('time')
+            locations.append({
+                'coords': {
+                    'latitude': float(form.get('lat')),
+                    'longitude': float(form.get('lon')),
+                },
+                'timestamp': ts or datetime.utcnow().isoformat() + 'Z',
+            })
+        elif form.get('location'):
+            try:
+                lat_s, lon_s = form.get('location').split(',', 1)
+                ts = form.get('timestamp') or form.get('time')
+                locations.append({
+                    'coords': {
+                        'latitude': float(lat_s.strip()),
+                        'longitude': float(lon_s.strip()),
+                    },
+                    'timestamp': ts or datetime.utcnow().isoformat() + 'Z',
+                })
+            except Exception:
+                raise BadRequest('Invalid location parameter')
+        if not device_id:
+            return ("Missing device id", 400)
+        if not locations:
+            return ("No locations", 400)
+        ingest_one(str(device_id), locations)
+        db.session.commit()
+        return ("OK", 200)
+
     @app.route('/')
     @login_required
     def index():
@@ -639,9 +872,17 @@ def create_app(
                 (total_hectares / distance_km) if distance_km else 0.0
             )
 
+            # Determine data source for display
+            if getattr(eq, 'osmand_id', None) and (getattr(eq, 'id_traccar', 0) == 0):
+                source = 'osmand'
+            else:
+                source = 'traccar'
+
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
+                "source": source,
+                "include_in_analysis": getattr(eq, 'include_in_analysis', True),
                 "last_seen": last,
                 "total_hectares": round(total_hectares or 0, 2),
                 "relative_hectares": round(rel_hectares, 2),
@@ -699,6 +940,40 @@ def create_app(
             equipment_data=equipment_data,
             message=message
         )
+
+    @app.route('/equipment/<int:equipment_id>/last.geojson')
+    @login_required
+    def equipment_last_geojson(equipment_id):
+        from flask import abort
+        eq = db.session.get(Equipment, equipment_id)
+        if not eq:
+            abort(404)
+        # Find latest position for this equipment
+        pos = (
+            Position.query.filter_by(equipment_id=equipment_id)
+            .order_by(Position.timestamp.desc())
+            .first()
+        )
+        if not pos:
+            return {"type": "FeatureCollection", "features": []}
+        if getattr(eq, 'osmand_id', None) and (getattr(eq, 'id_traccar', 0) == 0):
+            source = 'osmand'
+        else:
+            source = 'traccar'
+        feature = {
+            'type': 'Feature',
+            'id': str(pos.id),
+            'properties': {
+                'timestamp': pos.timestamp.isoformat(),
+                'source': source,
+                'equipment': eq.name,
+            },
+            'geometry': {
+                'type': 'Point',
+                'coordinates': [pos.longitude, pos.latitude],
+            },
+        }
+        return {'type': 'FeatureCollection', 'features': [feature]}
 
     @app.route('/equipment/<int:equipment_id>')
     @login_required
@@ -838,6 +1113,26 @@ def create_app(
         tracks = [
             wkt.loads(t.line_wkt) for t in track_query.all() if t.line_wkt
         ]
+
+        # Compute days that have tracks within the selected period
+        track_days_in_period = set()
+        for t in Track.query.filter_by(equipment_id=equipment_id).all():
+            if not t.start_time or not t.end_time:
+                continue
+            # If a filter is active, keep only overlapping days
+            if filter_start is not None and t.end_time.date() < filter_start:
+                continue
+            if filter_end is not None and t.start_time.date() > filter_end:
+                continue
+            cur = t.start_time.date()
+            last = t.end_time.date()
+            while cur <= last:
+                if (
+                    (filter_start is None or cur >= filter_start)
+                    and (filter_end is None or cur <= filter_end)
+                ):
+                    track_days_in_period.add(cur)
+                cur += timedelta(days=1)
         if tracks:
             track_union = unary_union(tracks)
             tb = track_union.bounds
@@ -853,6 +1148,27 @@ def create_app(
 
         sorted_dates = sorted(dates)
         available_dates = [d.isoformat() for d in sorted_dates]
+
+        # Add explicit rows for days that have tracks but no computed zones
+        # in the selected period (or the auto-selected single day).
+        period_zone_dates = set()
+        for z in agg_period:
+            for dstr in z.get("dates", []):
+                try:
+                    period_zone_dates.add(date.fromisoformat(dstr))
+                except Exception:
+                    continue
+        missing_days = sorted(track_days_in_period - period_zone_dates)
+        for d in missing_days:
+            zones.append(
+                {
+                    "id": f"nozone:{d.isoformat()}",
+                    "dates": d.isoformat(),
+                    "pass_count": 0,
+                    "surface_ha": 0.0,
+                    "no_zone": True,
+                }
+            )
 
         date_value = ""
         if start_date and end_date:
@@ -1127,6 +1443,51 @@ def create_app(
         scheduler.add_job(
             scheduled_job, trigger='cron', hour=hour, id='daily_analysis'
         )
+        # Live position polling every minute (no analysis)
+        def poll_latest_positions():
+            with app.app_context():
+                try:
+                    now = datetime.now(timezone.utc).replace(tzinfo=None)
+                    window_start = now - timedelta(minutes=2)
+                    for eq in Equipment.query.all():
+                        # Only poll devices backed by Traccar
+                        if not getattr(eq, 'id_traccar', None):
+                            continue
+                        try:
+                            positions = zone.fetch_positions(eq.id_traccar, window_start, now)
+                        except Exception:
+                            app.logger.exception("Live fetch failed for %s", eq.name)
+                            continue
+                        latest_ts = None
+                        for p in positions:
+                            try:
+                                ts = datetime.fromisoformat(p['deviceTime'].replace('Z', '+00:00')).replace(tzinfo=None)
+                            except Exception:
+                                continue
+                            existing = Position.query.filter_by(
+                                equipment_id=eq.id,
+                                latitude=p.get('latitude'),
+                                longitude=p.get('longitude'),
+                                timestamp=ts,
+                            ).first()
+                            if not existing:
+                                db.session.add(Position(
+                                    equipment_id=eq.id,
+                                    latitude=p.get('latitude'),
+                                    longitude=p.get('longitude'),
+                                    timestamp=ts,
+                                ))
+                            if latest_ts is None or ts > latest_ts:
+                                latest_ts = ts
+                        if latest_ts is not None:
+                            eq.last_position = latest_ts
+                    db.session.commit()
+                except Exception:
+                    app.logger.exception("Unexpected error during live polling")
+
+        scheduler.add_job(
+            poll_latest_positions, trigger='interval', minutes=1, id='live_positions'
+        )
         scheduler.start()
 
     def initial_analysis():
@@ -1155,7 +1516,10 @@ def create_app(
                 )
                 return
             for eq in Equipment.query.all():
-                zone.process_equipment(eq, since=start_of_year)
+                if getattr(eq, 'id_traccar', None):
+                    zone.process_equipment(eq, since=start_of_year)
+                else:
+                    zone.recalculate_hectares_from_positions(eq.id, since_date=start_of_year)
 
     if run_initial_analysis and not os.environ.get("SKIP_INITIAL_ANALYSIS"):
         initial_analysis()
@@ -1187,5 +1551,5 @@ def create_app(
 if __name__ == '__main__':
     app = create_app()
     debug = os.environ.get('FLASK_DEBUG') == '1'
-    host = '127.0.0.1'
+    host = '0.0.0.0'
     app.run(debug=debug, host=host)

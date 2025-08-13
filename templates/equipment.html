@@ -200,11 +200,19 @@
           </thead>
           <tbody>
             {% for z in zones %}
+            {% if z.no_zone %}
+            <tr class="zone-row table-light text-muted">
+              <td>{{ z.dates }}</td>
+              <td>0</td>
+              <td>0.00</td>
+            </tr>
+            {% else %}
             <tr class="zone-row" data-zone-id="{{ z.id }}">
               <td>{{ z.dates }}</td>
               <td>{{ z.pass_count }}</td>
               <td>{{ z.surface_ha|round(2) }}</td>
             </tr>
+            {% endif %}
             {% endfor %}
           </tbody>
         </table>
@@ -228,6 +236,7 @@
     let zoneLayer;
     let pointLayer;
     let trackLayer;
+    let lastLayer;
     let dateLayers = {};
     let featureLayers = {};
     let skipFetch = false;
@@ -394,6 +403,14 @@
       } else {
         pointLayer.clearLayers();
       }
+      const lp = fetch(`/equipment/${equipmentId}/last.geojson`)
+        .then(r => r.json())
+        .then(lastData => {
+          if (token !== fetchToken) return;
+          lastLayer.clearLayers();
+          lastLayer.addData(lastData);
+        });
+      promises.push(lp);
       return Promise.all(promises);
     }
 
@@ -444,6 +461,20 @@
       }).addTo(map);
       trackLayer = L.geoJSON(null, {
         style: { color: 'blue' }
+      }).addTo(map);
+      lastLayer = L.geoJSON(null, {
+        pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+          radius: 7,
+          color: f.properties && f.properties.source === 'osmand' ? '#0d6efd' : '#28a745',
+          weight: 2,
+          fillColor: '#fff',
+          fillOpacity: 1.0,
+        }),
+        onEachFeature: (feature, layer) => {
+          const ts = feature.properties && feature.properties.timestamp || '';
+          const src = feature.properties && feature.properties.source || '';
+          layer.bindPopup(`<b>Dernière position</b><br>${ts}<br>Source: ${src}`);
+        }
       }).addTo(map);
       const legendHtml = (() => {
         const levels = [1, 2, 3, 4, 5];
