@@ -251,12 +251,6 @@ def create_app(
             return
         if User.query.count() == 0:
             return redirect(url_for('setup'))
-        if Config.query.count() == 0:
-            if current_user.is_authenticated or request.endpoint != 'login':
-                return redirect(url_for('setup'))
-        if Equipment.query.count() == 0:
-            if current_user.is_authenticated or request.endpoint != 'login':
-                return redirect(url_for('setup'))
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
@@ -307,17 +301,7 @@ def create_app(
         # Option de verrouillage complet du setup en production
         if os.environ.get('SETUP_DISABLED') == '1':
             return ('Setup désactivé', 403)
-        # Détermination de l'étape
         if User.query.count() == 0:
-            step = 1
-        elif Config.query.count() == 0:
-            step = 2
-        elif Equipment.query.count() == 0:
-            step = 3
-        else:
-            step = 4
-
-        if step == 1:
             if request.method == 'POST':
                 username = request.form.get('username')
                 password = request.form.get('password')
@@ -326,56 +310,10 @@ def create_app(
                     admin.set_password(password)
                     db.session.add(admin)
                     db.session.commit()
-                    return redirect(url_for('setup'))
+                    return redirect(url_for('login'))
             return render_template('setup_step1.html')
 
-        if step == 2:
-            if request.method == 'POST':
-                url = request.form.get('base_url')
-                token = request.form.get('token')
-                if url and token:
-                    cfg = Config(traccar_url=url, traccar_token=token)
-                    db.session.add(cfg)
-                    db.session.commit()
-                    return redirect(url_for('setup'))
-            return render_template('setup_step2.html')
-
-        if step == 3:
-            error = None
-            try:
-                devices = zone.fetch_devices()
-            except requests.exceptions.HTTPError as exc:
-                app.logger.error("Failed to fetch devices: %s", exc)
-                devices = []
-                error = (
-                    "Impossible de récupérer les équipements. "
-                    "Vérifiez le token ou l'URL."
-                )
-            if request.method == 'POST':
-                ids = {int(x) for x in request.form.getlist('equip_ids')}
-                cfg = Config.query.first()
-                for dev in devices:
-                    if dev['id'] in ids:
-                        eq = Equipment(
-                            id_traccar=dev['id'],
-                            name=dev['name'],
-                            token_api=cfg.traccar_token,
-                        )
-                        db.session.add(eq)
-                db.session.commit()
-                return redirect(url_for('setup'))
-            return render_template(
-                'setup_step3.html', devices=devices, error=error
-            )
-
-        # step 4
-        now = datetime.utcnow()
-        start_of_year = datetime(now.year, 1, 1)
-        processed = []
-        for eq in Equipment.query.all():
-            zone.process_equipment(eq, since=start_of_year)
-            processed.append(eq.name)
-        return render_template('setup_step4.html', devices=processed)
+        return redirect(url_for('login'))
 
     def save_config(
         form: MultiDict[str, str], devices: Iterable[dict[str, Any]]

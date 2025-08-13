@@ -145,6 +145,19 @@ def test_schema_upgrade_adds_marker_icon(tmp_path):
     assert "marker_icon" in cols
 
 
+def test_setup_redirects_when_admin_exists():
+    app = create_app(start_scheduler=False, run_initial_analysis=False)
+    client = app.test_client()
+    with app.app_context():
+        admin = User(username="admin", is_admin=True)
+        admin.set_password("pw")
+        db.session.add(admin)
+        db.session.commit()
+    resp = client.get("/setup")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/login")
+
+
 def test_initial_analysis_upgrades_before_processing(tmp_path, monkeypatch):
     """initial_analysis should run after upgrade_db."""
     inst = tmp_path / "inst"
