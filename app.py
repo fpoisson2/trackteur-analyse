@@ -234,7 +234,7 @@ def create_app(
             if not getattr(app, "_db_init", False):
                 db.create_all()
                 upgrade_db()
-                app._db_init = True
+                app._db_init = True  # type: ignore[attr-defined]
 
     @app.before_request
     def ensure_setup():
@@ -1144,8 +1144,24 @@ def create_app(
             else:
                 bounds = tb
 
+        last = (
+            Position.query.filter_by(equipment_id=equipment_id)
+            .order_by(Position.timestamp.desc())
+            .first()
+        )
+        has_last_position = last is not None
+        if bounds is None and last:
+            delta = 0.0005
+            bounds = (
+                last.longitude - delta,
+                last.latitude - delta,
+                last.longitude + delta,
+                last.latitude + delta,
+            )
+
         sorted_dates = sorted(dates)
         available_dates = [d.isoformat() for d in sorted_dates]
+        has_data = bool(zones or has_tracks or has_last_position)
 
         # Add explicit rows for days that have tracks but no computed zones
         # in the selected period (or the auto-selected single day).
@@ -1194,6 +1210,7 @@ def create_app(
             date_value=date_value,
             show_all=show_all,
             has_tracks=has_tracks,
+            has_data=has_data,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')
