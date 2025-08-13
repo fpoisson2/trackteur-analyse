@@ -45,6 +45,7 @@ class Equipment(db.Model):  # type: ignore[name-defined]
     # Surface unique cumulée (zones dédupliquées entre jours)
     relative_hectares = db.Column(db.Float, default=0.0)
     distance_between_zones = db.Column(db.Float, default=0.0)
+    battery_level = db.Column(db.Float, nullable=True)
 
     positions = db.relationship('Position', backref='equipment', lazy=True)
     daily_zones = db.relationship('DailyZone', backref='equipment', lazy=True)

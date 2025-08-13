@@ -1,9 +1,9 @@
+import gzip
 import json
-from datetime import datetime
 
 import pytest
 
-from models import db, Equipment, Position
+from models import Equipment, Position
 from tests.utils import login, get_csrf
 
 
@@ -67,6 +67,62 @@ def test_osmand_json_creates_position(make_app):
 
 
 @pytest.mark.usefixtures("base_make_app")
+def test_osmand_gzip_json_creates_positions(make_app):
+    app = make_app()
+    with app.app_context():
+        client = app.test_client()
+        payload = {
+            "device_id": "gz-1",
+            "locations": [
+                {
+                    "coords": {"latitude": 1.0, "longitude": 2.0},
+                    "timestamp": "2024-01-01T00:00:00Z",
+                },
+                {
+                    "coords": {"latitude": 1.1, "longitude": 2.1},
+                    "timestamp": "2024-01-01T00:01:00Z",
+                },
+            ],
+        }
+        body = gzip.compress(json.dumps(payload).encode("utf-8"))
+        resp = client.post(
+            "/osmand",
+            data=body,
+            content_type="application/json",
+            headers={"Content-Encoding": "gzip"},
+        )
+        assert resp.status_code == 200
+        eq = Equipment.query.filter_by(osmand_id="gz-1").first()
+        assert eq is not None
+        cnt = Position.query.filter_by(equipment_id=eq.id).count()
+        assert cnt == 2
+
+
+@pytest.mark.usefixtures("base_make_app")
+def test_osmand_json_with_battery_updates_equipment(make_app):
+    app = make_app()
+    with app.app_context():
+        client = app.test_client()
+        payload = {
+            "location": {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "coords": {"latitude": 10.0, "longitude": 20.0},
+                "battery": 88,
+            },
+            "device_id": "bat-1",
+        }
+        resp = client.post(
+            "/osmand",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        eq = Equipment.query.filter_by(osmand_id="bat-1").first()
+        assert eq is not None
+        assert eq.battery_level == 88
+
+
+@pytest.mark.usefixtures("base_make_app")
 def test_admin_add_osmand_device(make_app):
     app = make_app()
     client = app.test_client()
@@ -89,4 +145,3 @@ def test_admin_add_osmand_device(make_app):
         assert eq is not None
         assert eq.name == "Tracteur OsmAnd"
         assert eq.token_api == "secret"
-
