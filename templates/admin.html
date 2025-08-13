@@ -8,6 +8,7 @@
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body>
@@ -255,7 +256,7 @@
           <tr>
             <th>Nom</th>
             <th>Source</th>
-            <th>Inclure dans l'analyse</th>
+            <th>Icône MDI / Analyse</th>
           </tr>
         </thead>
         <tbody>
@@ -270,13 +271,16 @@
               {% endif %}
             </td>
             <td>
-              <form method="post" action="{{ url_for('toggle_analysis', eq_id=e.id) }}" class="d-inline">
+              <form method="post" action="{{ url_for('toggle_analysis', eq_id=e.id) }}" class="d-flex align-items-center gap-2">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" class="form-control form-control-sm w-auto" name="icon" value="{{ e.marker_icon or '' }}" placeholder="p. ex. tractor">
                 <div class="form-check form-switch d-inline-flex align-items-center">
-                  <input class="form-check-input" type="checkbox" role="switch" name="include"
+                  <input type="hidden" name="include" value="0">
+                  <input class="form-check-input" type="checkbox" role="switch" name="include" value="1"
                          {% if e.include_in_analysis %}checked{% endif %}
                          onchange="this.form.submit();">
                 </div>
+                <button type="submit" class="btn btn-sm btn-primary">OK</button>
               </form>
             </td>
           </tr>

@@ -7,6 +7,7 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
@@ -463,16 +464,26 @@
         style: { color: 'blue' }
       }).addTo(map);
       lastLayer = L.geoJSON(null, {
-        pointToLayer: (f, latlng) => L.circleMarker(latlng, {
-          radius: 7,
-          color: f.properties && f.properties.source === 'osmand' ? '#0d6efd' : '#28a745',
-          weight: 2,
-          fillColor: '#fff',
-          fillOpacity: 1.0,
-        }),
+        pointToLayer: (f, latlng) => {
+          const iconName = f.properties && f.properties.icon ? f.properties.icon : 'tractor';
+          const tsStr = f.properties && f.properties.timestamp;
+          let color = '#28a745';
+          if (tsStr) {
+            const ageMs = Date.now() - new Date(tsStr).getTime();
+            if (ageMs > 3600 * 1000) {
+              color = '#6c757d';
+            }
+          } else {
+            color = '#6c757d';
+          }
+          const html = `<i class="mdi mdi-${iconName}" style="font-size:32px;color:${color};"></i>`;
+          return L.marker(latlng, {
+            icon: L.divIcon({ html, className: '', iconSize: [32, 32], iconAnchor: [16, 16] })
+          });
+        },
         onEachFeature: (feature, layer) => {
-          const ts = feature.properties && feature.properties.timestamp || '';
-          const src = feature.properties && feature.properties.source || '';
+          const ts = (feature.properties && feature.properties.timestamp) || '';
+          const src = (feature.properties && feature.properties.source) || '';
           layer.bindPopup(`<b>Dernière position</b><br>${ts}<br>Source: ${src}`);
         }
       }).addTo(map);
