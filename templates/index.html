@@ -67,7 +67,7 @@
         </thead>
         <tbody>
           {% for eq in equipment_data %}
-          <tr>
+          <tr data-eqid="{{ eq.id }}">
             <td>
               <a href="{{ url_for('equipment_detail', equipment_id=eq.id) }}">
                 {{ eq.name }}
@@ -81,11 +81,11 @@
                 <span class="badge text-bg-warning ms-1">suivi seul</span>
               {% endif %}
             </td>
-            <td>{{ eq.last_seen or '–' }}</td>
+            <td class="last-seen">{{ eq.last_seen or '–' }}</td>
             <td>{{ eq.total_hectares|round(2) }}</td>
             <td>{{ eq.relative_hectares|round(2) }}</td>
             <td>{{ eq.distance_km|round(2) }}</td>
-            <td>{{ eq.delta_str }}</td>
+            <td class="delta">{{ eq.delta_str }}</td>
             <td>
               {{ eq.score }}
               {% if eq.rank == 1 %}
@@ -106,6 +106,34 @@
     document.querySelectorAll('.navbar a').forEach(a => {
       a.addEventListener('touchend', function () { window.location.href = this.href; });
     });
+  </script>
+  <script>
+    async function refreshStatus() {
+      try {
+        const resp = await fetch('{{ url_for('equipment_status') }}');
+        if (!resp.ok) {
+          return;
+        }
+        const data = await resp.json();
+        data.forEach(eq => {
+          const row = document.querySelector(`tr[data-eqid="${eq.id}"]`);
+          if (!row) {
+            return;
+          }
+          const last = row.querySelector('.last-seen');
+          const delta = row.querySelector('.delta');
+          if (last) {
+            last.textContent = eq.last_seen || '–';
+          }
+          if (delta) {
+            delta.textContent = eq.delta_str;
+          }
+        });
+      } catch (e) {
+        console.error('refreshStatus', e);
+      }
+    }
+    setInterval(refreshStatus, 10000);
   </script>
 </body>
 </html>
