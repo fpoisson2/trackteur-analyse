@@ -589,10 +589,13 @@ def create_app(
         if not eq:
             return redirect(url_for('admin', msg='Équipement introuvable'))
         include = request.form.get('include')
-        # Include in analysis if checkbox present in POST data, otherwise exclude
-        eq.include_in_analysis = str(include).lower() in (
-            '1', 'true', 'on', 'yes'
-        )
+        if include is not None:
+            eq.include_in_analysis = str(include).lower() in (
+                '1', 'true', 'on', 'yes'
+            )
+        icon = request.form.get('icon')
+        if icon is not None:
+            eq.marker_icon = icon.strip()
         db.session.commit()
         return redirect(url_for('admin', msg='Préférence enregistrée'))
 
@@ -965,6 +968,7 @@ def create_app(
                 'timestamp': pos.timestamp.isoformat(),
                 'source': source,
                 'equipment': eq.name,
+                'icon': getattr(eq, 'marker_icon', 'tractor'),
             },
             'geometry': {
                 'type': 'Point',

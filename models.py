@@ -39,6 +39,7 @@ class Equipment(db.Model):  # type: ignore[name-defined]
     osmand_id = db.Column(db.String, unique=True, nullable=True)
     # Whether this equipment is included in zone analysis (True) or only tracked (False)
     include_in_analysis = db.Column(db.Boolean, default=True)
+    marker_icon = db.Column(db.String, nullable=True, default='tractor')
     last_position = db.Column(db.DateTime)
     total_hectares = db.Column(db.Float, default=0.0)
     # Surface unique cumulée (zones dédupliquées entre jours)
