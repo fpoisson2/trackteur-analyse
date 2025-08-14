@@ -868,20 +868,11 @@ def create_app(
         db.session.commit()
         return ("OK", 200)
 
-    @app.route('/')
-    @login_required
-    def index():
-        # 1) Récupération des équipements
+    def get_equipment_data() -> list[dict[str, Any]]:
         equipments = Equipment.query.all()
-        message = None
-
-        # 2) Plus de lancement manuel d'analyse
-
-        # 3) Préparation des données pour l’affichage
-        equipment_data = []
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+        equipment_data: list[dict[str, Any]] = []
         for eq in equipments:
-            # Fallback pour la dernière position si non renseignée
             last_dt = eq.last_position
             if last_dt is None:
                 last_pos = (
@@ -905,16 +896,10 @@ def create_app(
                 delta_str = "–"
 
             distance_km = (eq.distance_between_zones or 0) / 1000
-            # Utiliser les valeurs mises à jour en tâche de fond
-            total_hectares = (
-                eq.total_hectares or zone.calculate_total_hectares(eq.id)
-            )
+            total_hectares = eq.total_hectares or zone.calculate_total_hectares(eq.id)
             rel_hectares = getattr(eq, "relative_hectares", 0.0) or 0.0
-            ratio_eff = (
-                (total_hectares / distance_km) if distance_km else 0.0
-            )
+            ratio_eff = (total_hectares / distance_km) if distance_km else 0.0
 
-            # Determine data source for display
             if getattr(eq, 'osmand_id', None) and (getattr(eq, 'id_traccar', 0) == 0):
                 source = 'osmand'
             else:
@@ -935,7 +920,6 @@ def create_app(
                 "battery_level": eq.battery_level,
             })
 
-        # Normalisation des critères
         def normalize(values, value, invert=False):
             clean = [v for v in values if v is not None]
             if not clean or value is None:
@@ -974,15 +958,26 @@ def create_app(
             )
 
         equipment_data.sort(key=lambda x: x["score"], reverse=True)
-
         for idx, d in enumerate(equipment_data, start=1):
             d["rank"] = idx
 
+        return equipment_data
+
+    @app.route('/')
+    @login_required
+    def index():
+        message = None
+        equipment_data = get_equipment_data()
         return render_template(
             'index.html',
             equipment_data=equipment_data,
             message=message
         )
+
+    @app.route('/equipment_status')
+    @login_required
+    def equipment_status():
+        return jsonify(get_equipment_data())
 
     @app.route('/equipment/<int:equipment_id>/last.geojson')
     @login_required
