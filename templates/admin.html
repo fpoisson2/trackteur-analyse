@@ -47,8 +47,8 @@
     </div>
   </nav>
 
-  <div class="container">
-    <h1 class="h3 mb-4">Configuration des équipements</h1>
+    <div class="container">
+      <h1 class="h3 mb-4"><i class="bi bi-speedometer2 me-2"></i>Configuration des équipements</h1>
 
     <div
       id="analysis-banner"
@@ -97,8 +97,8 @@
         {% endif %}
       </div>
 
-      <!-- Paramètres de calcul des zones -->
-      <h5 class="mb-2">Paramètres des zones :</h5>
+        <!-- Paramètres de calcul des zones -->
+        <h5 class="mb-2"><i class="bi bi-diagram-2 me-2"></i>Paramètres des zones :</h5>
       <div class="mb-3">
         <label for="eps_meters" class="form-label fw-bold">
           Distance de clustering (m)
@@ -132,7 +132,7 @@
 
       <!-- Cases à cocher -->
       <div class="card mb-4">
-        <div class="card-header fw-bold">Équipements disponibles</div>
+        <div class="card-header fw-bold"><i class="bi bi-list-check me-2"></i>Équipements disponibles</div>
         <div class="card-body">
           {% if devices %}
           {% for dev in devices %}
@@ -158,7 +158,7 @@
 
     <hr class="my-4">
     <div class="card">
-      <div class="card-header fw-bold">Ajouter un appareil via OsmAnd</div>
+      <div class="card-header fw-bold"><i class="bi bi-plus-circle me-2"></i>Ajouter un appareil via OsmAnd</div>
       <div class="card-body">
         <form method="post" action="{{ url_for('add_osmand_device') }}" class="row g-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -184,7 +184,7 @@
     {% if osmand_devices %}
     <div class="mt-4">
       <div class="card">
-        <div class="card-header fw-bold">Appareils OsmAnd configurés</div>
+        <div class="card-header fw-bold"><i class="bi bi-phone me-2"></i>Appareils OsmAnd configurés</div>
         <ul class="list-group list-group-flush">
         {% for e in osmand_devices %}
         <li class="list-group-item d-flex justify-content-between align-items-center">
@@ -247,11 +247,15 @@
     checkStatus();
   </script>
 
-  <div class="container mt-4">
-    <h5 class="mb-3">Options par équipement</h5>
-    {% if all_equipments %}
-    <div class="table-responsive">
-      <table class="table align-middle">
+    <div class="container mt-4">
+      <h5 class="mb-3"><i class="bi bi-sliders me-2"></i>Options par équipement</h5>
+      {% if all_equipments %}
+      <div class="input-group mb-3">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" id="admin-equipment-filter" class="form-control" placeholder="Filtrer les équipements">
+      </div>
+      <div class="table-responsive">
+        <table class="table align-middle" id="admin-equipment-table">
         <thead>
           <tr>
             <th>Nom</th>
@@ -290,5 +294,18 @@
     </div>
     {% endif %}
   </div>
+
+  <script>
+    const adminFilter = document.getElementById('admin-equipment-filter');
+    if (adminFilter) {
+      adminFilter.addEventListener('input', () => {
+        const val = adminFilter.value.toLowerCase();
+        document.querySelectorAll('#admin-equipment-table tbody tr').forEach(row => {
+          const name = row.querySelector('td').textContent.toLowerCase();
+          row.style.display = name.includes(val) ? '' : 'none';
+        });
+      });
+    }
+  </script>
 </body>
 </html>
