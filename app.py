@@ -1105,11 +1105,20 @@ def create_app(
         track_dates = set()
         for t in all_tracks:
             current = t.start_time.date()
-            last = t.end_time.date()
-            while current <= last:
+            last_day = t.end_time.date()
+            while current <= last_day:
                 track_dates.add(current)
                 current += timedelta(days=1)
         dates.update(track_dates)
+
+        last_position = (
+            Position.query.filter_by(equipment_id=equipment_id)
+            .order_by(Position.timestamp.desc())
+            .first()
+        )
+        if last_position:
+            dates.add(last_position.timestamp.date())
+
         has_tracks = bool(all_tracks)
 
         if (
@@ -1249,11 +1258,7 @@ def create_app(
             else:
                 bounds = tb
 
-        last = (
-            Position.query.filter_by(equipment_id=equipment_id)
-            .order_by(Position.timestamp.desc())
-            .first()
-        )
+        last = last_position
         has_last_position = last is not None
         if bounds is None and last:
             delta = 0.0005
