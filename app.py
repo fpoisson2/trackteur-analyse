@@ -888,6 +888,10 @@ def create_app(
                 locations = list(data['locations'])
             elif 'location' in data and isinstance(data['location'], dict):
                 locations = [data['location']]
+            # If battery is provided at top-level, propagate it to entries
+            if 'battery' in data and locations:
+                for entry in locations:
+                    entry.setdefault('battery', data['battery'])
             if not device_id:
                 return ("Missing device id", 400)
             if not locations:

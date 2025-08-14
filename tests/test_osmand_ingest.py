@@ -196,3 +196,33 @@ def test_admin_add_osmand_device(make_app):
         assert eq is not None
         assert eq.name == "Tracteur OsmAnd"
         assert eq.token_api == "secret"
+
+
+@pytest.mark.usefixtures("base_make_app")
+def test_osmand_json_top_level_battery(make_app):
+    app = make_app()
+    with app.app_context():
+        client = app.test_client()
+        payload = {
+            "device_id": "top-bat-1",
+            "battery": 42,
+            "locations": [
+                {
+                    "coords": {"latitude": 12.34, "longitude": 56.78},
+                    "timestamp": "2024-08-14T12:00:00Z",
+                },
+                {
+                    "coords": {"latitude": 12.35, "longitude": 56.79},
+                    "timestamp": "2024-08-14T12:01:00Z",
+                },
+            ],
+        }
+        resp = client.post(
+            "/osmand",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        eq = Equipment.query.filter_by(osmand_id="top-bat-1").first()
+        assert eq is not None
+        assert eq.battery_level == 42
