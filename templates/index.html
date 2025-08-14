@@ -61,6 +61,7 @@
             <th>Ha traités</th>
             <th>Ha uniques</th>
             <th>Distance zones (km)</th>
+            <th>Batterie</th>
             <th>Temps écoulé</th>
             <th>Score</th>
           </tr>
@@ -85,7 +86,14 @@
             <td>{{ eq.total_hectares|round(2) }}</td>
             <td>{{ eq.relative_hectares|round(2) }}</td>
             <td>{{ eq.distance_km|round(2) }}</td>
-            <td class="delta">{{ eq.delta_str }}</td>
+            <td>
+              {% if eq.battery_level is not none %}
+                {{ eq.battery_level|int }}%
+              {% else %}
+                –
+              {% endif %}
+            </td>
+            <td>{{ eq.delta_str }}</td>
             <td>
               {{ eq.score }}
               {% if eq.rank == 1 %}
