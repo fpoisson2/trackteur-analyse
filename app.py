@@ -408,6 +408,12 @@ def create_app(
         if request.method == 'POST':
             if form.validate_on_submit():
                 save_config(request.form, devices)
+                for eq in Equipment.query.all():
+                    icon = request.form.get(f'icon_{eq.id}', '').strip()
+                    include = request.form.get(f'include_{eq.id}', '0')
+                    eq.marker_icon = icon or None
+                    eq.include_in_analysis = include == '1'
+                db.session.commit()
                 cfg = Config.query.first()
                 followed = Equipment.query.all()
                 selected_ids = {e.id_traccar for e in followed}
@@ -534,25 +540,6 @@ def create_app(
         return redirect(
             url_for('admin', msg="Analyse relancée en arrière-plan")
         )
-
-    @app.route('/admin/toggle_analysis/<int:eq_id>', methods=['POST'])
-    @login_required
-    def toggle_analysis(eq_id: int):
-        if not current_user.is_admin:
-            return redirect(url_for('index'))
-        eq = db.session.get(Equipment, eq_id)
-        if not eq:
-            return redirect(url_for('admin', msg='Équipement introuvable'))
-        include = request.form.get('include')
-        if include is not None:
-            eq.include_in_analysis = str(include).lower() in (
-                '1', 'true', 'on', 'yes'
-            )
-        icon = request.form.get('icon')
-        if icon is not None:
-            eq.marker_icon = icon.strip()
-        db.session.commit()
-        return redirect(url_for('admin', msg='Préférence enregistrée'))
 
     @app.route('/analysis_status')
     @login_required

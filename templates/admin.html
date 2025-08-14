@@ -151,9 +151,50 @@
           {% endif %}
         </div>
       </div>
+      {% if all_equipments %}
+      <h5 class="mt-4 mb-3"><i class="bi bi-sliders me-2"></i>Options par équipement</h5>
+      <div class="input-group mb-3">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" id="admin-equipment-filter" class="form-control" placeholder="Filtrer les équipements">
+      </div>
+      <div class="table-responsive mb-4">
+        <table class="table align-middle" id="admin-equipment-table">
+          <thead>
+            <tr>
+              <th>Nom</th>
+              <th>Source</th>
+              <th>Icône MDI / Analyse</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for e in all_equipments %}
+            <tr>
+              <td>{{ e.name }}</td>
+              <td>
+                {% if e.osmand_id and e.id_traccar == 0 %}
+                  <span class="badge text-bg-info">OsmAnd</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">Traccar</span>
+                {% endif %}
+              </td>
+              <td class="d-flex align-items-center gap-2">
+                <input type="text" class="form-control form-control-sm w-auto" name="icon_{{ e.id }}" value="{{ e.marker_icon or '' }}" placeholder="p. ex. tractor">
+                <div class="form-check form-switch d-inline-flex align-items-center">
+                  <input type="hidden" name="include_{{ e.id }}" value="0">
+                  <input class="form-check-input" type="checkbox" role="switch" name="include_{{ e.id }}" value="1" {% if e.include_in_analysis %}checked{% endif %}>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
 
-      <button type="submit" class="btn btn-primary">Enregistrer la configuration</button>
-      <button type="submit" formaction="{{ url_for('reanalyze_all') }}" formmethod="post" class="btn btn-danger ms-2">Tout réanalyser</button>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Enregistrer les modifications</button>
+        <button type="submit" formaction="{{ url_for('reanalyze_all') }}" formmethod="post" class="btn btn-danger">Tout réanalyser</button>
+      </div>
     </form>
 
     <hr class="my-4">
@@ -246,55 +287,6 @@
     }
     checkStatus();
   </script>
-
-    <div class="container mt-4">
-      <h5 class="mb-3"><i class="bi bi-sliders me-2"></i>Options par équipement</h5>
-      {% if all_equipments %}
-      <div class="input-group mb-3">
-        <span class="input-group-text"><i class="bi bi-search"></i></span>
-        <input type="text" id="admin-equipment-filter" class="form-control" placeholder="Filtrer les équipements">
-      </div>
-      <div class="table-responsive">
-        <table class="table align-middle" id="admin-equipment-table">
-        <thead>
-          <tr>
-            <th>Nom</th>
-            <th>Source</th>
-            <th>Icône MDI / Analyse</th>
-          </tr>
-        </thead>
-        <tbody>
-        {% for e in all_equipments %}
-          <tr>
-            <td>{{ e.name }}</td>
-            <td>
-              {% if e.osmand_id and e.id_traccar == 0 %}
-                <span class="badge text-bg-info">OsmAnd</span>
-              {% else %}
-                <span class="badge text-bg-secondary">Traccar</span>
-              {% endif %}
-            </td>
-            <td>
-              <form method="post" action="{{ url_for('toggle_analysis', eq_id=e.id) }}" class="d-flex align-items-center gap-2">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="text" class="form-control form-control-sm w-auto" name="icon" value="{{ e.marker_icon or '' }}" placeholder="p. ex. tractor">
-                <div class="form-check form-switch d-inline-flex align-items-center">
-                  <input type="hidden" name="include" value="0">
-                  <input class="form-check-input" type="checkbox" role="switch" name="include" value="1"
-                         {% if e.include_in_analysis %}checked{% endif %}
-                         onchange="this.form.submit();">
-                </div>
-                <button type="submit" class="btn btn-sm btn-primary">OK</button>
-              </form>
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
-  </div>
-
   <script>
     const adminFilter = document.getElementById('admin-equipment-filter');
     if (adminFilter) {

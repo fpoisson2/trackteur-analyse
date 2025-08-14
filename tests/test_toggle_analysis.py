@@ -1,11 +1,13 @@
+import zone
 from models import db, Equipment
 from tests.utils import login, get_csrf
 
 
-def test_toggle_analysis(make_app):
+def test_toggle_analysis(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
 
     with app.app_context():
         eq = Equipment.query.first()
@@ -13,17 +15,26 @@ def test_toggle_analysis(make_app):
         assert eq.include_in_analysis is True
 
     token = get_csrf(client, "/admin")
-    # Disable inclusion by sending value 0
-    client.post(f"/admin/toggle_analysis/{eq_id}", data={"csrf_token": token, "include": "0"})
+    client.post(
+        "/admin",
+        data={
+            f"include_{eq_id}": "0",
+            f"icon_{eq_id}": "",
+            "csrf_token": token,
+        },
+    )
 
     with app.app_context():
         assert db.session.get(Equipment, eq_id).include_in_analysis is False
 
     token = get_csrf(client, "/admin")
-    # Enable inclusion by sending checkbox value
     client.post(
-        f"/admin/toggle_analysis/{eq_id}",
-        data={"csrf_token": token, "include": "1", "icon": "car"},
+        "/admin",
+        data={
+            f"include_{eq_id}": "1",
+            f"icon_{eq_id}": "car",
+            "csrf_token": token,
+        },
     )
 
     with app.app_context():
