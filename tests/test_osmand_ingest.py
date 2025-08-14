@@ -1,5 +1,6 @@
 import gzip
 import json
+import logging
 
 import pytest
 
@@ -120,6 +121,32 @@ def test_osmand_json_with_battery_updates_equipment(make_app):
         eq = Equipment.query.filter_by(osmand_id="bat-1").first()
         assert eq is not None
         assert eq.battery_level == 88
+
+
+@pytest.mark.usefixtures("base_make_app")
+def test_osmand_json_logs_battery_level(make_app, caplog):
+    app = make_app()
+    with app.app_context():
+        client = app.test_client()
+        payload = {
+            "location": {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "coords": {"latitude": 10.0, "longitude": 20.0},
+                "battery": 55,
+            },
+            "device_id": "log-1",
+        }
+        with caplog.at_level(logging.INFO):
+            resp = client.post(
+                "/osmand",
+                data=json.dumps(payload),
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        assert any(
+            "Device log-1 battery at 55%" in r.getMessage()
+            for r in caplog.records
+        )
 
 
 @pytest.mark.usefixtures("base_make_app")

@@ -785,8 +785,17 @@ def create_app(
                 if batt_val is not None:
                     try:
                         eq.battery_level = float(batt_val)
+                        app.logger.info(
+                            "Device %s battery at %.0f%%",
+                            device_id,
+                            eq.battery_level,
+                        )
                     except (TypeError, ValueError):
-                        pass
+                        app.logger.info(
+                            "Ignoring invalid battery level %r for device %s",
+                            batt_val,
+                            device_id,
+                        )
             if latest_ts is not None:
                 eq.last_position = latest_ts
 
