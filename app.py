@@ -760,6 +760,8 @@ def create_app(
                     continue
                 ts_val = entry.get('timestamp') or entry.get('time')
                 batt_val = entry.get('battery') or entry.get('batt')
+                if isinstance(batt_val, dict):
+                    batt_val = batt_val.get('level')
                 try:
                     ts = _parse_timestamp(ts_val) if ts_val is not None else datetime.utcnow()
                 except BadRequest:
@@ -784,7 +786,10 @@ def create_app(
                     latest_ts = ts_naive
                 if batt_val is not None:
                     try:
-                        eq.battery_level = float(batt_val)
+                        batt_float = float(batt_val)
+                        if batt_float <= 1:
+                            batt_float *= 100
+                        eq.battery_level = batt_float
                         app.logger.info(
                             "Device %s battery at %.0f%%",
                             device_id,

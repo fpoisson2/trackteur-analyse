@@ -124,6 +124,30 @@ def test_osmand_json_with_battery_updates_equipment(make_app):
 
 
 @pytest.mark.usefixtures("base_make_app")
+def test_osmand_json_with_battery_object(make_app):
+    app = make_app()
+    with app.app_context():
+        client = app.test_client()
+        payload = {
+            "location": {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "coords": {"latitude": 10.0, "longitude": 20.0},
+                "battery": {"level": 0.44, "is_charging": False},
+            },
+            "device_id": "bat-obj",
+        }
+        resp = client.post(
+            "/osmand",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        eq = Equipment.query.filter_by(osmand_id="bat-obj").first()
+        assert eq is not None
+        assert eq.battery_level == 44
+
+
+@pytest.mark.usefixtures("base_make_app")
 def test_osmand_json_logs_battery_level(make_app, caplog):
     app = make_app()
     with app.app_context():
@@ -132,7 +156,7 @@ def test_osmand_json_logs_battery_level(make_app, caplog):
             "location": {
                 "timestamp": "2024-01-01T00:00:00Z",
                 "coords": {"latitude": 10.0, "longitude": 20.0},
-                "battery": 55,
+                "battery": {"level": 0.55},
             },
             "device_id": "log-1",
         }
