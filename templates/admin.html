@@ -130,28 +130,6 @@
         {% endif %}
       </div>
 
-      <!-- Cases à cocher -->
-      <div class="card mb-4">
-        <div class="card-header fw-bold"><i class="bi bi-list-check me-2"></i>Équipements disponibles</div>
-        <div class="card-body">
-          {% if devices %}
-          {% for dev in devices %}
-          <div class="form-check form-check-inline mb-2">
-            <input class="form-check-input"
-                   type="checkbox"
-                   name="equip_ids"
-                   value="{{ dev.id }}"
-                   id="dev{{ dev.id }}"
-                   {% if dev.id in selected_ids %}checked{% endif %}>
-            <label class="form-check-label" for="dev{{ dev.id }}">{{ dev.name }}</label>
-          </div>
-          {% endfor %}
-          {% else %}
-          <div class="text-muted">Aucun équipement Traccar détecté pour le moment.</div>
-          {% endif %}
-        </div>
-      </div>
-      {% if all_equipments %}
       <h5 class="mt-4 mb-3"><i class="bi bi-sliders me-2"></i>Options par équipement</h5>
       <div class="input-group mb-3">
         <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -163,32 +141,52 @@
             <tr>
               <th>Nom</th>
               <th>Source</th>
-              <th>Icône MDI / Analyse</th>
+              <th>Type</th>
+              <th>Récupérer</th>
+              <th>Analyse</th>
             </tr>
           </thead>
           <tbody>
-          {% for e in all_equipments %}
+          {% for e in equipment_rows %}
             <tr>
               <td>{{ e.name }}</td>
               <td>
-                {% if e.osmand_id and e.id_traccar == 0 %}
+                {% if e.source == 'osmand' %}
                   <span class="badge text-bg-info">OsmAnd</span>
                 {% else %}
                   <span class="badge text-bg-secondary">Traccar</span>
                 {% endif %}
               </td>
               <td class="d-flex align-items-center gap-2">
-                <input type="text" class="form-control form-control-sm w-auto" name="icon_{{ e.id }}" value="{{ e.marker_icon or '' }}" placeholder="p. ex. tractor">
-                <div class="form-check form-switch d-inline-flex align-items-center">
-                  <input class="form-check-input" type="checkbox" role="switch" name="include_{{ e.id }}" value="1" {% if e.include_in_analysis %}checked{% endif %}>
-                </div>
+                <i class="mdi mdi-{{ e.marker_icon }}"></i>
+                <select class="form-select form-select-sm w-auto" name="type_{{ e.form_id }}">
+                  <option value="tractor" {% if e.marker_icon == 'tractor' %}selected{% endif %}>Tracteur</option>
+                  <option value="combine-harvester" {% if e.marker_icon == 'combine-harvester' %}selected{% endif %}>Moissonneuse</option>
+                  <option value="truck" {% if e.marker_icon == 'truck' %}selected{% endif %}>Camion</option>
+                  <option value="car" {% if e.marker_icon == 'car' %}selected{% endif %}>Voiture</option>
+                  <option value="motorbike" {% if e.marker_icon == 'motorbike' %}selected{% endif %}>Moto</option>
+                  <option value="help-circle-outline" {% if e.marker_icon == 'help-circle-outline' %}selected{% endif %}>Autre</option>
+                </select>
+              </td>
+              <td>
+                {% if e.source == 'traccar' %}
+                <select class="form-select form-select-sm w-auto" name="follow_{{ e.form_id }}">
+                  <option value="1" {% if e.follow %}selected{% endif %}>Oui</option>
+                  <option value="0" {% if not e.follow %}selected{% endif %}>Non</option>
+                </select>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                <select class="form-select form-select-sm w-auto" name="include_{{ e.form_id }}">
+                  <option value="1" {% if e.include_in_analysis %}selected{% endif %}>Oui</option>
+                  <option value="0" {% if not e.include_in_analysis %}selected{% endif %}>Non</option>
+                </select>
               </td>
             </tr>
           {% endfor %}
           </tbody>
         </table>
       </div>
-      {% endif %}
 
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary">Enregistrer les modifications</button>

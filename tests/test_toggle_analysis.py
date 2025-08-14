@@ -12,13 +12,16 @@ def test_toggle_analysis(make_app, monkeypatch):
     with app.app_context():
         eq = Equipment.query.first()
         eq_id = eq.id
+        form_id = f"t{eq.id_traccar}"
         assert eq.include_in_analysis is True
 
     token = get_csrf(client, "/admin")
     client.post(
         "/admin",
         data={
-            f"icon_{eq_id}": "",
+            f"type_{form_id}": "tractor",
+            f"include_{form_id}": "0",
+            f"follow_{form_id}": "1",
             "csrf_token": token,
         },
     )
@@ -30,8 +33,9 @@ def test_toggle_analysis(make_app, monkeypatch):
     client.post(
         "/admin",
         data={
-            f"include_{eq_id}": "1",
-            f"icon_{eq_id}": "car",
+            f"include_{form_id}": "1",
+            f"type_{form_id}": "car",
+            f"follow_{form_id}": "1",
             "csrf_token": token,
         },
     )

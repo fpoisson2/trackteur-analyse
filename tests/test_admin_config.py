@@ -29,7 +29,9 @@ def test_admin_updates_server_url(make_app, monkeypatch):
         data={
             "base_url": "http://new.com",
             "token_global": "tok",
-            "equip_ids": ["1"],
+            "follow_t1": "1",
+            "type_t1": "tractor",
+            "include_t1": "1",
             "eps_meters": "30",
             "min_surface": "0.2",
             "alpha_shape": "0.05",
@@ -148,7 +150,9 @@ def test_reanalyze_saves_params(make_app, monkeypatch):
         data={
             "base_url": "http://new.com",
             "token_global": "tok",
-            "equip_ids": ["1"],
+            "follow_t1": "1",
+            "type_t1": "tractor",
+            "include_t1": "1",
             "eps_meters": "40",
             "min_surface": "0.3",
             "alpha_shape": "0.07",
@@ -185,7 +189,9 @@ def test_admin_accepts_decimal_comma(make_app, monkeypatch):
         data={
             "base_url": "http://new.com",
             "token_global": "tok",
-            "equip_ids": ["1"],
+            "follow_t1": "1",
+            "type_t1": "tractor",
+            "include_t1": "1",
             "eps_meters": "40,0",
             "analysis_hour": "3",
             "csrf_token": token,
@@ -231,7 +237,9 @@ def test_reanalyze_accepts_decimal_comma(make_app, monkeypatch):
         data={
             "base_url": "http://new.com",
             "token_global": "tok",
-            "equip_ids": ["1"],
+            "follow_t1": "1",
+            "type_t1": "tractor",
+            "include_t1": "1",
             "eps_meters": "40,0",
             "min_surface": "0,3",
             "alpha_shape": "0,07",
