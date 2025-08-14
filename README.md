@@ -133,6 +133,7 @@ Notes:
 - Les champs `latitude`/`longitude` peuvent être fournis soit directement, soit via `coords: { latitude, longitude }`.
 - Le champ optionnel `battery` (ou `batt`) permet de transmettre le niveau de batterie de l'appareil. Il peut être un nombre (0‑100 ou 0–1) ou un objet `{ "level": ... }` ; seule la valeur de `level` est prise en compte.
 - L’ingestion OsmAnd met à jour `Equipment.last_position` et ajoute des lignes `Position` mais ne déclenche pas d’analyse immédiate (elle reste planifiée).
+- Lors du polling Traccar, si les positions contiennent `batteryLevel` ou `battery` dans `attributes`, ce niveau est également enregistré.
 
 ## Production
 

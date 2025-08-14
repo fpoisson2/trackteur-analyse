@@ -5,7 +5,7 @@ import threading
 import json
 import gzip
 
-import requests
+import requests  # type: ignore[import-untyped]
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
@@ -1493,6 +1493,67 @@ def create_app(
         with app.app_context():
             zone.analyse_quotidienne()
 
+    def poll_latest_positions():
+        with app.app_context():
+            try:
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                window_start = now - timedelta(minutes=2)
+                for eq in Equipment.query.all():
+                    # Only poll devices backed by Traccar
+                    if not getattr(eq, 'id_traccar', None):
+                        continue
+                    try:
+                        positions = zone.fetch_positions(eq.id_traccar, window_start, now)
+                    except Exception:
+                        app.logger.exception("Live fetch failed for %s", eq.name)
+                        continue
+                    latest_ts = None
+                    for p in positions:
+                        try:
+                            ts = datetime.fromisoformat(p['deviceTime'].replace('Z', '+00:00')).replace(tzinfo=None)
+                        except Exception:
+                            continue
+                        existing = Position.query.filter_by(
+                            equipment_id=eq.id,
+                            latitude=p.get('latitude'),
+                            longitude=p.get('longitude'),
+                            timestamp=ts,
+                        ).first()
+                        if not existing:
+                            db.session.add(Position(
+                                equipment_id=eq.id,
+                                latitude=p.get('latitude'),
+                                longitude=p.get('longitude'),
+                                timestamp=ts,
+                            ))
+                        batt_val = (p.get('attributes') or {}).get('batteryLevel')
+                        if batt_val is None:
+                            batt_val = (p.get('attributes') or {}).get('battery')
+                        if batt_val is not None:
+                            try:
+                                batt_float = float(batt_val)
+                                if batt_float <= 1:
+                                    batt_float *= 100
+                                eq.battery_level = batt_float
+                                app.logger.info(
+                                    "Device %s battery at %.0f%%",
+                                    eq.name or eq.id_traccar,
+                                    eq.battery_level,
+                                )
+                            except (TypeError, ValueError):
+                                app.logger.info(
+                                    "Ignoring invalid battery level %r for device %s",
+                                    batt_val,
+                                    eq.name or eq.id_traccar,
+                                )
+                        if latest_ts is None or ts > latest_ts:
+                            latest_ts = ts
+                    if latest_ts is not None:
+                        eq.last_position = latest_ts
+                db.session.commit()
+            except Exception:
+                app.logger.exception("Unexpected error during live polling")
+
     if start_scheduler and os.environ.get("START_SCHEDULER", "1") != "0":
         with app.app_context():
             # Assurer que la base est prête avant l'analyse initiale
@@ -1504,52 +1565,12 @@ def create_app(
         scheduler.add_job(
             scheduled_job, trigger='cron', hour=hour, id='daily_analysis'
         )
-        # Live position polling every minute (no analysis)
-        def poll_latest_positions():
-            with app.app_context():
-                try:
-                    now = datetime.now(timezone.utc).replace(tzinfo=None)
-                    window_start = now - timedelta(minutes=2)
-                    for eq in Equipment.query.all():
-                        # Only poll devices backed by Traccar
-                        if not getattr(eq, 'id_traccar', None):
-                            continue
-                        try:
-                            positions = zone.fetch_positions(eq.id_traccar, window_start, now)
-                        except Exception:
-                            app.logger.exception("Live fetch failed for %s", eq.name)
-                            continue
-                        latest_ts = None
-                        for p in positions:
-                            try:
-                                ts = datetime.fromisoformat(p['deviceTime'].replace('Z', '+00:00')).replace(tzinfo=None)
-                            except Exception:
-                                continue
-                            existing = Position.query.filter_by(
-                                equipment_id=eq.id,
-                                latitude=p.get('latitude'),
-                                longitude=p.get('longitude'),
-                                timestamp=ts,
-                            ).first()
-                            if not existing:
-                                db.session.add(Position(
-                                    equipment_id=eq.id,
-                                    latitude=p.get('latitude'),
-                                    longitude=p.get('longitude'),
-                                    timestamp=ts,
-                                ))
-                            if latest_ts is None or ts > latest_ts:
-                                latest_ts = ts
-                        if latest_ts is not None:
-                            eq.last_position = latest_ts
-                    db.session.commit()
-                except Exception:
-                    app.logger.exception("Unexpected error during live polling")
-
         scheduler.add_job(
             poll_latest_positions, trigger='interval', minutes=1, id='live_positions'
         )
         scheduler.start()
+
+    setattr(app, "poll_latest_positions", poll_latest_positions)
 
     def initial_analysis():
         with app.app_context():
