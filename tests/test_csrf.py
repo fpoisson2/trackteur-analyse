@@ -12,7 +12,7 @@ def test_post_without_csrf_returns_400(make_app):
     app = make_app()
     client = app.test_client()
     login(client)
-    resp = client.post("/admin", data={"base_url": "http://new.com"})
+    resp = client.post("/admin/equipment", data={"base_url": "http://new.com"})
     assert resp.status_code == 400
 
 

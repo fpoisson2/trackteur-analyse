@@ -32,16 +32,12 @@ def test_admin_invalid_url_validation(make_app, monkeypatch):
     client = app.test_client()
     login(client)
     monkeypatch.setattr(zone, "fetch_devices", lambda: [])
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/traccar")
     resp = client.post(
-        "/admin",
+        "/admin/traccar",
         data={
             "base_url": "not a url",
             "token_global": "tok",
-            "eps_meters": "10",
-            "min_surface": "0.1",
-            "alpha_shape": "0.5",
-            "analysis_hour": "2",
             "csrf_token": token,
         },
     )

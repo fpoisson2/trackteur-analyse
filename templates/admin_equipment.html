@@ -23,15 +23,16 @@
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav ms-md-auto mb-2 mb-md-0">
           {% if current_user.is_admin %}
-          <li class="nav-item">
-            <a class="nav-link d-flex align-items-center" href="{{ url_for('admin') }}">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               <i class="bi bi-speedometer2 me-1"></i> Admin
             </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link d-flex align-items-center" href="{{ url_for('users') }}">
-              <i class="bi bi-people me-1"></i> Utilisateurs
-            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="{{ url_for('admin_equipment') }}">Gestion des équipements</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_analysis') }}">Paramètres de l'analyse</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('users') }}">Gestion des utilisateurs</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_traccar') }}">Paramètres Traccar</a></li>
+            </ul>
           </li>
           {% endif %}
           <li class="nav-item">
@@ -61,74 +62,6 @@
 
     <form method="post" class="mt-3" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <!-- Adresse serveur -->
-      <div class="mb-3">
-        <label for="base_url" class="form-label fw-bold">Adresse du serveur</label>
-        <input type="text"
-               class="form-control {% if form and form.base_url.errors %}is-invalid{% endif %}"
-               id="base_url"
-               name="base_url"
-               placeholder="https://traccar.example.com"
-               value="{{ existing_url }}">
-        {% if form and form.base_url.errors %}
-        <div class="invalid-feedback">{{ form.base_url.errors[0] }}</div>
-        {% endif %}
-      </div>
-      <!-- Token commun -->
-      <div class="mb-4">
-        <label for="token_global" class="form-label fw-bold">Token API Traccar</label>
-        <input type="text"
-               class="form-control {% if form and form.token_global.errors %}is-invalid{% endif %}"
-               id="token_global"
-               name="token_global"
-               placeholder="Collez ici le token Bearer…"
-               value="">
-        {% if form and form.token_global.errors %}
-        <div class="invalid-feedback">{{ form.token_global.errors[0] }}</div>
-        {% endif %}
-      </div>
-
-      <!-- Heure analyse automatique -->
-      <div class="mb-4">
-        <label for="analysis_hour" class="form-label fw-bold">Heure d'analyse automatique (0-23)</label>
-        <input type="number" class="form-control {% if form and form.analysis_hour.errors %}is-invalid{% endif %}" id="analysis_hour" name="analysis_hour" min="0" max="23" value="{{ existing_hour }}">
-        {% if form and form.analysis_hour.errors %}
-        <div class="invalid-feedback">{{ form.analysis_hour.errors[0] }}</div>
-        {% endif %}
-      </div>
-
-        <!-- Paramètres de calcul des zones -->
-        <h5 class="mb-2"><i class="bi bi-diagram-2 me-2"></i>Paramètres des zones :</h5>
-      <div class="mb-3">
-        <label for="eps_meters" class="form-label fw-bold">
-          Distance de clustering (m)
-          <span class="text-info" data-bs-toggle="tooltip" title="Distance maximale entre deux points pour appartenir au même cluster.">?</span>
-        </label>
-        <input type="number" class="form-control {% if form and form.eps_meters.errors %}is-invalid{% endif %}" id="eps_meters" name="eps_meters" step="0.1" min="1" value="{{ existing_eps }}">
-        {% if form and form.eps_meters.errors %}
-        <div class="invalid-feedback">{{ form.eps_meters.errors[0] }}</div>
-        {% endif %}
-      </div>
-      <div class="mb-3">
-        <label for="min_surface" class="form-label fw-bold">
-          Surface minimale (ha)
-          <span class="text-info" data-bs-toggle="tooltip" title="Seules les zones dépassant cette surface seront retenues.">?</span>
-        </label>
-        <input type="number" class="form-control {% if form and form.min_surface.errors %}is-invalid{% endif %}" id="min_surface" name="min_surface" step="0.01" min="0" value="{{ existing_surface }}">
-        {% if form and form.min_surface.errors %}
-        <div class="invalid-feedback">{{ form.min_surface.errors[0] }}</div>
-        {% endif %}
-      </div>
-      <div class="mb-4">
-        <label for="alpha_shape" class="form-label fw-bold">
-          Paramètre alpha
-          <span class="text-info" data-bs-toggle="tooltip" title="Contrôle la forme de l'enveloppe alpha-shape. Plus petit = plus détaillé.">?</span>
-        </label>
-        <input type="number" class="form-control {% if form and form.alpha_shape.errors %}is-invalid{% endif %}" id="alpha_shape" name="alpha_shape" step="0.01" min="0" value="{{ existing_alpha }}">
-        {% if form and form.alpha_shape.errors %}
-        <div class="invalid-feedback">{{ form.alpha_shape.errors[0] }}</div>
-        {% endif %}
-      </div>
 
       <h5 class="mt-4 mb-3"><i class="bi bi-sliders me-2"></i>Options par équipement</h5>
       <div class="input-group mb-3">
