@@ -18,7 +18,6 @@ def test_toggle_analysis(make_app, monkeypatch):
     client.post(
         "/admin",
         data={
-            f"include_{eq_id}": "0",
             f"icon_{eq_id}": "",
             "csrf_token": token,
         },
