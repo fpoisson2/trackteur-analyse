@@ -49,7 +49,17 @@
   </nav>
 
     <div class="container">
-      <h1 class="h3 mb-4"><i class="bi bi-speedometer2 me-2"></i>Configuration des équipements</h1>
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0"><i class="bi bi-speedometer2 me-2"></i>Configuration des équipements</h1>
+        <button
+          type="button"
+          class="btn btn-success"
+          data-bs-toggle="modal"
+          data-bs-target="#add-osmand-modal"
+        >
+          <i class="bi bi-plus-circle me-1"></i>Ajouter un appareil
+        </button>
+      </div>
 
     <div
       id="analysis-banner"
@@ -127,31 +137,6 @@
       </div>
     </form>
 
-    <hr class="my-4">
-    <div class="card">
-      <div class="card-header fw-bold"><i class="bi bi-plus-circle me-2"></i>Ajouter un appareil via OsmAnd</div>
-      <div class="card-body">
-        <form method="post" action="{{ url_for('add_osmand_device') }}" class="row g-3">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="col-md-4">
-            <label class="form-label">Nom</label>
-            <input type="text" class="form-control" name="osmand_name" placeholder="Tracteur 1" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">ID appareil</label>
-            <input type="text" class="form-control" name="osmand_id" placeholder="ex: 48241179" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Token (optionnel)</label>
-            <input type="text" class="form-control" name="osmand_token" placeholder="Clé secrète">
-          </div>
-          <div class="col-12">
-            <button class="btn btn-success" type="submit">Ajouter</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
     {% if osmand_devices %}
     <div class="mt-4">
       <div class="card">
@@ -159,10 +144,15 @@
         <ul class="list-group list-group-flush">
         {% for e in osmand_devices %}
         <li class="list-group-item d-flex justify-content-between align-items-center">
-          <span>
+          <button
+            type="button"
+            class="btn btn-link p-0 text-start"
+            data-bs-toggle="modal"
+            data-bs-target="#osmand-info-{{ e.id }}"
+          >
             <strong>{{ e.name }}</strong>
             <small class="text-muted">(ID : {{ e.osmand_id }})</small>
-          </span>
+          </button>
           {% if e.token_api %}
           <span class="badge text-bg-secondary">token requis</span>
           {% else %}
@@ -174,6 +164,63 @@
       </div>
     </div>
     {% endif %}
+
+    <!-- Modal d'ajout d'appareil OsmAnd -->
+    <div class="modal fade" id="add-osmand-modal" tabindex="-1" aria-labelledby="add-osmand-label" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="add-osmand-label">Ajouter un appareil via OsmAnd</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+          </div>
+          <form method="post" action="{{ url_for('add_osmand_device') }}">
+            <div class="modal-body">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="mb-3">
+                <label class="form-label">Nom</label>
+                <input type="text" class="form-control" name="osmand_name" placeholder="Tracteur 1" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">ID appareil</label>
+                <input type="text" class="form-control" name="osmand_id" placeholder="ex: 48241179" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Token (optionnel)</label>
+                <input type="text" class="form-control" name="osmand_token" placeholder="Clé secrète">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-success" type="submit">Ajouter</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {% for e in osmand_devices %}
+    <div class="modal fade" id="osmand-info-{{ e.id }}" tabindex="-1" aria-labelledby="osmand-info-label-{{ e.id }}" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="osmand-info-label-{{ e.id }}">{{ e.name }}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+          </div>
+          <div class="modal-body">
+            <p><strong>ID appareil :</strong> {{ e.osmand_id }}</p>
+            {% if e.token_api %}
+            <p><strong>Token :</strong> {{ e.token_api }}</p>
+            {% else %}
+            <p><em>Aucun token requis</em></p>
+            {% endif %}
+            <p><strong>Inclure dans l'analyse :</strong> {{ 'Oui' if e.include_in_analysis else 'Non' }}</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
