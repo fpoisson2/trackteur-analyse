@@ -179,7 +179,7 @@ def test_admin_add_osmand_device(make_app):
     client = app.test_client()
     # login
     login(client)
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/equipment")
     resp = client.post(
         "/admin/add_osmand",
         data={

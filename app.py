@@ -456,9 +456,99 @@ def create_app(
                 )
         return rows
 
-    @app.route('/admin', methods=['GET', 'POST'])
+    @app.route('/admin')
     @login_required
-    def admin():
+    def admin_redirect():
+        return redirect(url_for('admin_equipment'))
+
+    @app.route('/admin/equipment', methods=['GET', 'POST'])
+    @login_required
+    def admin_equipment():
+        """Administration des équipements et paramètres par équipement."""
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+
+        message = request.args.get('msg')
+        error = None
+        form = AdminConfigForm()
+        try:
+            devices = zone.fetch_devices()
+        except (requests.exceptions.HTTPError, requests.exceptions.RequestException) as exc:
+            app.logger.error("Device fetch failed: %s", exc)
+            devices = []
+            error = (
+                "Impossible de récupérer les équipements. "
+                "Vérifiez le token ou l'URL."
+            )
+
+        rows = build_rows(devices)
+
+        if request.method == 'POST':
+            if form.validate_on_submit():
+                save_config(request.form, rows)
+                rows = build_rows(devices)
+                message = "Configuration enregistrée !"
+            else:
+                error = 'Veuillez corriger les erreurs de validation'
+
+        osmand_devices = [
+            e for e in Equipment.query.all() if e.id_traccar == 0 and e.osmand_id
+        ]
+
+        return render_template(
+            'admin_equipment.html',
+            equipment_rows=rows,
+            osmand_devices=osmand_devices,
+            message=message,
+            error=error,
+            form=form,
+        )
+
+    @app.route('/admin/analysis', methods=['GET', 'POST'])
+    @login_required
+    def admin_analysis():
+        """Configurer les paramètres de l'analyse et du clustering."""
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+
+        cfg = Config.query.first()
+        message = request.args.get('msg')
+        error = None
+        form = AdminConfigForm()
+        if request.method == 'POST':
+            if form.validate_on_submit():
+                save_config(request.form, [])
+                cfg = Config.query.first()
+                message = "Configuration enregistrée !"
+            else:
+                error = 'Veuillez corriger les erreurs de validation'
+
+        if request.method == 'POST' and not form.validate():
+            existing_eps = request.form.get('eps_meters', '')
+            existing_surface = request.form.get('min_surface', '')
+            existing_alpha = request.form.get('alpha_shape', '')
+            existing_hour = request.form.get('analysis_hour', '')
+        else:
+            existing_eps = cfg.eps_meters if cfg else 25.0
+            existing_surface = cfg.min_surface_ha if cfg else 0.1
+            existing_alpha = cfg.alpha if cfg else 0.02
+            existing_hour = cfg.analysis_hour if cfg else 2
+
+        return render_template(
+            'admin_analysis.html',
+            existing_eps=existing_eps,
+            existing_surface=existing_surface,
+            existing_alpha=existing_alpha,
+            existing_hour=existing_hour,
+            message=message,
+            error=error,
+            form=form,
+        )
+
+    @app.route('/admin/traccar', methods=['GET', 'POST'])
+    @login_required
+    def admin_traccar():
+        """Configurer la connexion au serveur Traccar."""
         if not current_user.is_admin:
             return redirect(url_for('index'))
 
@@ -482,37 +572,21 @@ def create_app(
             if form.validate_on_submit():
                 save_config(request.form, rows)
                 cfg = Config.query.first()
-                rows = build_rows(devices)
                 message = "Configuration enregistrée !"
             else:
                 error = 'Veuillez corriger les erreurs de validation'
 
-        # 👉 Pré‑remplir avec le token du premier équipement si possible
         if request.method == 'POST' and not form.validate():
-            # Re-show posted values when invalid
             existing_token = request.form.get('token_global', '')
             existing_url = request.form.get('base_url', '')
-            existing_eps = request.form.get('eps_meters', '')
-            existing_surface = request.form.get('min_surface', '')
-            existing_alpha = request.form.get('alpha_shape', '')
-            existing_hour = request.form.get('analysis_hour', '')
         else:
             existing_token = cfg.traccar_token if cfg else ""
             existing_url = cfg.traccar_url if cfg else ""
-            existing_eps = cfg.eps_meters if cfg else 25.0
-            existing_surface = cfg.min_surface_ha if cfg else 0.1
-            existing_alpha = cfg.alpha if cfg else 0.02
-            existing_hour = cfg.analysis_hour if cfg else 2
 
         return render_template(
-            'admin.html',
-            equipment_rows=rows,
+            'admin_traccar.html',
             existing_token=existing_token,
             existing_url=existing_url,
-            existing_eps=existing_eps,
-            existing_surface=existing_surface,
-            existing_alpha=existing_alpha,
-            existing_hour=existing_hour,
             message=message,
             error=error,
             form=form,
@@ -527,16 +601,16 @@ def create_app(
         devid = request.form.get('osmand_id', '').strip()
         token = request.form.get('osmand_token', '').strip()
         if not name or not devid:
-            return redirect(url_for('admin', msg='Nom et ID requis'))
+            return redirect(url_for('admin_equipment', msg='Nom et ID requis'))
         existing = Equipment.query.filter_by(osmand_id=devid).first()
         if existing:
-            return redirect(url_for('admin', msg='ID déjà existant'))
+            return redirect(url_for('admin_equipment', msg='ID déjà existant'))
         eq = Equipment(id_traccar=0, name=name, osmand_id=devid)
         if token:
             eq.token_api = token
         db.session.add(eq)
         db.session.commit()
-        return redirect(url_for('admin', msg='Appareil OsmAnd ajouté'))
+        return redirect(url_for('admin_equipment', msg='Appareil OsmAnd ajouté'))
 
     @app.route('/reanalyze_all', methods=['POST'])
     @login_required
@@ -544,14 +618,14 @@ def create_app(
         if not current_user.is_admin:
             return redirect(url_for('index'))
         if reanalysis_progress["running"]:
-            return redirect(url_for('admin', msg="Analyse déjà en cours"))
+            return redirect(url_for('admin_equipment', msg="Analyse déjà en cours"))
         if request.form:
             try:
                 devices = zone.fetch_devices()
             except requests.exceptions.HTTPError:
                 return redirect(
                     url_for(
-                        'admin',
+                        'admin_equipment',
                         msg="Erreur lors de la récupération des équipements",
                     )
                 )
@@ -602,7 +676,7 @@ def create_app(
 
         threading.Thread(target=run, daemon=True).start()
         return redirect(
-            url_for('admin', msg="Analyse relancée en arrière-plan")
+            url_for('admin_equipment', msg="Analyse relancée en arrière-plan")
         )
 
     @app.route('/analysis_status')

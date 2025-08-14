@@ -21,15 +21,16 @@
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav ms-md-auto mb-2 mb-md-0">
           {% if current_user.is_admin %}
-          <li class="nav-item">
-            <a class="nav-link d-flex align-items-center" href="{{ url_for('admin') }}">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               <i class="bi bi-speedometer2 me-1"></i> Admin
             </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link d-flex align-items-center" href="{{ url_for('users') }}">
-              <i class="bi bi-people me-1"></i> Utilisateurs
-            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="{{ url_for('admin_equipment') }}">Gestion des équipements</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_analysis') }}">Paramètres de l'analyse</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('users') }}">Gestion des utilisateurs</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_traccar') }}">Paramètres Traccar</a></li>
+            </ul>
           </li>
           {% endif %}
           <li class="nav-item">

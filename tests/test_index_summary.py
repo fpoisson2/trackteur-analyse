@@ -123,7 +123,7 @@ def test_reanalysis_updates_index_table(make_app, monkeypatch):
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
     monkeypatch.setattr(zone, "fetch_devices", lambda: [])
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/equipment")
     resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code in (200, 302)
 
