@@ -325,9 +325,10 @@ def create_app(
         return redirect(url_for('login'))
 
     def save_config(
-        form: MultiDict[str, str], devices: Iterable[dict[str, Any]]
+        form: MultiDict[str, str], rows: Iterable[dict[str, Any]]
     ) -> None:
-        """Persist configuration parameters and selected devices."""
+        """Persist configuration parameters and device options."""
+
         def norm_decimal(val: str | None) -> str | None:
             if val is None:
                 return None
@@ -335,7 +336,6 @@ def create_app(
 
         token_global = form.get('token_global')
         base_url = form.get('base_url')
-        checked_ids = {int(x) for x in form.getlist('equip_ids')}
         eps = norm_decimal(form.get('eps_meters'))
         min_surface = norm_decimal(form.get('min_surface'))
         alpha = norm_decimal(form.get('alpha_shape'))
@@ -366,14 +366,35 @@ def create_app(
             )
             db.session.add(cfg)
 
-        for dev in devices:
-            if dev['id'] in checked_ids:
-                eq = Equipment.query.filter_by(id_traccar=dev['id']).first()
-                if not eq:
-                    eq = Equipment(id_traccar=dev['id'])
-                    db.session.add(eq)
-                eq.name = dev['name']
-                eq.token_api = token_global
+        # Mise à jour ou création des équipements Traccar
+        for row in rows:
+            form_id = row["form_id"]
+            type_val = form.get(f"type_{form_id}", row.get("marker_icon", "tractor"))
+            include_val = form.get(
+                f"include_{form_id}", "1" if row.get("include_in_analysis", True) else "0"
+            )
+            if row["source"] == "traccar":
+                follow_val = form.get(
+                    f"follow_{form_id}", "1" if row.get("follow") else "0"
+                )
+                eq = row.get("eq")
+                if follow_val == "1":
+                    if not eq:
+                        eq = Equipment(id_traccar=row["dev_id"])
+                        db.session.add(eq)
+                    eq.name = row["name"]
+                    if token_global:
+                        eq.token_api = token_global
+                    eq.marker_icon = type_val
+                    eq.include_in_analysis = include_val == "1"
+                elif eq:
+                    db.session.delete(eq)
+            else:
+                eq = row.get("eq")
+                if eq:
+                    eq.marker_icon = type_val
+                    eq.include_in_analysis = include_val == "1"
+
         db.session.commit()
 
         if analysis_hour:
@@ -382,6 +403,58 @@ def create_app(
                 scheduler.reschedule_job(
                     'daily_analysis', trigger='cron', hour=int(analysis_hour)
                 )
+
+    def build_rows(devices: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Combine Traccar devices and existing equipment for the admin table."""
+        rows: list[dict[str, Any]] = []
+        existing = Equipment.query.all()
+        traccar_map = {e.id_traccar: e for e in existing if e.id_traccar}
+        for dev in devices:
+            eq = traccar_map.pop(dev['id'], None)
+            rows.append(
+                {
+                    'form_id': f"t{dev['id']}",
+                    'dev_id': dev['id'],
+                    'name': dev['name'],
+                    'source': 'traccar',
+                    'eq': eq,
+                    'marker_icon': (eq.marker_icon if eq else 'tractor'),
+                    'include_in_analysis': (
+                        eq.include_in_analysis if eq else True
+                    ),
+                    'follow': eq is not None,
+                }
+            )
+        # Remaining Traccar equipments not returned by the API
+        for eq in traccar_map.values():
+            rows.append(
+                {
+                    'form_id': f"t{eq.id_traccar}",
+                    'dev_id': eq.id_traccar,
+                    'name': eq.name,
+                    'source': 'traccar',
+                    'eq': eq,
+                    'marker_icon': eq.marker_icon or 'tractor',
+                    'include_in_analysis': eq.include_in_analysis,
+                    'follow': True,
+                }
+            )
+        # OsmAnd equipments
+        for eq in existing:
+            if eq.id_traccar == 0 and eq.osmand_id:
+                rows.append(
+                    {
+                        'form_id': f"o{eq.id}",
+                        'dev_id': None,
+                        'name': eq.name,
+                        'source': 'osmand',
+                        'eq': eq,
+                        'marker_icon': eq.marker_icon or 'tractor',
+                        'include_in_analysis': eq.include_in_analysis,
+                        'follow': True,
+                    }
+                )
+        return rows
 
     @app.route('/admin', methods=['GET', 'POST'])
     @login_required
@@ -402,15 +475,14 @@ def create_app(
                 "Impossible de récupérer les équipements. "
                 "Vérifiez le token ou l'URL."
             )
-        followed = Equipment.query.all()
-        selected_ids = {e.id_traccar for e in followed}
+
+        rows = build_rows(devices)
 
         if request.method == 'POST':
             if form.validate_on_submit():
-                save_config(request.form, devices)
+                save_config(request.form, rows)
                 cfg = Config.query.first()
-                followed = Equipment.query.all()
-                selected_ids = {e.id_traccar for e in followed}
+                rows = build_rows(devices)
                 message = "Configuration enregistrée !"
             else:
                 error = 'Veuillez corriger les erreurs de validation'
@@ -434,8 +506,7 @@ def create_app(
 
         return render_template(
             'admin.html',
-            devices=devices,
-            selected_ids=selected_ids,
+            equipment_rows=rows,
             existing_token=existing_token,
             existing_url=existing_url,
             existing_eps=existing_eps,
@@ -445,8 +516,6 @@ def create_app(
             message=message,
             error=error,
             form=form,
-            osmand_devices=Equipment.query.filter(Equipment.osmand_id.isnot(None)).all(),
-            all_equipments=Equipment.query.all(),
         )
 
     @app.route('/admin/add_osmand', methods=['POST'])
@@ -486,7 +555,8 @@ def create_app(
                         msg="Erreur lors de la récupération des équipements",
                     )
                 )
-            save_config(request.form, devices)
+            rows = build_rows(devices)
+            save_config(request.form, rows)
 
         equipment_ids = [
             e.id for e in Equipment.query.all()
@@ -534,25 +604,6 @@ def create_app(
         return redirect(
             url_for('admin', msg="Analyse relancée en arrière-plan")
         )
-
-    @app.route('/admin/toggle_analysis/<int:eq_id>', methods=['POST'])
-    @login_required
-    def toggle_analysis(eq_id: int):
-        if not current_user.is_admin:
-            return redirect(url_for('index'))
-        eq = db.session.get(Equipment, eq_id)
-        if not eq:
-            return redirect(url_for('admin', msg='Équipement introuvable'))
-        include = request.form.get('include')
-        if include is not None:
-            eq.include_in_analysis = str(include).lower() in (
-                '1', 'true', 'on', 'yes'
-            )
-        icon = request.form.get('icon')
-        if icon is not None:
-            eq.marker_icon = icon.strip()
-        db.session.commit()
-        return redirect(url_for('admin', msg='Préférence enregistrée'))
 
     @app.route('/analysis_status')
     @login_required
@@ -848,6 +899,7 @@ def create_app(
                 "name": eq.name,
                 "source": source,
                 "include_in_analysis": getattr(eq, 'include_in_analysis', True),
+                "icon": eq.marker_icon or 'tractor',
                 "last_seen": last,
                 "total_hectares": round(total_hectares or 0, 2),
                 "relative_hectares": round(rel_hectares, 2),
