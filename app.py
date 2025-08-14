@@ -473,7 +473,7 @@ def create_app(
         form = AdminConfigForm()
         try:
             devices = zone.fetch_devices()
-        except (requests.exceptions.HTTPError, requests.exceptions.RequestException) as exc:
+        except (OSError, requests.exceptions.HTTPError, requests.exceptions.RequestException) as exc:
             app.logger.error("Device fetch failed: %s", exc)
             devices = []
             error = (
@@ -558,7 +558,7 @@ def create_app(
         form = AdminConfigForm()
         try:
             devices = zone.fetch_devices()
-        except (requests.exceptions.HTTPError, requests.exceptions.RequestException) as exc:
+        except (OSError, requests.exceptions.HTTPError, requests.exceptions.RequestException) as exc:
             app.logger.error("Device fetch failed: %s", exc)
             devices = []
             error = (
@@ -622,7 +622,7 @@ def create_app(
         if request.form:
             try:
                 devices = zone.fetch_devices()
-            except requests.exceptions.HTTPError:
+            except (OSError, requests.exceptions.HTTPError, requests.exceptions.RequestException):
                 return redirect(
                     url_for(
                         'admin_equipment',
