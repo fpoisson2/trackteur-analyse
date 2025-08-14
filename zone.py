@@ -960,7 +960,18 @@ def debug_hectares_calculation(equipment_id):
 def analyse_quotidienne():
     """Tâche planifiée: analyse pour tous les équipements."""
     for eq in Equipment.query.all():
-        process_equipment(eq)
+        # Skip equipments explicitly excluded from analysis
+        if hasattr(eq, 'include_in_analysis') and not (eq.include_in_analysis or False):
+            continue
+        # If this equipment is fed by direct OsmAnd ingestion (id_traccar == 0),
+        # recompute zones from stored positions; otherwise fetch from Traccar.
+        try:
+            if getattr(eq, 'id_traccar', None):
+                process_equipment(eq)
+            else:
+                recalculate_hectares_from_positions(eq.id)
+        except Exception:
+            logger.exception("Daily analysis failed for %s", getattr(eq, 'name', '?'))
 
 
 def analyser_equipement(eq, start_date=None):

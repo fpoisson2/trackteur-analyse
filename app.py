@@ -2,8 +2,10 @@ import os
 import logging
 import time
 import threading
+import json
+import gzip
 
-import requests
+import requests  # type: ignore[import-untyped]
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
@@ -29,6 +31,7 @@ import zone
 from datetime import datetime, date, timedelta, timezone
 from typing import Iterable, Any
 from werkzeug.datastructures import MultiDict
+from werkzeug.exceptions import BadRequest
 
 reanalysis_progress = {
     "running": False,
@@ -42,7 +45,8 @@ def create_app(
     start_scheduler: bool = True, run_initial_analysis: bool = True
 ):
     app = Flask(__name__)
-    CSRFProtect(app)
+    csrf = CSRFProtect()
+    csrf.init_app(app)
     reanalysis_progress.update(
         {"running": False, "current": 0, "total": 0, "equipment": ""}
     )
@@ -192,6 +196,37 @@ def create_app(
                             "relative_hectares FLOAT DEFAULT 0.0"
                         )
                     )
+            if "osmand_id" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN osmand_id "
+                            "VARCHAR UNIQUE"
+                        )
+                    )
+            if "include_in_analysis" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN include_in_analysis "
+                            "BOOLEAN DEFAULT 1"
+                        )
+                    )
+            if "marker_icon" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN marker_icon "
+                            "VARCHAR DEFAULT 'tractor'"
+                        )
+                    )
+            if "battery_level" not in equip_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE equipment ADD COLUMN battery_level FLOAT"
+                        )
+                    )
         if "position" in tables:
             pos_cols = [c["name"] for c in inspector.get_columns("position")]
             if "track_id" not in pos_cols:
@@ -216,7 +251,7 @@ def create_app(
             if not getattr(app, "_db_init", False):
                 db.create_all()
                 upgrade_db()
-                app._db_init = True
+                app._db_init = True  # type: ignore[attr-defined]
 
     @app.before_request
     def ensure_setup():
@@ -225,12 +260,6 @@ def create_app(
             return
         if User.query.count() == 0:
             return redirect(url_for('setup'))
-        if Config.query.count() == 0:
-            if current_user.is_authenticated or request.endpoint != 'login':
-                return redirect(url_for('setup'))
-        if Equipment.query.count() == 0:
-            if current_user.is_authenticated or request.endpoint != 'login':
-                return redirect(url_for('setup'))
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
@@ -281,17 +310,7 @@ def create_app(
         # Option de verrouillage complet du setup en production
         if os.environ.get('SETUP_DISABLED') == '1':
             return ('Setup désactivé', 403)
-        # Détermination de l'étape
         if User.query.count() == 0:
-            step = 1
-        elif Config.query.count() == 0:
-            step = 2
-        elif Equipment.query.count() == 0:
-            step = 3
-        else:
-            step = 4
-
-        if step == 1:
             if request.method == 'POST':
                 username = request.form.get('username')
                 password = request.form.get('password')
@@ -300,61 +319,16 @@ def create_app(
                     admin.set_password(password)
                     db.session.add(admin)
                     db.session.commit()
-                    return redirect(url_for('setup'))
+                    return redirect(url_for('login'))
             return render_template('setup_step1.html')
 
-        if step == 2:
-            if request.method == 'POST':
-                url = request.form.get('base_url')
-                token = request.form.get('token')
-                if url and token:
-                    cfg = Config(traccar_url=url, traccar_token=token)
-                    db.session.add(cfg)
-                    db.session.commit()
-                    return redirect(url_for('setup'))
-            return render_template('setup_step2.html')
-
-        if step == 3:
-            error = None
-            try:
-                devices = zone.fetch_devices()
-            except requests.exceptions.HTTPError as exc:
-                app.logger.error("Failed to fetch devices: %s", exc)
-                devices = []
-                error = (
-                    "Impossible de récupérer les équipements. "
-                    "Vérifiez le token ou l'URL."
-                )
-            if request.method == 'POST':
-                ids = {int(x) for x in request.form.getlist('equip_ids')}
-                cfg = Config.query.first()
-                for dev in devices:
-                    if dev['id'] in ids:
-                        eq = Equipment(
-                            id_traccar=dev['id'],
-                            name=dev['name'],
-                            token_api=cfg.traccar_token,
-                        )
-                        db.session.add(eq)
-                db.session.commit()
-                return redirect(url_for('setup'))
-            return render_template(
-                'setup_step3.html', devices=devices, error=error
-            )
-
-        # step 4
-        now = datetime.utcnow()
-        start_of_year = datetime(now.year, 1, 1)
-        processed = []
-        for eq in Equipment.query.all():
-            zone.process_equipment(eq, since=start_of_year)
-            processed.append(eq.name)
-        return render_template('setup_step4.html', devices=processed)
+        return redirect(url_for('login'))
 
     def save_config(
-        form: MultiDict[str, str], devices: Iterable[dict[str, Any]]
+        form: MultiDict[str, str], rows: Iterable[dict[str, Any]]
     ) -> None:
-        """Persist configuration parameters and selected devices."""
+        """Persist configuration parameters and device options."""
+
         def norm_decimal(val: str | None) -> str | None:
             if val is None:
                 return None
@@ -362,7 +336,6 @@ def create_app(
 
         token_global = form.get('token_global')
         base_url = form.get('base_url')
-        checked_ids = {int(x) for x in form.getlist('equip_ids')}
         eps = norm_decimal(form.get('eps_meters'))
         min_surface = norm_decimal(form.get('min_surface'))
         alpha = norm_decimal(form.get('alpha_shape'))
@@ -393,14 +366,35 @@ def create_app(
             )
             db.session.add(cfg)
 
-        for dev in devices:
-            if dev['id'] in checked_ids:
-                eq = Equipment.query.filter_by(id_traccar=dev['id']).first()
-                if not eq:
-                    eq = Equipment(id_traccar=dev['id'])
-                    db.session.add(eq)
-                eq.name = dev['name']
-                eq.token_api = token_global
+        # Mise à jour ou création des équipements Traccar
+        for row in rows:
+            form_id = row["form_id"]
+            type_val = form.get(f"type_{form_id}", row.get("marker_icon", "tractor"))
+            include_val = form.get(
+                f"include_{form_id}", "1" if row.get("include_in_analysis", True) else "0"
+            )
+            if row["source"] == "traccar":
+                follow_val = form.get(
+                    f"follow_{form_id}", "1" if row.get("follow") else "0"
+                )
+                eq = row.get("eq")
+                if follow_val == "1":
+                    if not eq:
+                        eq = Equipment(id_traccar=row["dev_id"])
+                        db.session.add(eq)
+                    eq.name = row["name"]
+                    if token_global:
+                        eq.token_api = token_global
+                    eq.marker_icon = type_val
+                    eq.include_in_analysis = include_val == "1"
+                elif eq:
+                    db.session.delete(eq)
+            else:
+                eq = row.get("eq")
+                if eq:
+                    eq.marker_icon = type_val
+                    eq.include_in_analysis = include_val == "1"
+
         db.session.commit()
 
         if analysis_hour:
@@ -410,9 +404,110 @@ def create_app(
                     'daily_analysis', trigger='cron', hour=int(analysis_hour)
                 )
 
-    @app.route('/admin', methods=['GET', 'POST'])
+    def build_rows(devices: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Combine Traccar devices and existing equipment for the admin table."""
+        rows: list[dict[str, Any]] = []
+        existing = Equipment.query.all()
+        traccar_map = {e.id_traccar: e for e in existing if e.id_traccar}
+        for dev in devices:
+            eq = traccar_map.pop(dev['id'], None)
+            rows.append(
+                {
+                    'form_id': f"t{dev['id']}",
+                    'dev_id': dev['id'],
+                    'name': dev['name'],
+                    'source': 'traccar',
+                    'eq': eq,
+                    'marker_icon': (eq.marker_icon if eq else 'tractor'),
+                    'include_in_analysis': (
+                        eq.include_in_analysis if eq else True
+                    ),
+                    'follow': eq is not None,
+                }
+            )
+        # Remaining Traccar equipments not returned by the API
+        for eq in traccar_map.values():
+            rows.append(
+                {
+                    'form_id': f"t{eq.id_traccar}",
+                    'dev_id': eq.id_traccar,
+                    'name': eq.name,
+                    'source': 'traccar',
+                    'eq': eq,
+                    'marker_icon': eq.marker_icon or 'tractor',
+                    'include_in_analysis': eq.include_in_analysis,
+                    'follow': True,
+                }
+            )
+        # OsmAnd equipments
+        for eq in existing:
+            if eq.id_traccar == 0 and eq.osmand_id:
+                rows.append(
+                    {
+                        'form_id': f"o{eq.id}",
+                        'dev_id': None,
+                        'name': eq.name,
+                        'source': 'osmand',
+                        'eq': eq,
+                        'marker_icon': eq.marker_icon or 'tractor',
+                        'include_in_analysis': eq.include_in_analysis,
+                        'follow': True,
+                    }
+                )
+        return rows
+
+    @app.route('/admin')
     @login_required
-    def admin():
+    def admin_redirect():
+        return redirect(url_for('admin_equipment'))
+
+    @app.route('/admin/equipment', methods=['GET', 'POST'])
+    @login_required
+    def admin_equipment():
+        """Administration des équipements et paramètres par équipement."""
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+
+        message = request.args.get('msg')
+        error = None
+        form = AdminConfigForm()
+        try:
+            devices = zone.fetch_devices()
+        except (requests.exceptions.HTTPError, requests.exceptions.RequestException) as exc:
+            app.logger.error("Device fetch failed: %s", exc)
+            devices = []
+            error = (
+                "Impossible de récupérer les équipements. "
+                "Vérifiez le token ou l'URL."
+            )
+
+        rows = build_rows(devices)
+
+        if request.method == 'POST':
+            if form.validate_on_submit():
+                save_config(request.form, rows)
+                rows = build_rows(devices)
+                message = "Configuration enregistrée !"
+            else:
+                error = 'Veuillez corriger les erreurs de validation'
+
+        osmand_devices = [
+            e for e in Equipment.query.all() if e.id_traccar == 0 and e.osmand_id
+        ]
+
+        return render_template(
+            'admin_equipment.html',
+            equipment_rows=rows,
+            osmand_devices=osmand_devices,
+            message=message,
+            error=error,
+            form=form,
+        )
+
+    @app.route('/admin/analysis', methods=['GET', 'POST'])
+    @login_required
+    def admin_analysis():
+        """Configurer les paramètres de l'analyse et du clustering."""
         if not current_user.is_admin:
             return redirect(url_for('index'))
 
@@ -420,51 +515,27 @@ def create_app(
         message = request.args.get('msg')
         error = None
         form = AdminConfigForm()
-        try:
-            devices = zone.fetch_devices()
-        except requests.exceptions.HTTPError as exc:
-            app.logger.error("Device fetch failed: %s", exc)
-            devices = []
-            error = (
-                "Impossible de récupérer les équipements. "
-                "Vérifiez le token ou l'URL."
-            )
-        followed = Equipment.query.all()
-        selected_ids = {e.id_traccar for e in followed}
-
         if request.method == 'POST':
             if form.validate_on_submit():
-                save_config(request.form, devices)
+                save_config(request.form, [])
                 cfg = Config.query.first()
-                followed = Equipment.query.all()
-                selected_ids = {e.id_traccar for e in followed}
                 message = "Configuration enregistrée !"
             else:
                 error = 'Veuillez corriger les erreurs de validation'
 
-        # 👉 Pré‑remplir avec le token du premier équipement si possible
         if request.method == 'POST' and not form.validate():
-            # Re-show posted values when invalid
-            existing_token = request.form.get('token_global', '')
-            existing_url = request.form.get('base_url', '')
             existing_eps = request.form.get('eps_meters', '')
             existing_surface = request.form.get('min_surface', '')
             existing_alpha = request.form.get('alpha_shape', '')
             existing_hour = request.form.get('analysis_hour', '')
         else:
-            existing_token = cfg.traccar_token if cfg else ""
-            existing_url = cfg.traccar_url if cfg else ""
             existing_eps = cfg.eps_meters if cfg else 25.0
             existing_surface = cfg.min_surface_ha if cfg else 0.1
             existing_alpha = cfg.alpha if cfg else 0.02
             existing_hour = cfg.analysis_hour if cfg else 2
 
         return render_template(
-            'admin.html',
-            devices=devices,
-            selected_ids=selected_ids,
-            existing_token=existing_token,
-            existing_url=existing_url,
+            'admin_analysis.html',
             existing_eps=existing_eps,
             existing_surface=existing_surface,
             existing_alpha=existing_alpha,
@@ -474,26 +545,97 @@ def create_app(
             form=form,
         )
 
+    @app.route('/admin/traccar', methods=['GET', 'POST'])
+    @login_required
+    def admin_traccar():
+        """Configurer la connexion au serveur Traccar."""
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+
+        cfg = Config.query.first()
+        message = request.args.get('msg')
+        error = None
+        form = AdminConfigForm()
+        try:
+            devices = zone.fetch_devices()
+        except (requests.exceptions.HTTPError, requests.exceptions.RequestException) as exc:
+            app.logger.error("Device fetch failed: %s", exc)
+            devices = []
+            error = (
+                "Impossible de récupérer les équipements. "
+                "Vérifiez le token ou l'URL."
+            )
+
+        rows = build_rows(devices)
+
+        if request.method == 'POST':
+            if form.validate_on_submit():
+                save_config(request.form, rows)
+                cfg = Config.query.first()
+                message = "Configuration enregistrée !"
+            else:
+                error = 'Veuillez corriger les erreurs de validation'
+
+        if request.method == 'POST' and not form.validate():
+            existing_token = request.form.get('token_global', '')
+            existing_url = request.form.get('base_url', '')
+        else:
+            existing_token = cfg.traccar_token if cfg else ""
+            existing_url = cfg.traccar_url if cfg else ""
+
+        return render_template(
+            'admin_traccar.html',
+            existing_token=existing_token,
+            existing_url=existing_url,
+            message=message,
+            error=error,
+            form=form,
+        )
+
+    @app.route('/admin/add_osmand', methods=['POST'])
+    @login_required
+    def add_osmand_device():
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+        name = request.form.get('osmand_name', '').strip()
+        devid = request.form.get('osmand_id', '').strip()
+        token = request.form.get('osmand_token', '').strip()
+        if not name or not devid:
+            return redirect(url_for('admin_equipment', msg='Nom et ID requis'))
+        existing = Equipment.query.filter_by(osmand_id=devid).first()
+        if existing:
+            return redirect(url_for('admin_equipment', msg='ID déjà existant'))
+        eq = Equipment(id_traccar=0, name=name, osmand_id=devid)
+        if token:
+            eq.token_api = token
+        db.session.add(eq)
+        db.session.commit()
+        return redirect(url_for('admin_equipment', msg='Appareil OsmAnd ajouté'))
+
     @app.route('/reanalyze_all', methods=['POST'])
     @login_required
     def reanalyze_all():
         if not current_user.is_admin:
             return redirect(url_for('index'))
         if reanalysis_progress["running"]:
-            return redirect(url_for('admin', msg="Analyse déjà en cours"))
+            return redirect(url_for('admin_equipment', msg="Analyse déjà en cours"))
         if request.form:
             try:
                 devices = zone.fetch_devices()
             except requests.exceptions.HTTPError:
                 return redirect(
                     url_for(
-                        'admin',
+                        'admin_equipment',
                         msg="Erreur lors de la récupération des équipements",
                     )
                 )
-            save_config(request.form, devices)
+            rows = build_rows(devices)
+            save_config(request.form, rows)
 
-        equipment_ids = [e.id for e in Equipment.query.all()]
+        equipment_ids = [
+            e.id for e in Equipment.query.all()
+            if getattr(e, 'include_in_analysis', True)
+        ]
         reanalysis_progress.update(
             {
                 "running": True,
@@ -512,7 +654,21 @@ def create_app(
                     if not eq:
                         continue
                     reanalysis_progress["equipment"] = eq.name
-                    zone.process_equipment(eq, since=start_of_year)
+                    # Skip excluded equipments
+                    if hasattr(eq, 'include_in_analysis') and not (eq.include_in_analysis or False):
+                        reanalysis_progress["current"] = idx
+                        continue
+                    # Use Traccar fetch or local positions depending on equipment
+                    if getattr(eq, 'id_traccar', None):
+                        try:
+                            zone.process_equipment(eq, since=start_of_year)
+                        except Exception as exc:
+                            app.logger.exception("process_equipment failed: %s", exc)
+                    else:
+                        try:
+                            zone.recalculate_hectares_from_positions(eq.id, since_date=start_of_year)
+                        except Exception as exc:
+                            app.logger.exception("recalculate failed: %s", exc)
                     db.session.commit()
                     reanalysis_progress["current"] = idx
                 reanalysis_progress["running"] = False
@@ -520,7 +676,7 @@ def create_app(
 
         threading.Thread(target=run, daemon=True).start()
         return redirect(
-            url_for('admin', msg="Analyse relancée en arrière-plan")
+            url_for('admin_equipment', msg="Analyse relancée en arrière-plan")
         )
 
     @app.route('/analysis_status')
@@ -593,20 +749,193 @@ def create_app(
             add_form=add_form, reset_form=reset_form, delete_form=delete_form
         )
 
-    @app.route('/')
-    @login_required
-    def index():
-        # 1) Récupération des équipements
+    # -------------------- OsmAnd ingest endpoint --------------------
+    def _parse_timestamp(val: str | int | float) -> datetime:
+        if isinstance(val, (int, float)):
+            # seconds or milliseconds
+            ts = float(val)
+            if ts > 1e12:
+                ts /= 1000.0
+            return datetime.utcfromtimestamp(ts)
+        s = str(val).strip()
+        # epoch
+        if s.isdigit():
+            ts = float(s)
+            if ts > 1e12:
+                ts /= 1000.0
+            return datetime.utcfromtimestamp(ts)
+        # ISO8601
+        try:
+            if s.endswith('Z'):
+                s = s.replace('Z', '+00:00')
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+        except Exception:
+            pass
+        # Fallback format yyyy-MM-dd HH:mm:ss
+        try:
+            return datetime.strptime(s, '%Y-%m-%d %H:%M:%S')
+        except Exception:
+            raise BadRequest('Invalid timestamp format')
+
+    def _ensure_equipment(device_id: str) -> Equipment:
+        eq = Equipment.query.filter_by(osmand_id=device_id).first()
+        if eq:
+            return eq
+        # Create new equipment tracked via OsmAnd; use id_traccar=0
+        name = f"Device {device_id}"
+        eq = Equipment(id_traccar=0, name=name, osmand_id=device_id)
+        db.session.add(eq)
+        db.session.commit()
+        return eq
+
+    def _auth_ok(eq: Equipment) -> bool:
+        token = request.args.get('token') or request.headers.get('X-Token')
+        if not token:
+            auth = request.headers.get('Authorization', '')
+            if auth.lower().startswith('bearer '):
+                token = auth.split(' ', 1)[1].strip()
+        if eq.token_api:
+            return token == eq.token_api
+        # No token configured: accept
+        return True
+
+    @csrf.exempt
+    @app.route('/osmand', methods=['GET', 'POST'])
+    def osmand_ingest():
+        # Accept OsmAnd-like payloads: query params or JSON for a single device
+        def ingest_one(device_id: str, locs: list[dict]) -> None:
+            eq = _ensure_equipment(str(device_id))
+            if not _auth_ok(eq):
+                raise BadRequest('Unauthorized')
+            latest_ts = None
+            for entry in locs:
+                # Normalize structure from JSON payload
+                if 'coords' in entry:
+                    lat = entry['coords'].get('latitude')
+                    lon = entry['coords'].get('longitude')
+                else:
+                    lat = entry.get('latitude')
+                    lon = entry.get('longitude')
+                if lat is None or lon is None:
+                    continue
+                ts_val = entry.get('timestamp') or entry.get('time')
+                batt_val = entry.get('battery') or entry.get('batt')
+                if isinstance(batt_val, dict):
+                    batt_val = batt_val.get('level')
+                try:
+                    ts = _parse_timestamp(ts_val) if ts_val is not None else datetime.utcnow()
+                except BadRequest:
+                    continue
+                ts_naive = ts.replace(tzinfo=None)
+                existing = Position.query.filter_by(
+                    equipment_id=eq.id,
+                    latitude=float(lat),
+                    longitude=float(lon),
+                    timestamp=ts_naive,
+                ).first()
+                if not existing:
+                    db.session.add(
+                        Position(
+                            equipment_id=eq.id,
+                            latitude=float(lat),
+                            longitude=float(lon),
+                            timestamp=ts_naive,
+                        )
+                    )
+                if latest_ts is None or ts_naive > latest_ts:
+                    latest_ts = ts_naive
+                if batt_val is not None:
+                    try:
+                        batt_float = float(batt_val)
+                        if batt_float <= 1:
+                            batt_float *= 100
+                        eq.battery_level = batt_float
+                        app.logger.info(
+                            "Device %s battery at %.0f%%",
+                            device_id,
+                            eq.battery_level,
+                        )
+                    except (TypeError, ValueError):
+                        app.logger.info(
+                            "Ignoring invalid battery level %r for device %s",
+                            batt_val,
+                            device_id,
+                        )
+            if latest_ts is not None:
+                eq.last_position = latest_ts
+
+        raw = request.get_data() or b""
+        if request.headers.get('Content-Encoding') == 'gzip':
+            try:
+                raw = gzip.decompress(raw)
+            except OSError:
+                raise BadRequest('Invalid gzip payload')
+        data = None
+        if raw:
+            try:
+                data = json.loads(raw.decode('utf-8'))
+            except Exception:
+                data = None
+        if isinstance(data, dict):
+            if isinstance(data.get('devices'), list):
+                return ("Multiple devices not supported", 400)
+            device_id = data.get('device_id') or data.get('deviceid') or data.get('id')
+            locations: list[dict] = []
+            if 'locations' in data and isinstance(data['locations'], list):
+                locations = list(data['locations'])
+            elif 'location' in data and isinstance(data['location'], dict):
+                locations = [data['location']]
+            if not device_id:
+                return ("Missing device id", 400)
+            if not locations:
+                return ("No locations", 400)
+            ingest_one(str(device_id), locations)
+            db.session.commit()
+            return ("OK", 200)
+        # Query/form encoding (single fix)
+        form = request.values
+        device_id = form.get('deviceid') or form.get('id')
+        locations: list[dict] = []
+        if form.get('lat') and form.get('lon'):
+            ts = form.get('timestamp') or form.get('time')
+            locations.append({
+                'coords': {
+                    'latitude': float(form.get('lat')),
+                    'longitude': float(form.get('lon')),
+                },
+                'timestamp': ts or datetime.utcnow().isoformat() + 'Z',
+                'battery': form.get('battery') or form.get('batt'),
+            })
+        elif form.get('location'):
+            try:
+                lat_s, lon_s = form.get('location').split(',', 1)
+                ts = form.get('timestamp') or form.get('time')
+                locations.append({
+                    'coords': {
+                        'latitude': float(lat_s.strip()),
+                        'longitude': float(lon_s.strip()),
+                    },
+                    'timestamp': ts or datetime.utcnow().isoformat() + 'Z',
+                    'battery': form.get('battery') or form.get('batt'),
+                })
+            except Exception:
+                raise BadRequest('Invalid location parameter')
+        if not device_id:
+            return ("Missing device id", 400)
+        if not locations:
+            return ("No locations", 400)
+        ingest_one(str(device_id), locations)
+        db.session.commit()
+        return ("OK", 200)
+
+    def get_equipment_data() -> list[dict[str, Any]]:
         equipments = Equipment.query.all()
-        message = None
-
-        # 2) Plus de lancement manuel d'analyse
-
-        # 3) Préparation des données pour l’affichage
-        equipment_data = []
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+        equipment_data: list[dict[str, Any]] = []
         for eq in equipments:
-            # Fallback pour la dernière position si non renseignée
             last_dt = eq.last_position
             if last_dt is None:
                 last_pos = (
@@ -630,18 +959,21 @@ def create_app(
                 delta_str = "–"
 
             distance_km = (eq.distance_between_zones or 0) / 1000
-            # Utiliser les valeurs mises à jour en tâche de fond
-            total_hectares = (
-                eq.total_hectares or zone.calculate_total_hectares(eq.id)
-            )
+            total_hectares = eq.total_hectares or zone.calculate_total_hectares(eq.id)
             rel_hectares = getattr(eq, "relative_hectares", 0.0) or 0.0
-            ratio_eff = (
-                (total_hectares / distance_km) if distance_km else 0.0
-            )
+            ratio_eff = (total_hectares / distance_km) if distance_km else 0.0
+
+            if getattr(eq, 'osmand_id', None) and (getattr(eq, 'id_traccar', 0) == 0):
+                source = 'osmand'
+            else:
+                source = 'traccar'
 
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
+                "source": source,
+                "include_in_analysis": getattr(eq, 'include_in_analysis', True),
+                "icon": eq.marker_icon or 'tractor',
                 "last_seen": last,
                 "total_hectares": round(total_hectares or 0, 2),
                 "relative_hectares": round(rel_hectares, 2),
@@ -649,9 +981,9 @@ def create_app(
                 "delta_seconds": delta_seconds,
                 "ratio_eff": ratio_eff,
                 "delta_str": delta_str,
+                "battery_level": eq.battery_level,
             })
 
-        # Normalisation des critères
         def normalize(values, value, invert=False):
             clean = [v for v in values if v is not None]
             if not clean or value is None:
@@ -690,15 +1022,61 @@ def create_app(
             )
 
         equipment_data.sort(key=lambda x: x["score"], reverse=True)
-
         for idx, d in enumerate(equipment_data, start=1):
             d["rank"] = idx
 
+        return equipment_data
+
+    @app.route('/')
+    @login_required
+    def index():
+        message = None
+        equipment_data = get_equipment_data()
         return render_template(
             'index.html',
             equipment_data=equipment_data,
             message=message
         )
+
+    @app.route('/equipment_status')
+    @login_required
+    def equipment_status():
+        return jsonify(get_equipment_data())
+
+    @app.route('/equipment/<int:equipment_id>/last.geojson')
+    @login_required
+    def equipment_last_geojson(equipment_id):
+        from flask import abort
+        eq = db.session.get(Equipment, equipment_id)
+        if not eq:
+            abort(404)
+        # Find latest position for this equipment
+        pos = (
+            Position.query.filter_by(equipment_id=equipment_id)
+            .order_by(Position.timestamp.desc())
+            .first()
+        )
+        if not pos:
+            return {"type": "FeatureCollection", "features": []}
+        if getattr(eq, 'osmand_id', None) and (getattr(eq, 'id_traccar', 0) == 0):
+            source = 'osmand'
+        else:
+            source = 'traccar'
+        feature = {
+            'type': 'Feature',
+            'id': str(pos.id),
+            'properties': {
+                'timestamp': pos.timestamp.isoformat(),
+                'source': source,
+                'equipment': eq.name,
+                'icon': getattr(eq, 'marker_icon', 'tractor'),
+            },
+            'geometry': {
+                'type': 'Point',
+                'coordinates': [pos.longitude, pos.latitude],
+            },
+        }
+        return {'type': 'FeatureCollection', 'features': [feature]}
 
     @app.route('/equipment/<int:equipment_id>')
     @login_required
@@ -727,11 +1105,20 @@ def create_app(
         track_dates = set()
         for t in all_tracks:
             current = t.start_time.date()
-            last = t.end_time.date()
-            while current <= last:
+            last_day = t.end_time.date()
+            while current <= last_day:
                 track_dates.add(current)
                 current += timedelta(days=1)
         dates.update(track_dates)
+
+        last_position = (
+            Position.query.filter_by(equipment_id=equipment_id)
+            .order_by(Position.timestamp.desc())
+            .first()
+        )
+        if last_position:
+            dates.add(last_position.timestamp.date())
+
         has_tracks = bool(all_tracks)
 
         if (
@@ -838,6 +1225,26 @@ def create_app(
         tracks = [
             wkt.loads(t.line_wkt) for t in track_query.all() if t.line_wkt
         ]
+
+        # Compute days that have tracks within the selected period
+        track_days_in_period = set()
+        for t in Track.query.filter_by(equipment_id=equipment_id).all():
+            if not t.start_time or not t.end_time:
+                continue
+            # If a filter is active, keep only overlapping days
+            if filter_start is not None and t.end_time.date() < filter_start:
+                continue
+            if filter_end is not None and t.start_time.date() > filter_end:
+                continue
+            cur = t.start_time.date()
+            last = t.end_time.date()
+            while cur <= last:
+                if (
+                    (filter_start is None or cur >= filter_start)
+                    and (filter_end is None or cur <= filter_end)
+                ):
+                    track_days_in_period.add(cur)
+                cur += timedelta(days=1)
         if tracks:
             track_union = unary_union(tracks)
             tb = track_union.bounds
@@ -851,8 +1258,41 @@ def create_app(
             else:
                 bounds = tb
 
+        last = last_position
+        has_last_position = last is not None
+        if bounds is None and last:
+            delta = 0.0005
+            bounds = (
+                last.longitude - delta,
+                last.latitude - delta,
+                last.longitude + delta,
+                last.latitude + delta,
+            )
+
         sorted_dates = sorted(dates)
         available_dates = [d.isoformat() for d in sorted_dates]
+        has_data = bool(zones or has_tracks or has_last_position)
+
+        # Add explicit rows for days that have tracks but no computed zones
+        # in the selected period (or the auto-selected single day).
+        period_zone_dates = set()
+        for z in agg_period:
+            for dstr in z.get("dates", []):
+                try:
+                    period_zone_dates.add(date.fromisoformat(dstr))
+                except Exception:
+                    continue
+        missing_days = sorted(track_days_in_period - period_zone_dates)
+        for d in missing_days:
+            zones.append(
+                {
+                    "id": f"nozone:{d.isoformat()}",
+                    "dates": d.isoformat(),
+                    "pass_count": 0,
+                    "surface_ha": 0.0,
+                    "no_zone": True,
+                }
+            )
 
         date_value = ""
         if start_date and end_date:
@@ -880,6 +1320,7 @@ def create_app(
             date_value=date_value,
             show_all=show_all,
             has_tracks=has_tracks,
+            has_data=has_data,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')
@@ -1116,6 +1557,67 @@ def create_app(
         with app.app_context():
             zone.analyse_quotidienne()
 
+    def poll_latest_positions():
+        with app.app_context():
+            try:
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                window_start = now - timedelta(minutes=2)
+                for eq in Equipment.query.all():
+                    # Only poll devices backed by Traccar
+                    if not getattr(eq, 'id_traccar', None):
+                        continue
+                    try:
+                        positions = zone.fetch_positions(eq.id_traccar, window_start, now)
+                    except Exception:
+                        app.logger.exception("Live fetch failed for %s", eq.name)
+                        continue
+                    latest_ts = None
+                    for p in positions:
+                        try:
+                            ts = datetime.fromisoformat(p['deviceTime'].replace('Z', '+00:00')).replace(tzinfo=None)
+                        except Exception:
+                            continue
+                        existing = Position.query.filter_by(
+                            equipment_id=eq.id,
+                            latitude=p.get('latitude'),
+                            longitude=p.get('longitude'),
+                            timestamp=ts,
+                        ).first()
+                        if not existing:
+                            db.session.add(Position(
+                                equipment_id=eq.id,
+                                latitude=p.get('latitude'),
+                                longitude=p.get('longitude'),
+                                timestamp=ts,
+                            ))
+                        batt_val = (p.get('attributes') or {}).get('batteryLevel')
+                        if batt_val is None:
+                            batt_val = (p.get('attributes') or {}).get('battery')
+                        if batt_val is not None:
+                            try:
+                                batt_float = float(batt_val)
+                                if batt_float <= 1:
+                                    batt_float *= 100
+                                eq.battery_level = batt_float
+                                app.logger.info(
+                                    "Device %s battery at %.0f%%",
+                                    eq.name or eq.id_traccar,
+                                    eq.battery_level,
+                                )
+                            except (TypeError, ValueError):
+                                app.logger.info(
+                                    "Ignoring invalid battery level %r for device %s",
+                                    batt_val,
+                                    eq.name or eq.id_traccar,
+                                )
+                        if latest_ts is None or ts > latest_ts:
+                            latest_ts = ts
+                    if latest_ts is not None:
+                        eq.last_position = latest_ts
+                db.session.commit()
+            except Exception:
+                app.logger.exception("Unexpected error during live polling")
+
     if start_scheduler and os.environ.get("START_SCHEDULER", "1") != "0":
         with app.app_context():
             # Assurer que la base est prête avant l'analyse initiale
@@ -1127,7 +1629,12 @@ def create_app(
         scheduler.add_job(
             scheduled_job, trigger='cron', hour=hour, id='daily_analysis'
         )
+        scheduler.add_job(
+            poll_latest_positions, trigger='interval', minutes=1, id='live_positions'
+        )
         scheduler.start()
+
+    setattr(app, "poll_latest_positions", poll_latest_positions)
 
     def initial_analysis():
         with app.app_context():
@@ -1155,7 +1662,10 @@ def create_app(
                 )
                 return
             for eq in Equipment.query.all():
-                zone.process_equipment(eq, since=start_of_year)
+                if getattr(eq, 'id_traccar', None):
+                    zone.process_equipment(eq, since=start_of_year)
+                else:
+                    zone.recalculate_hectares_from_positions(eq.id, since_date=start_of_year)
 
     if run_initial_analysis and not os.environ.get("SKIP_INITIAL_ANALYSIS"):
         initial_analysis()
@@ -1187,5 +1697,5 @@ def create_app(
 if __name__ == '__main__':
     app = create_app()
     debug = os.environ.get('FLASK_DEBUG') == '1'
-    host = '127.0.0.1'
+    host = '0.0.0.0'
     app.run(debug=debug, host=host)

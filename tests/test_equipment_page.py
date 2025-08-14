@@ -189,6 +189,32 @@ def test_equipment_defaults_to_last_day(make_app):
     assert f'value="{today.isoformat()}"' in html
 
 
+def test_equipment_defaults_to_last_point_day(make_app):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        db.session.add(
+            Track(
+                equipment_id=eq.id,
+                start_time=datetime.combine(yesterday, datetime.min.time()),
+                end_time=datetime.combine(yesterday, datetime.max.time()),
+                line_wkt="LINESTRING(0 0,1 1)",
+            )
+        )
+        DailyZone.query.filter_by(equipment_id=eq.id, date=today).delete()
+        zone.invalidate_cache(eq.id)
+        db.session.commit()
+        resp = client.get(f"/equipment/{eq.id}")
+        zone.invalidate_cache(eq.id)
+    html = resp.data.decode()
+    assert f'value="{today.isoformat()}"' in html
+
+
 def test_multi_pass_zone_included(make_app):
     app = make_app()
     client = app.test_client()

@@ -8,6 +8,7 @@
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   
 </head>
@@ -23,15 +24,16 @@
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav ms-md-auto mb-2 mb-md-0">
           {% if current_user.is_admin %}
-          <li class="nav-item">
-            <a class="nav-link d-flex align-items-center" href="{{ url_for('admin') }}">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               <i class="bi bi-speedometer2 me-1"></i> Admin
             </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link d-flex align-items-center" href="{{ url_for('users') }}">
-              <i class="bi bi-people me-1"></i> Utilisateurs
-            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="{{ url_for('admin_equipment') }}">Gestion des équipements</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_analysis') }}">Paramètres de l'analyse</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('users') }}">Gestion des utilisateurs</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_traccar') }}">Paramètres Traccar</a></li>
+            </ul>
           </li>
           {% endif %}
           <li class="nav-item">
@@ -51,9 +53,13 @@
     {% if message %}
     <div class="alert alert-info">{{ message }}</div>
     {% endif %}
+    <div class="input-group mb-3">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input type="text" id="equipment-filter" class="form-control" placeholder="Rechercher un équipement">
+    </div>
 
     <div class="table-responsive">
-      <table class="table table-hover align-middle">
+      <table class="table table-hover align-middle" id="equipment-table">
         <thead class="table-light">
           <tr>
             <th>Équipement</th>
@@ -61,22 +67,39 @@
             <th>Ha traités</th>
             <th>Ha uniques</th>
             <th>Distance zones (km)</th>
-            <th>Temps écoulé</th>
-            <th>Score</th>
+            <th><i class="bi bi-battery-half me-1"></i>Batterie</th>
+            <th><i class="bi bi-clock me-1"></i>Temps écoulé</th>
+            <th><i class="bi bi-trophy me-1"></i>Score</th>
           </tr>
         </thead>
         <tbody>
           {% for eq in equipment_data %}
-          <tr>
+          <tr data-eqid="{{ eq.id }}">
             <td>
+              <i class="mdi mdi-{{ eq.icon }} me-1"></i>
               <a href="{{ url_for('equipment_detail', equipment_id=eq.id) }}">
                 {{ eq.name }}
               </a>
+              {% if eq.source == 'traccar' %}
+                <span class="badge text-bg-secondary ms-1">Traccar</span>
+              {% else %}
+                <span class="badge text-bg-info ms-1">OsmAnd</span>
+              {% endif %}
+              {% if not eq.include_in_analysis %}
+                <span class="badge text-bg-warning ms-1">suivi seul</span>
+              {% endif %}
             </td>
-            <td>{{ eq.last_seen or '–' }}</td>
+            <td class="last-seen">{{ eq.last_seen or '–' }}</td>
             <td>{{ eq.total_hectares|round(2) }}</td>
             <td>{{ eq.relative_hectares|round(2) }}</td>
             <td>{{ eq.distance_km|round(2) }}</td>
+            <td>
+              {% if eq.battery_level is not none %}
+                {{ eq.battery_level|int }}%
+              {% else %}
+                –
+              {% endif %}
+            </td>
             <td>{{ eq.delta_str }}</td>
             <td>
               {{ eq.score }}
@@ -98,6 +121,45 @@
     document.querySelectorAll('.navbar a').forEach(a => {
       a.addEventListener('touchend', function () { window.location.href = this.href; });
     });
+  </script>
+  <script>
+    async function refreshStatus() {
+      try {
+        const resp = await fetch('{{ url_for('equipment_status') }}');
+        if (!resp.ok) {
+          return;
+        }
+        const data = await resp.json();
+        data.forEach(eq => {
+          const row = document.querySelector(`tr[data-eqid="${eq.id}"]`);
+          if (!row) {
+            return;
+          }
+          const last = row.querySelector('.last-seen');
+          const delta = row.querySelector('.delta');
+          if (last) {
+            last.textContent = eq.last_seen || '–';
+          }
+          if (delta) {
+            delta.textContent = eq.delta_str;
+          }
+        });
+      } catch (e) {
+        console.error('refreshStatus', e);
+      }
+    }
+    setInterval(refreshStatus, 10000);
+
+    const filterInput = document.getElementById('equipment-filter');
+    if (filterInput) {
+      filterInput.addEventListener('input', () => {
+        const query = filterInput.value.toLowerCase();
+        document.querySelectorAll('#equipment-table tbody tr').forEach(row => {
+          const name = row.querySelector('td').textContent.toLowerCase();
+          row.style.display = name.includes(query) ? '' : 'none';
+        });
+      });
+    }
   </script>
 </body>
 </html>
