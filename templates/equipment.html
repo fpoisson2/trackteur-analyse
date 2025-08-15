@@ -294,6 +294,22 @@
     const showAll = {{ 'true' if show_all else 'false' }};
     const availableDates = {{ available_dates|tojson }};
 
+    function exportCsv() {
+      const params = new URLSearchParams();
+      if (startDate !== null) params.set('start', startDate);
+      if (endDate !== null) params.set('end', endDate);
+      if (startDate === null && endDate === null) {
+        if (year !== null) params.set('year', year);
+        if (month !== null) params.set('month', month);
+        if (day !== null) params.set('day', day);
+        if (year === null && month === null && day === null && showAll) {
+          params.set('show', 'all');
+        }
+      }
+      const url = `/equipment/${equipmentId}/export.csv` + (params.toString() ? `?${params.toString()}` : '');
+      window.location.href = url;
+    }
+
     function rebuildDateLayers() {
       dateLayers = {};
       featureLayers = {};
@@ -635,6 +651,21 @@
       };
       layerBtn.addTo(map);
 
+      // Export CSV control (visible on mobile)
+      const exportBtnCtl = L.control({ position: 'topright' });
+      exportBtnCtl.onAdd = () => {
+        const div = L.DomUtil.create('div', 'export-btn-container');
+        const button = L.DomUtil.create('button', '', div);
+        button.id = 'export-map-btn';
+        button.type = 'button';
+        button.title = 'Exporter CSV';
+        button.innerHTML = '<i class="bi bi-download"></i>';
+        L.DomEvent.disableClickPropagation(button);
+        L.DomEvent.on(button, 'click', () => exportCsv());
+        return div;
+      };
+      exportBtnCtl.addTo(map);
+
       const layerModalEl = document.getElementById('layer-modal');
       if (layerModalEl) {
         layerModalEl.addEventListener('show.bs.modal', () => {
@@ -760,21 +791,7 @@
     function setupInteractions() {
       const exportBtn = document.getElementById('export-csv-btn');
       if (exportBtn) {
-        exportBtn.addEventListener('click', () => {
-          const params = new URLSearchParams();
-          if (startDate !== null) params.set('start', startDate);
-          if (endDate !== null) params.set('end', endDate);
-          if (startDate === null && endDate === null) {
-            if (year !== null) params.set('year', year);
-            if (month !== null) params.set('month', month);
-            if (day !== null) params.set('day', day);
-            if (year === null && month === null && day === null && showAll) {
-              params.set('show', 'all');
-            }
-          }
-          const url = `/equipment/${equipmentId}/export.csv` + (params.toString() ? `?${params.toString()}` : '');
-          window.location.href = url;
-        });
+        exportBtn.addEventListener('click', exportCsv);
       }
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', async () => {
