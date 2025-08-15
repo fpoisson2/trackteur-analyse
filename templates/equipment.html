@@ -203,6 +203,9 @@
         <div class="d-flex align-items-center justify-content-between mb-2">
           <h5 class="mb-0">{{ equipment.name }}</h5>
           <div class="d-none d-lg-flex gap-2">
+            <button type="button" id="export-csv-btn" class="btn btn-primary btn-sm" title="Exporter CSV">
+              <i class="bi bi-download me-1"></i> Exporter CSV
+            </button>
             <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#legend-modal" title="Légende">
               <i class="bi bi-question-circle"></i>
             </button>
@@ -755,6 +758,24 @@
     }
 
     function setupInteractions() {
+      const exportBtn = document.getElementById('export-csv-btn');
+      if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+          const params = new URLSearchParams();
+          if (startDate !== null) params.set('start', startDate);
+          if (endDate !== null) params.set('end', endDate);
+          if (startDate === null && endDate === null) {
+            if (year !== null) params.set('year', year);
+            if (month !== null) params.set('month', month);
+            if (day !== null) params.set('day', day);
+            if (year === null && month === null && day === null && showAll) {
+              params.set('show', 'all');
+            }
+          }
+          const url = `/equipment/${equipmentId}/export.csv` + (params.toString() ? `?${params.toString()}` : '');
+          window.location.href = url;
+        });
+      }
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', async () => {
           const zoneId = row.dataset.zoneId;

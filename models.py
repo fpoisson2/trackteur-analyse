@@ -74,6 +74,8 @@ class Position(db.Model):  # type: ignore[name-defined]
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
     timestamp = db.Column(db.DateTime)
+    # Battery level percentage at this position (0-100), if provided
+    battery_level = db.Column(db.Float, nullable=True)
 
 
 class DailyZone(db.Model):  # type: ignore[name-defined]

@@ -237,6 +237,13 @@ def create_app(
                             "INTEGER REFERENCES track(id)"
                         )
                     )
+            if "battery_level" not in pos_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE position ADD COLUMN battery_level FLOAT"
+                        )
+                    )
 
     if hasattr(app, "before_first_request"):
         @app.before_first_request
@@ -837,14 +844,22 @@ def create_app(
                     timestamp=ts_naive,
                 ).first()
                 if not existing:
-                    db.session.add(
-                        Position(
-                            equipment_id=eq.id,
-                            latitude=float(lat),
-                            longitude=float(lon),
-                            timestamp=ts_naive,
-                        )
+                    p_obj = Position(
+                        equipment_id=eq.id,
+                        latitude=float(lat),
+                        longitude=float(lon),
+                        timestamp=ts_naive,
                     )
+                    # Persist per-point battery level when provided
+                    if batt_val is not None:
+                        try:
+                            b = float(batt_val)
+                            if b <= 1:
+                                b *= 100
+                            p_obj.battery_level = b
+                        except (TypeError, ValueError):
+                            pass
+                    db.session.add(p_obj)
                 if latest_ts is None or ts_naive > latest_ts:
                     latest_ts = ts_naive
                 if batt_val is not None:
@@ -1588,12 +1603,24 @@ def create_app(
                             timestamp=ts,
                         ).first()
                         if not existing:
-                            db.session.add(Position(
+                            batt_val = (p.get('attributes') or {}).get('batteryLevel')
+                            if batt_val is None:
+                                batt_val = (p.get('attributes') or {}).get('battery')
+                            p_obj = Position(
                                 equipment_id=eq.id,
                                 latitude=p.get('latitude'),
                                 longitude=p.get('longitude'),
                                 timestamp=ts,
-                            ))
+                            )
+                            if batt_val is not None:
+                                try:
+                                    b = float(batt_val)
+                                    if b <= 1:
+                                        b *= 100
+                                    p_obj.battery_level = b
+                                except (TypeError, ValueError):
+                                    pass
+                            db.session.add(p_obj)
                         batt_val = (p.get('attributes') or {}).get('batteryLevel')
                         if batt_val is None:
                             batt_val = (p.get('attributes') or {}).get('battery')
@@ -1621,6 +1648,110 @@ def create_app(
                 db.session.commit()
             except Exception:
                 app.logger.exception("Unexpected error during live polling")
+
+    @app.route('/equipment/<int:equipment_id>/export.csv')
+    @login_required
+    def equipment_export_csv(equipment_id):
+        from flask import abort, Response
+        import csv
+        import io
+        eq = db.session.get(Equipment, equipment_id)
+        if not eq:
+            abort(404)
+
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+        day = request.args.get('day', type=int)
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
+        show_all = request.args.get('show') == 'all'
+
+        start_dt = None
+        end_dt = None
+        if start_str or end_str:
+            start_d = date.fromisoformat(start_str) if start_str else None
+            end_d = date.fromisoformat(end_str) if end_str else None
+            if start_d is not None:
+                start_dt = datetime.combine(start_d, datetime.min.time())
+            if end_d is not None:
+                end_dt = datetime.combine(end_d + timedelta(days=1), datetime.min.time())
+        elif year is not None:
+            start_dt = datetime(year, 1, 1)
+            end_dt = datetime(year + 1, 1, 1)
+            if month is not None:
+                start_dt = datetime(year, month, 1)
+                end_dt = (
+                    datetime(year + 1, 1, 1)
+                    if month == 12
+                    else datetime(year, month + 1, 1)
+                )
+                if day is not None:
+                    start_dt = datetime(year, month, day)
+                    end_dt = start_dt + timedelta(days=1)
+        elif show_all:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            start_dt = datetime(now.year, 1, 1)
+            end_dt = now
+
+        # Prepare CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["latitude", "longitude", "timestamp", "battery_level"]) 
+
+        if getattr(eq, 'id_traccar', None):
+            # Fetch from Traccar directly to include attributes like battery.
+            if start_dt is None or end_dt is None:
+                # Fallback to last day if no range specified
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                start_dt = datetime(now.year, now.month, now.day)
+                end_dt = start_dt + timedelta(days=1)
+            try:
+                positions = zone.fetch_positions(eq.id_traccar, start_dt, end_dt)
+            except Exception:
+                positions = []
+            for p in positions:
+                lat = p.get('latitude')
+                lon = p.get('longitude')
+                ts_raw = p.get('deviceTime') or p.get('fixTime')
+                try:
+                    ts = datetime.fromisoformat((ts_raw or '').replace('Z', '+00:00'))
+                except Exception:
+                    ts = None
+                batt_val = (p.get('attributes') or {}).get('batteryLevel')
+                if batt_val is None:
+                    batt_val = (p.get('attributes') or {}).get('battery')
+                batt = None
+                if batt_val is not None:
+                    try:
+                        batt = float(batt_val)
+                        if batt <= 1:
+                            batt *= 100
+                    except (TypeError, ValueError):
+                        batt = None
+                if lat is None or lon is None or ts is None:
+                    continue
+                writer.writerow([lat, lon, ts.isoformat(), batt if batt is not None else ""])            
+        else:
+            # Export from local DB positions (OsmAnd or stored).
+            query = Position.query.filter_by(equipment_id=eq.id)
+            if start_dt is not None:
+                query = query.filter(Position.timestamp >= start_dt)
+            if end_dt is not None:
+                query = query.filter(Position.timestamp < end_dt)
+            for p in query.order_by(Position.timestamp.asc()).all():
+                writer.writerow([
+                    p.latitude,
+                    p.longitude,
+                    p.timestamp.isoformat() if p.timestamp else "",
+                    (int(p.battery_level) if p.battery_level is not None else ""),
+                ])
+
+        csv_data = output.getvalue()
+        output.close()
+        filename = f"equipment_{equipment_id}_points.csv"
+        resp = Response(csv_data, mimetype='text/csv; charset=utf-8')
+        resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return resp
 
     if start_scheduler and os.environ.get("START_SCHEDULER", "1") != "0":
         with app.app_context():
