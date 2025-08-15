@@ -655,7 +655,7 @@
       const exportBtnCtl = L.control({ position: 'topright' });
       exportBtnCtl.onAdd = () => {
         const div = L.DomUtil.create('div', 'export-btn-container');
-        const button = L.DomUtil.create('button', '', div);
+        const button = L.DomUtil.create('button', 'map-ctrl-btn', div);
         button.id = 'export-map-btn';
         button.type = 'button';
         button.title = 'Exporter CSV';
