@@ -472,7 +472,11 @@
     }
 
     function setupMap() {
-      map = L.map('map-container', { zoomControl: false, preferCanvas: true });
+      map = L.map('map-container', {
+        zoomControl: false,
+        preferCanvas: true,
+        tapTolerance: 30
+      });
       const baseLayers = {
         hybrid: L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
           maxZoom: 20,
@@ -517,8 +521,8 @@
       map.createPane('pointsPane');
       map.getPane('pointsPane').style.zIndex = 650; // above overlayPane (400) and markerPane (600)
       const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
-      const pointRadius = isCoarsePointer ? 6 : 5;       // visible dot stays small
-      const hitRadius = isCoarsePointer ? 20 : 10;       // larger invisible tap target
+      const pointRadius = isCoarsePointer ? 6 : 5;        // visible dot stays small
+      const hitRadius = isCoarsePointer ? 28 : 14;        // larger invisible tap target
       pointLayer = L.geoJSON(null, {
         pane: 'pointsPane',
         pointToLayer: (f, latlng) => {
@@ -530,6 +534,7 @@
             fill: true,
             fillColor: '#000',
             fillOpacity: 0.001, // not zero to keep events
+            bubblingMouseEvents: false,
           });
           const dot = L.circleMarker(latlng, {
             pane: 'pointsPane',
@@ -539,6 +544,7 @@
             color: '#0d6efd',
             fillColor: '#3d8bfd',
             fillOpacity: 0.9,
+            bubblingMouseEvents: false,
           });
           return L.layerGroup([hit, dot]);
         },
@@ -555,7 +561,13 @@
                        `Lon: ${lonStr}<br>` +
                        `Horodatage: ${ts}<br>` +
                        `Batterie: ${battStr}`;
-          layer.bindPopup(html);
+          // Bind popup on both child layers to maximize hit area
+          if (layer && layer.getLayers) {
+            const children = layer.getLayers();
+            children.forEach(l => l.bindPopup(html));
+          } else {
+            layer.bindPopup(html);
+          }
         }
       }).addTo(map);
 
