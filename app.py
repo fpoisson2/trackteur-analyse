@@ -1301,6 +1301,40 @@ def create_app(
 
         last = last_position
         has_last_position = last is not None
+
+        # If no zones/tracks bounds, try to derive bounds from GPS points
+        if bounds is None:
+            # Build a positions query constrained to the selected period
+            pos_query = Position.query.filter_by(equipment_id=equipment_id)
+            if filter_start is not None:
+                pos_query = pos_query.filter(Position.timestamp >= datetime.combine(filter_start, datetime.min.time()))
+            if filter_end is not None:
+                pos_query = pos_query.filter(Position.timestamp < datetime.combine(filter_end + timedelta(days=1), datetime.min.time()))
+            # Compute min/max extents from filtered points
+            pts = pos_query.all()
+            if pts:
+                lons = [p.longitude for p in pts]
+                lats = [p.latitude for p in pts]
+                min_lon, max_lon = min(lons), max(lons)
+                min_lat, max_lat = min(lats), max(lats)
+            else:
+                min_lon = min_lat = max_lon = max_lat = None
+            if (
+                min_lon is not None and min_lat is not None
+                and max_lon is not None and max_lat is not None
+            ):
+                if min_lon == max_lon and min_lat == max_lat:
+                    delta = 0.0005
+                    bounds = (
+                        min_lon - delta,
+                        min_lat - delta,
+                        max_lon + delta,
+                        max_lat + delta,
+                    )
+                else:
+                    bounds = (min_lon, min_lat, max_lon, max_lat)
+
+        # Final fallback: last position small envelope
         if bounds is None and last:
             delta = 0.0005
             bounds = (
@@ -1312,7 +1346,19 @@ def create_app(
 
         sorted_dates = sorted(dates)
         available_dates = [d.isoformat() for d in sorted_dates]
-        has_data = bool(zones or has_tracks or has_last_position)
+        # Determine if there are points in selected period
+        has_points_in_period = False
+        try:
+            pq = Position.query.filter_by(equipment_id=equipment_id)
+            if filter_start is not None:
+                pq = pq.filter(Position.timestamp >= datetime.combine(filter_start, datetime.min.time()))
+            if filter_end is not None:
+                pq = pq.filter(Position.timestamp < datetime.combine(filter_end + timedelta(days=1), datetime.min.time()))
+            has_points_in_period = pq.limit(1).count() > 0
+        except Exception:
+            pass
+
+        has_data = bool(zones or has_tracks or has_last_position or has_points_in_period)
 
         # Add explicit rows for days that have tracks but no computed zones
         # in the selected period (or the auto-selected single day).
@@ -1346,6 +1392,9 @@ def create_app(
         elif year and month and day:
             date_value = date(year, month, day).isoformat()
 
+        # Default to showing points if they are the only data in the period
+        show_points_default = has_points_in_period and not zones and not tracks
+
         return render_template(
             'equipment.html',
             equipment=eq,
@@ -1362,6 +1411,7 @@ def create_app(
             show_all=show_all,
             has_tracks=has_tracks,
             has_data=has_data,
+            show_points_default=show_points_default,
         )
 
     @app.route('/equipment/<int:equipment_id>/zones.geojson')

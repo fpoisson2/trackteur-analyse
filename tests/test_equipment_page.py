@@ -337,6 +337,50 @@ def test_calendar_shows_with_points_only(make_app):
     assert 'disabled' not in html.split('id="open-calendar"', 1)[1].split('>')[0]
 
 
+def test_points_only_shows_points_by_default_and_sets_bounds(make_app):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        # Only points, widely separated to create a clear bbox
+        DailyZone.query.delete()
+        Track.query.delete()
+        Position.query.delete()
+        d = date.today()
+        db.session.add_all([
+            Position(
+                equipment_id=eq.id,
+                latitude=10.0,
+                longitude=20.0,
+                timestamp=d,
+            ),
+            Position(
+                equipment_id=eq.id,
+                latitude=11.0,
+                longitude=21.0,
+                timestamp=d,
+            ),
+        ])
+        db.session.commit()
+        resp = client.get(f"/equipment/{eq.id}")
+
+    html = resp.data.decode()
+    # Show-points should be checked by default
+    assert 'id="show-points"' in html
+    idx = html.index('id="show-points"')
+    after = html[idx: idx + 200]
+    assert 'checked' in after
+    # Bounds should cover the two points
+    bounds = get_js_array(html, "initialBounds")
+    west, south, east, north = bounds
+    assert west <= 20.0 <= east
+    assert west <= 21.0 <= east
+    assert south <= 10.0 <= north
+    assert south <= 11.0 <= north
+
+
 def test_single_day_request_with_tracks(make_app):
     app = make_app()
     client = app.test_client()
