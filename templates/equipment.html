@@ -561,12 +561,24 @@
                        `Lon: ${lonStr}<br>` +
                        `Horodatage: ${ts}<br>` +
                        `Batterie: ${battStr}`;
-          // Bind popup on both child layers to maximize hit area
+
+          const centerLatLng = (typeof lat === 'number' && typeof lon === 'number')
+            ? L.latLng(lat, lon)
+            : (layer.getLatLng ? layer.getLatLng() : null);
+
+          const openAtCenter = () => {
+            if (!centerLatLng) return;
+            L.popup({ autoPan: true, closeButton: true, maxWidth: 260 })
+              .setLatLng(centerLatLng)
+              .setContent(html)
+              .openOn(map);
+          };
+
           if (layer && layer.getLayers) {
             const children = layer.getLayers();
-            children.forEach(l => l.bindPopup(html));
+            children.forEach(l => l.on('click', openAtCenter));
           } else {
-            layer.bindPopup(html);
+            layer.on('click', openAtCenter);
           }
         }
       }).addTo(map);
