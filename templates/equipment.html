@@ -514,7 +514,21 @@
       }).addTo(map);
 
       pointLayer = L.geoJSON(null, {
-        pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 })
+        pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 }),
+        onEachFeature: (feature, layer) => {
+          const ll = layer.getLatLng();
+          const ts = (feature.properties && feature.properties.timestamp) || '';
+          const batt = (feature.properties && feature.properties.battery_level);
+          const latStr = (typeof ll.lat === 'number') ? ll.lat.toFixed(6) : '';
+          const lonStr = (typeof ll.lng === 'number') ? ll.lng.toFixed(6) : '';
+          const battStr = (batt === null || batt === undefined) ? '–' : `${parseInt(batt, 10)}%`;
+          const html = `<b>Point GPS</b><br>` +
+                       `Lat: ${latStr}<br>` +
+                       `Lon: ${lonStr}<br>` +
+                       `Horodatage: ${ts}<br>` +
+                       `Batterie: ${battStr}`;
+          layer.bindPopup(html);
+        }
       }).addTo(map);
 
       trackLayer = L.geoJSON(null, {

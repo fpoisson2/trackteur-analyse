@@ -581,6 +581,44 @@ def test_points_geojson_endpoint(make_app):
     assert len(data["features"]) <= 2
 
 
+def test_points_geojson_includes_battery_and_popup_code(make_app):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        Position.query.delete()
+        db.session.commit()
+        p = Position(
+            equipment_id=eq.id,
+            latitude=48.123456,
+            longitude=2.654321,
+            timestamp=date.today(),
+            battery_level=87,
+        )
+        db.session.add(p)
+        db.session.commit()
+        eqid = eq.id
+
+    # GeoJSON includes battery_level
+    resp = client.get(f"/equipment/{eqid}/points.geojson?all=1")
+    data = resp.get_json()
+    assert len(data["features"]) == 1
+    props = data["features"][0]["properties"]
+    assert "timestamp" in props
+    assert props.get("battery_level") == 87
+
+    # Page JS binds popups for points
+    resp = client.get(f"/equipment/{eqid}")
+    html = resp.data.decode()
+    assert "pointLayer = L.geoJSON" in html
+    start = html.find("pointLayer = L.geoJSON")
+    snippet = html[start:start+500]
+    assert "onEachFeature" in snippet
+    assert "layer.bindPopup" in html
+
+
 def test_equipment_page_contains_highlight_zone(make_app):
     app = make_app()
     client = app.test_client()

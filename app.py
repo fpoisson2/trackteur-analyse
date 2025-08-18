@@ -1565,6 +1565,9 @@ def create_app(
                 'id': str(p.id),
                 'properties': {
                     'timestamp': p.timestamp.isoformat(),
+                    'battery_level': (
+                        int(p.battery_level) if p.battery_level is not None else None
+                    ),
                 },
                 'geometry': {
                     'type': 'Point',
