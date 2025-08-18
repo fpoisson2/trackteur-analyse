@@ -472,7 +472,7 @@
     }
 
     function setupMap() {
-      map = L.map('map-container', { zoomControl: false });
+      map = L.map('map-container', { zoomControl: false, preferCanvas: true });
       const baseLayers = {
         hybrid: L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
           maxZoom: 20,
@@ -513,8 +513,19 @@
         }
       }).addTo(map);
 
+      // Ensure points stay above polygons/lines and are easy to tap on mobile
+      map.createPane('pointsPane');
+      map.getPane('pointsPane').style.zIndex = 650; // above overlayPane (400) and markerPane (600)
       pointLayer = L.geoJSON(null, {
-        pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 }),
+        pane: 'pointsPane',
+        pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+          radius: 7,
+          stroke: true,
+          weight: 2,
+          color: '#0d6efd',
+          fillColor: '#3d8bfd',
+          fillOpacity: 0.85,
+        }),
         onEachFeature: (feature, layer) => {
           const ll = layer.getLatLng();
           const ts = (feature.properties && feature.properties.timestamp) || '';
