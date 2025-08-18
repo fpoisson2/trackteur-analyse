@@ -1138,6 +1138,28 @@ def create_app(
         if last_position:
             dates.add(last_position.timestamp.date())
 
+        # Include days that have raw GPS points (useful when there are no
+        # tracks/zones, e.g., OsmAnd-only data). We query distinct date(ts).
+        try:
+            rows = (
+                db.session.query(db.func.date(Position.timestamp))
+                .filter(Position.equipment_id == equipment_id)
+                .distinct()
+                .all()
+            )
+            for (dt_val,) in rows:
+                # SQLite returns string YYYY-MM-DD; other backends may return date
+                if isinstance(dt_val, date):
+                    dates.add(dt_val)
+                else:
+                    try:
+                        dates.add(date.fromisoformat(str(dt_val)))
+                    except Exception:
+                        pass
+        except Exception:
+            # Fallback: ignore if aggregation fails; not critical
+            pass
+
         has_tracks = bool(all_tracks)
 
         if (
