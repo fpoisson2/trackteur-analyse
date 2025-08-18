@@ -516,12 +516,14 @@
       // Ensure points stay above polygons/lines and are easy to tap on mobile
       map.createPane('pointsPane');
       map.getPane('pointsPane').style.zIndex = 650; // above overlayPane (400) and markerPane (600)
+      const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+      const pointRadius = isCoarsePointer ? 12 : 7;
       pointLayer = L.geoJSON(null, {
         pane: 'pointsPane',
         pointToLayer: (f, latlng) => L.circleMarker(latlng, {
-          radius: 7,
+          radius: pointRadius,
           stroke: true,
-          weight: 2,
+          weight: 3,
           color: '#0d6efd',
           fillColor: '#3d8bfd',
           fillOpacity: 0.85,
