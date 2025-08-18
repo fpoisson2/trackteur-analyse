@@ -517,23 +517,38 @@
       map.createPane('pointsPane');
       map.getPane('pointsPane').style.zIndex = 650; // above overlayPane (400) and markerPane (600)
       const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
-      const pointRadius = isCoarsePointer ? 12 : 7;
+      const pointRadius = isCoarsePointer ? 6 : 5;       // visible dot stays small
+      const hitRadius = isCoarsePointer ? 20 : 10;       // larger invisible tap target
       pointLayer = L.geoJSON(null, {
         pane: 'pointsPane',
-        pointToLayer: (f, latlng) => L.circleMarker(latlng, {
-          radius: pointRadius,
-          stroke: true,
-          weight: 3,
-          color: '#0d6efd',
-          fillColor: '#3d8bfd',
-          fillOpacity: 0.85,
-        }),
+        pointToLayer: (f, latlng) => {
+          // Large invisible hit area + small visible dot
+          const hit = L.circleMarker(latlng, {
+            pane: 'pointsPane',
+            radius: hitRadius,
+            stroke: false,
+            fill: true,
+            fillColor: '#000',
+            fillOpacity: 0.001, // not zero to keep events
+          });
+          const dot = L.circleMarker(latlng, {
+            pane: 'pointsPane',
+            radius: pointRadius,
+            stroke: true,
+            weight: 2,
+            color: '#0d6efd',
+            fillColor: '#3d8bfd',
+            fillOpacity: 0.9,
+          });
+          return L.layerGroup([hit, dot]);
+        },
         onEachFeature: (feature, layer) => {
-          const ll = layer.getLatLng();
+          const coords = (feature.geometry && feature.geometry.coordinates) || [null, null];
+          const lon = coords[0], lat = coords[1];
           const ts = (feature.properties && feature.properties.timestamp) || '';
           const batt = (feature.properties && feature.properties.battery_level);
-          const latStr = (typeof ll.lat === 'number') ? ll.lat.toFixed(6) : '';
-          const lonStr = (typeof ll.lng === 'number') ? ll.lng.toFixed(6) : '';
+          const latStr = (typeof lat === 'number') ? Number(lat).toFixed(6) : '';
+          const lonStr = (typeof lon === 'number') ? Number(lon).toFixed(6) : '';
           const battStr = (batt === null || batt === undefined) ? '–' : `${parseInt(batt, 10)}%`;
           const html = `<b>Point GPS</b><br>` +
                        `Lat: ${latStr}<br>` +
