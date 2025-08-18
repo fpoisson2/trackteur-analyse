@@ -126,13 +126,14 @@
     <a href="{{ url_for('index') }}">
       <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="40">
     </a>
-    {% if zones or has_tracks %}
-    <div id="date-nav" class="input-group ms-2">
-      <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
-      <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>
-        <i class="bi bi-calendar3"></i>
-      </button>
-    </div>
+    {# Show date selector whenever there are any dates (zones, tracks, or points) #}
+    {% if available_dates %}
+      <div id="date-nav" class="input-group ms-2">
+        <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
+        <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>
+          <i class="bi bi-calendar3"></i>
+        </button>
+      </div>
     {% endif %}
   </header>
 

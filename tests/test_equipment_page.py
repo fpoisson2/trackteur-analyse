@@ -304,6 +304,39 @@ def test_calendar_shows_with_tracks_only(make_app):
     assert 'id="date-display"' in html
 
 
+def test_calendar_shows_with_points_only(make_app):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        eq = Equipment.query.first()
+        # Remove zones and tracks, keep only points on a specific day
+        DailyZone.query.delete()
+        Track.query.delete()
+        Position.query.delete()
+        d = date.today() - timedelta(days=3)
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=1.23,
+                longitude=3.21,
+                timestamp=d,
+            )
+        )
+        db.session.commit()
+        resp = client.get(f"/equipment/{eq.id}")
+
+    html = resp.data.decode()
+    # Date selector should be present and include the point's day
+    assert 'id="date-display"' in html
+    dates = get_js_array(html, "availableDates")
+    assert d.isoformat() in dates
+    # Calendar button should be enabled
+    assert 'id="open-calendar"' in html
+    assert 'disabled' not in html.split('id="open-calendar"', 1)[1].split('>')[0]
+
+
 def test_single_day_request_with_tracks(make_app):
     app = make_app()
     client = app.test_client()
