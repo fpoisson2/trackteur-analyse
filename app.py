@@ -566,6 +566,11 @@ def create_app(
             scheduler.add_job(_ephemeris_cache_job, 'cron', minute=0, id='ephemeris_cache')
         except Exception as exc:
             app.logger.warning("Failed to schedule ephemeris cache: %s", exc)
+        # Kick off an immediate background build to warm the cache
+        try:
+            threading.Thread(target=_ephemeris_cache_job, daemon=True).start()
+        except Exception as exc:
+            app.logger.warning("Failed to start initial ephemeris build: %s", exc)
 
     @app.route('/admin/analysis', methods=['GET', 'POST'])
     @login_required
@@ -1202,32 +1207,17 @@ def create_app(
                 p = cache_path(systems)
                 if os.path.exists(p) and os.path.getsize(p) > 0:
                     return send_file(p, mimetype='application/octet-stream', as_attachment=True, download_name=os.path.basename(p))
+                return jsonify({'error': 'cache_not_ready', 'detail': f'{os.path.basename(p)} missing'}), 503
             else:  # GC
                 pg, pc = cache_path('G'), cache_path('C')
                 if all(os.path.exists(pp) and os.path.getsize(pp) > 0 for pp in (pg, pc)):
-                    # serve concatenated
                     with open(pg, 'rb') as fg, open(pc, 'rb') as fc:
                         data = fg.read() + fc.read()
                     fname = f"eph_GC_{year}_{doy:03d}.bin"
                     resp = Response(data, mimetype='application/octet-stream')
                     resp.headers['Content-Disposition'] = f"attachment; filename={fname}"
                     return resp
-            # Cache miss → build on demand (BKG behavior)
-            if systems in ("G", "C"):
-                data = casic.build_casic_bin_latest_multi(year, doy, systems=systems)
-                # Write cache
-                tmp = cache_path(systems) + ".tmp"
-                with open(tmp, 'wb') as fh:
-                    fh.write(data)
-                os.replace(tmp, cache_path(systems))
-                return send_file(cache_path(systems), mimetype='application/octet-stream', as_attachment=True, download_name=os.path.basename(cache_path(systems)))
-            else:
-                data = casic.build_casic_bin_latest_multi(year, doy, systems='G') + \
-                       casic.build_casic_bin_latest_multi(year, doy, systems='C')
-                fname = f"eph_GC_{year}_{doy:03d}.bin"
-                resp = Response(data, mimetype='application/octet-stream')
-                resp.headers['Content-Disposition'] = f"attachment; filename={fname}"
-                return resp
+                return jsonify({'error': 'cache_not_ready', 'detail': 'G or C cache missing'}), 503
         except Exception as exc:  # pragma: no cover - runtime dependency
             app.logger.exception("casic_ephemeris failed: %s", exc)
             return jsonify({'error': str(exc)}), 502
