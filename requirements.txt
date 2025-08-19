@@ -13,6 +13,8 @@ geopandas
 folium
 alphashape
 pyproj
+xarray
+georinex
 flake8
 pytest-cov
 pytest
