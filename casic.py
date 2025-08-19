@@ -312,17 +312,19 @@ def _pick_latest_per_gps_sv(ds: Any) -> list[dict[str, float]]:
         import numpy as np  # type: ignore[import-untyped]
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("numpy not installed") from exc
-    svs = [sv for sv in getattr(ds, "sv", []) if str(sv).startswith("G")]
+    try:
+        sv_values = ds.sv.values  # xarray coordinate -> numpy array
+    except Exception:
+        sv_values = []
+    svs = [sv for sv in sv_values if str(sv).startswith("G")]
     if not svs:
         return []
     out: list[dict[str, float]] = []
     for sv in svs:
         rows = ds.sel(sv=sv)
-        try:
-            arr = rows["sqrtA"]
-        except Exception:
+        if "sqrtA" not in rows.variables:
             continue
-        values = arr.values  # xarray -> numpy
+        values = rows["sqrtA"].values  # xarray -> numpy
         valid_idx = np.where(~np.isnan(values))[0]
         if valid_idx.size == 0:
             continue
@@ -521,32 +523,61 @@ def build_casic_bin_latest(
         except Exception as exc:  # pragma: no cover
             raise RuntimeError(f"RINEX processing failed: {exc}") from exc
     else:
-        # No template: iterate BKG candidates; download, parse GPS-only, build frames
+        # No template: iterate BKG candidates for requested day, then fallback to previous day
         last_err: Exception | None = None
-        for url in _bkg_v3_candidates(year, doy):
-            try:
-                if requests is None:  # pragma: no cover
-                    raise RuntimeError("requests not installed")
-                r = requests.get(url, timeout=20, allow_redirects=True)
-                if r.status_code != 200 or not r.content or len(r.content) <= 1024:
+        def _try_day(y: int, d: int) -> bytes | None:
+            nonlocal last_err
+            for url in _bkg_v3_candidates(y, d):
+                try:
+                    if requests is None:  # pragma: no cover
+                        raise RuntimeError("requests not installed")
+                    r = requests.get(
+                        url,
+                        timeout=20,
+                        allow_redirects=True,
+                        headers={"User-Agent": "agnss-builder/1.0"},
+                    )
+                    if r.status_code != 200 or not r.content or len(r.content) <= 1024:
+                        continue
+                    fname = url.rsplit('/', 1)[-1]
+                    path_gz = os.path.join(workdir, fname)
+                    with open(path_gz, 'wb') as fh:
+                        fh.write(r.content)
+                    nav_path = open_rinex_file(path_gz)
+                    ds = parse_rinex_nav_filtered(nav_path, systems="G")
+                    bin_bytes = build_latest_gps_bin_from_ds(ds)
+                    if bin_bytes:
+                        logger.info(
+                            "Built CASIC from BKG candidate",
+                            extra={"url": url, "bytes": len(bin_bytes), "year": y, "doy": d},
+                        )
+                        return bin_bytes
+                except Exception as exc:  # pragma: no cover
+                    last_err = exc
+                    logger.debug("Candidate failed", extra={"url": url, "error": str(exc)})
                     continue
-                fname = url.rsplit('/', 1)[-1]
-                path_gz = os.path.join(workdir, fname)
-                with open(path_gz, 'wb') as fh:
-                    fh.write(r.content)
-                nav_path = open_rinex_file(path_gz)
-                ds = parse_rinex_nav_filtered(nav_path, systems="G")
-                bin_bytes = build_latest_gps_bin_from_ds(ds)
-                if bin_bytes:
-                    logger.info("Built CASIC from BKG candidate", extra={"url": url, "bytes": len(bin_bytes)})
-                    return bin_bytes
-            except Exception as exc:  # pragma: no cover
-                last_err = exc
-                logger.debug("Candidate failed", extra={"url": url, "error": str(exc)})
-                continue
+            return None
+
+        # Try requested day first
+        out = _try_day(year, doy)
+        if out:
+            return out
+        # Fallback to previous day (same logic as test_eph CLI)
+        try:
+            import datetime as _dt
+            first = _dt.date(year, 1, 1)
+            ddate = first + _dt.timedelta(days=doy - 1)
+            prev = ddate - _dt.timedelta(days=1)
+            prev_year = prev.year
+            prev_doy = int(prev.strftime("%j"))
+        except Exception:
+            prev_year, prev_doy = year, max(1, doy - 1)
+        out = _try_day(prev_year, prev_doy)
+        if out:
+            return out
         if last_err:
             raise RuntimeError(f"RINEX processing failed: {last_err}") from last_err
-        raise RuntimeError("RINEX processing failed: no valid candidate produced frames")
+        raise RuntimeError("RINEX processing failed: no valid candidate produced frames (today or yesterday)")
     try:
         nav_path = open_rinex_file(gz_path)
         ds = parse_rinex_nav_filtered(nav_path, systems="G")
