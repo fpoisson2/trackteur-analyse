@@ -1130,7 +1130,12 @@ def create_app(
     @app.route('/casic_ephemeris')
     @login_required
     def casic_ephemeris():
-        """Return CASIC GPS ephemeris frames as hexadecimal strings."""
+        """Return latest CASIC GPSEPH as a binary (.bin).
+
+        Selects the best available RINEX (hourly if configured, otherwise
+        daily) and builds CASIC GPSEPH frames for the most recent
+        ephemeris of each GPS SV, concatenated into a single binary.
+        """
         try:
             year = int(request.args.get('year', datetime.utcnow().year))
             doy = int(request.args.get('doy', datetime.utcnow().timetuple().tm_yday))
@@ -1155,7 +1160,7 @@ def create_app(
                     "has_token": bool(token),
                 },
             )
-            frames = casic.build_casic_ephemeris(
+            bin_bytes = casic.build_casic_bin_latest(
                 year,
                 doy,
                 hour=hour,
@@ -1165,7 +1170,14 @@ def create_app(
         except Exception as exc:  # pragma: no cover - runtime dependency
             app.logger.exception("casic_ephemeris failed: %s", exc)
             return jsonify({'error': str(exc)}), 502
-        return jsonify({'frames': frames})
+        # Prepare binary response
+        from flask import Response
+        hh = f"_{hour:02d}" if hour is not None else ""
+        fname = f"gps_eph_{year}_{doy:03d}{hh}.bin"
+        resp = Response(bin_bytes, mimetype='application/octet-stream')
+        resp.headers['Content-Disposition'] = f"attachment; filename={fname}"
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
 
     @app.route('/equipment/<int:equipment_id>/last.geojson')
     @login_required

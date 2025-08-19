@@ -158,6 +158,356 @@ def make_casic_gps_eph_frames(ds: Any) -> Iterable[bytes]:
         yield build_casic_frame(0x08, 0x07, payload)
 
 
+# ---- Alternative builders (ported from test_eph.py) ----
+# The following helpers encode CASIC frames using scaled integer fields
+# and pick the most recent (non-NaN) ephemeris per SV, matching the
+# device expectations validated in test_eph.py.
+
+INT16_MIN, INT16_MAX = -32768, 32767
+INT32_MIN, INT32_MAX = -2147483648, 2147483647
+
+def _clamp_i16(x: int) -> int:
+    return INT16_MIN if x < INT16_MIN else (INT16_MAX if x > INT16_MAX else x)
+
+def _clamp_i32(x: int) -> int:
+    return INT32_MIN if x < INT32_MIN else (INT32_MAX if x > INT32_MAX else x)
+
+def _wrap_pm_pi(rad: float) -> float:
+    y = (rad + 3.141592653589793) % (2.0 * 3.141592653589793)
+    if y < 0:
+        y += 2.0 * 3.141592653589793
+    return y - 3.141592653589793
+
+def _rad_to_semi(rad: float) -> float:
+    # semicircles are radians/pi
+    return rad / 3.141592653589793
+
+def _radps_to_semips(radps: float) -> float:
+    return radps / 3.141592653589793
+
+def _iN_scaled(x: float, pow2_exp: int, nbytes: int) -> bytes:
+    raw = int(round(x * (2.0 ** (-pow2_exp))))
+    if nbytes == 4:
+        return struct.pack("<i", _clamp_i32(raw))
+    if nbytes == 2:
+        return struct.pack("<h", _clamp_i16(raw))
+    if nbytes == 1:
+        raw = max(-128, min(127, raw))
+        return struct.pack("<b", raw)
+    raise ValueError("nbytes must be 1,2,4")
+
+def _uN_scaled(x: float, pow2_exp: int, nbytes: int) -> bytes:
+    raw = int(round(x * (2.0 ** (-pow2_exp))))
+    if nbytes == 4:
+        raw = max(0, min(0xFFFFFFFF, raw))
+        return struct.pack("<I", raw)
+    if nbytes == 2:
+        raw = max(0, min(0xFFFF, raw))
+        return struct.pack("<H", raw)
+    if nbytes == 1:
+        raw = max(0, min(0xFF, raw))
+        return struct.pack("<B", raw)
+    raise ValueError("nbytes must be 1,2,4")
+
+def make_msg_gpseph_scaled(
+    *,
+    svid: int,
+    sqrtA: float,
+    e: float,
+    omega: float,
+    M0: float,
+    i0: float,
+    OMEGA0: float,
+    OMEGADOT: float,
+    DeltaN: float,
+    IDOT: float,
+    cuc: float,
+    cus: float,
+    crc: float,
+    crs: float,
+    cic: float,
+    cis: float,
+    toe: float,
+    week: int,
+    toc: float,
+    af0: float,
+    af1: float,
+    af2: float,
+    tgd: float = 0.0,
+    iodc: int = 0,
+    ura: int = 0,
+    health: int = 0,
+    valid: int = 3,
+) -> bytes:
+    omega_semi  = _rad_to_semi(_wrap_pm_pi(omega))
+    M0_semi     = _rad_to_semi(_wrap_pm_pi(M0))
+    i0_semi     = _rad_to_semi(_wrap_pm_pi(i0))
+    OMEGA0_semi = _rad_to_semi(_wrap_pm_pi(OMEGA0))
+    OMEGADOT_semips = _radps_to_semips(OMEGADOT)
+    DeltaN_semips   = _radps_to_semips(DeltaN)
+    IDOT_semips     = _radps_to_semips(IDOT)
+    cuc_semi = _rad_to_semi(cuc)
+    cus_semi = _rad_to_semi(cus)
+    cic_semi = _rad_to_semi(cic)
+    cis_semi = _rad_to_semi(cis)
+
+    parts = [struct.pack("<I", 0)]  # reserved/vendor-specific
+    parts += [
+        _uN_scaled(sqrtA, -19, 4),
+        _uN_scaled(e,     -33, 4),
+        struct.pack("<i", _clamp_i32(int(round(omega_semi  * (2**31))))),
+        struct.pack("<i", _clamp_i32(int(round(M0_semi     * (2**31))))),
+        struct.pack("<i", _clamp_i32(int(round(i0_semi     * (2**31))))),
+        struct.pack("<i", _clamp_i32(int(round(OMEGA0_semi * (2**31))))),
+    ]
+    parts += [struct.pack("<i", _clamp_i32(int(round(OMEGADOT_semips * (2**43)))))]
+    parts += [
+        struct.pack("<h", _clamp_i16(int(round(DeltaN_semips * (2**43))))),
+        struct.pack("<h", _clamp_i16(int(round(IDOT_semips   * (2**43))))),
+    ]
+    parts += [
+        struct.pack("<h", _clamp_i16(int(round(cuc_semi * (2**29))))),
+        struct.pack("<h", _clamp_i16(int(round(cus_semi * (2**29))))),
+    ]
+    parts += [
+        _iN_scaled(crc,  -5, 2),
+        _iN_scaled(crs,  -5, 2),
+    ]
+    parts += [
+        struct.pack("<h", _clamp_i16(int(round(cic_semi * (2**29))))),
+        struct.pack("<h", _clamp_i16(int(round(cis_semi * (2**29))))),
+    ]
+    parts += [
+        _uN_scaled(toe,  +4, 2),
+        struct.pack("<H", week & 0xFFFF),
+        _uN_scaled(toc,  +4, 4),
+        _iN_scaled(af0, -31, 4),
+        _iN_scaled(af1, -43, 2),
+        struct.pack("<b", max(-128, min(127, int(round(af2 * (2**55)))))),
+        struct.pack("<b", max(-128, min(127, int(round(tgd * (2**31)))))),
+        struct.pack("<H", iodc & 0xFFFF),
+        struct.pack("<B", ura & 0xFF),
+        struct.pack("<B", health & 0xFF),
+        struct.pack("<B", svid & 0xFF),
+        struct.pack("<B", valid & 0xFF),
+        struct.pack("<H", 0),
+    ]
+    payload = b"".join(parts)
+    return build_casic_frame(0x08, 0x07, payload)
+
+def _pick_latest_per_gps_sv(ds: Any) -> list[dict[str, float]]:
+    """Return list of ephemeris dicts for the latest valid record per GPS SV.
+
+    This mirrors the logic from test_eph.py: for each SV 'Gxx', choose
+    the last non-NaN index based on 'sqrtA' presence, then extract fields
+    with compatibility across GeoRinex versions.
+    """
+    try:
+        import numpy as np  # type: ignore[import-untyped]
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("numpy not installed") from exc
+    svs = [sv for sv in getattr(ds, "sv", []) if str(sv).startswith("G")]
+    if not svs:
+        return []
+    out: list[dict[str, float]] = []
+    for sv in svs:
+        rows = ds.sel(sv=sv)
+        arr = getattr(rows, "sqrtA", None)
+        if arr is None:
+            continue
+        values = arr.values  # xarray -> numpy
+        valid_idx = np.where(~np.isnan(values))[0]
+        if valid_idx.size == 0:
+            continue
+        r = rows.isel(time=int(valid_idx[-1]))
+
+        def g_any(names: str | list[str], default: float = 0.0) -> float:
+            keys = [names] if isinstance(names, str) else names
+            for name in keys:
+                if name in r.variables:
+                    try:
+                        return float(r[name].values)
+                    except Exception:
+                        pass
+            return default
+
+        # Epochs
+        # toc from epoch timestamp; convert to GPST seconds-of-week
+        try:
+            import numpy as _np  # type: ignore[import-untyped]
+        except Exception:  # pragma: no cover
+            _np = None
+        toc = 0.0
+        if _np is not None:
+            try:
+                t_posix = _np.datetime64(r["time"].values, "s").astype(int)
+                gps_epoch = datetime(1980, 1, 6, tzinfo=timezone.utc).timestamp()
+                sec_since_gps = float(t_posix - gps_epoch)
+                if sec_since_gps < 0:
+                    sec_since_gps = 0.0
+                toc = sec_since_gps % (7 * 86400)
+            except Exception:
+                toc = 0.0
+
+        item = {
+            "svid": int(str(sv)[1:]),
+            "sqrtA": g_any(["sqrtA"]),
+            "e": g_any(["e", "Eccentricity"]),
+            "i0": g_any(["i0", "Io"]),
+            "OMEGA0": g_any(["OMEGA0", "Omega0"]),
+            "omega": g_any(["omega"]),
+            "M0": g_any(["M0"]),
+            "DeltaN": g_any(["DeltaN"]),
+            "OMEGADOT": g_any(["OMEGADOT", "OmegaDot"]),
+            "IDOT": g_any(["IDOT"]),
+            "cuc": g_any(["cuc", "Cuc"]),
+            "cus": g_any(["cus", "Cus"]),
+            "crc": g_any(["crc", "Crc"]),
+            "crs": g_any(["crs", "Crs"]),
+            "cic": g_any(["cic", "Cic"]),
+            "cis": g_any(["cis", "Cis"]),
+            "toe": g_any(["toe", "Toe"]),
+            "week": int(g_any(["week"], 0.0)),
+            "toc": toc,
+            "af0": g_any(["af0", "SVclockBias"]),
+            "af1": g_any(["af1", "SVclockDrift"]),
+            "af2": g_any(["af2", "SVclockDriftRate"]),
+            "tgd": g_any(["tgd", "TGD"], 0.0),
+            "iodc": int(g_any(["IODC"], 0.0)),
+            "ura": int(g_any(["URA"], 0.0)),
+            "health": int(g_any(["health"], 0.0)),
+        }
+        out.append(item)
+    return out
+
+def build_latest_gps_bin_from_ds(ds: Any) -> bytes:
+    """Concatenate CASIC GPSEPH frames for the latest eph per SV in ds."""
+    frames: list[bytes] = []
+    for it in _pick_latest_per_gps_sv(ds):
+        frames.append(
+            make_msg_gpseph_scaled(
+                svid=it["svid"],
+                sqrtA=it["sqrtA"],
+                e=it["e"],
+                omega=it["omega"],
+                M0=it["M0"],
+                i0=it["i0"],
+                OMEGA0=it["OMEGA0"],
+                OMEGADOT=it["OMEGADOT"],
+                DeltaN=it["DeltaN"],
+                IDOT=it["IDOT"],
+                cuc=it["cuc"],
+                cus=it["cus"],
+                crc=it["crc"],
+                crs=it["crs"],
+                cic=it["cic"],
+                cis=it["cis"],
+                toe=it["toe"],
+                week=int(it["week"]),
+                toc=it["toc"],
+                af0=it["af0"],
+                af1=it["af1"],
+                af2=it["af2"],
+                tgd=it.get("tgd", 0.0),
+                iodc=int(it.get("iodc", 0)),
+                ura=int(it.get("ura", 0)),
+                health=int(it.get("health", 0)),
+            )
+        )
+    return b"".join(frames)
+
+
+def build_casic_bin_latest(
+    year: int,
+    doy: int,
+    hour: Optional[int] = None,
+    workdir: Optional[str] = None,
+    url_template: Optional[str] = None,
+    token: Optional[str] = None,
+) -> bytes:
+    """Fetch RINEX (daily or hourly) and return a concatenated GPSEPH bin.
+
+    - If ``url_template`` includes ``{hour}``/``{HH}``, uses hourly; if it
+      points to a directory, lists and picks the best (requested hour,
+      else latest; fallback hour-1 on 404 handled by fetch).
+    - Otherwise downloads daily BRDC.
+    - Parses the RINEX via georinex and builds CASIC frames using the
+      scaled-field builder from test_eph.py logic, selecting the latest
+      valid ephemeris per SV.
+    """
+    workdir = workdir or os.getcwd()
+    os.makedirs(workdir, exist_ok=True)
+
+    inferred_hour = False
+    if url_template and hour is None and ("{hour" in url_template or "{HH" in url_template):
+        hour = datetime.now(timezone.utc).hour
+        inferred_hour = True
+    logger.info(
+        "Building latest CASIC bin",
+        extra={"year": year, "doy": doy, "hour": hour, "inferred_hour": inferred_hour},
+    )
+
+    def _gz_name(h: Optional[int]) -> str:
+        if h is not None:
+            return f"hour{doy:03d}{h}.{year % 100:02d}n.gz"
+        return f"brdc{doy:03d}0.{year % 100:02d}n.gz"
+
+    gz_name = _gz_name(hour)
+    gz_path = os.path.join(workdir, gz_name)
+
+    def _format_url(h: Optional[int]) -> str:
+        if not url_template:
+            return ""
+        try:
+            return url_template.format(
+                year=year,
+                doy=doy,
+                yy=year % 100,
+                hour=(h if h is not None else ""),
+                HH=(f"{h:02d}" if h is not None else ""),
+            )
+        except Exception:
+            return url_template
+
+    url = None
+    if url_template:
+        url = _format_url(hour)
+        if url and not url.endswith('.gz'):
+            if not url.endswith('/'):
+                url += '/'
+            fname, resolved_hour = discover_hourly_filename(url, year, doy, hour, token)
+            url = url + fname
+            if hour is None:
+                hour = resolved_hour
+            gz_name = fname
+            gz_path = os.path.join(workdir, gz_name)
+
+    try:
+        try:
+            fetch_rinex_brdc(year, doy, gz_path, url=url, timeout=10, token=token)
+        except RuntimeError as exc:
+            msg = str(exc)
+            if hour is not None and "404" in msg:
+                prev_hour = (hour - 1) % 24
+                alt_name = _gz_name(prev_hour)
+                gz_path = os.path.join(workdir, alt_name)
+                alt_url = _format_url(prev_hour) if url_template else url
+                logger.info(
+                    "Retry previous hour (bin)",
+                    extra={"prev_hour": prev_hour, "url": alt_url, "gz_path": gz_path},
+                )
+                fetch_rinex_brdc(year, doy, gz_path, url=alt_url or None, timeout=10, token=token)
+                hour = prev_hour
+            else:
+                raise
+        nav_path = open_rinex_file(gz_path)
+        ds = parse_rinex_nav(nav_path)
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError(f"RINEX processing failed: {exc}") from exc
+
+    return build_latest_gps_bin_from_ds(ds)
+
+
 def default_brdc_url(year: int, doy: int) -> str:
     """Return the default RINEX navigation URL for a given day.
 
