@@ -63,7 +63,7 @@
         {% if form and form.base_url.errors %}
         <div class="invalid-feedback">{{ form.base_url.errors[0] }}</div>
         {% endif %}
-        <div class="form-text">Laisser vide pour utiliser la source par défaut (IGN IGS).</div>
+        <div class="form-text">Vous pouvez utiliser des placeholders: {year}, {yy}, {doy}, {hour}, {HH}. Exemple CDDIS hourly: https://cddis.nasa.gov/archive/gnss/data/hourly/{year}/{doy:03d}/hour{doy:03d}{HH}.{yy:02d}n.gz</div>
       </div>
       <div class="mb-4">
         <label for="token_global" class="form-label fw-bold">Token d'accès (optionnel)</label>

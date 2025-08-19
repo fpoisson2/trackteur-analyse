@@ -82,6 +82,20 @@ fournir ou de surcharger cette configuration lors du déploiement :
 
 ---
 
+## 🌐 Éphémérides CASIC (RINEX)
+
+- Endpoint: `/casic_ephemeris?year=YYYY&doy=DDD[&hour=HH]` (auth requis)
+- Le paramètre `hour` (0–23) permet d’utiliser des fichiers horaires (CDDIS hourly) au lieu du `brdc` quotidien.
+- Le champ d’admin « Adresse source des éphémérides » accepte un template avec placeholders:
+  - `{year}`: année (4 chiffres)
+  - `{yy}`: année (2 chiffres)
+  - `{doy}`: jour julien (001–366)
+  - `{hour}`: heure (0–23, sans padding)
+  - `{HH}`: heure (00–23, 2 chiffres)
+- Exemple CDDIS hourly: `https://cddis.nasa.gov/archive/gnss/data/hourly/{year}/{doy:03d}/hour{doy:03d}{HH}.{yy:02d}n.gz`
+
+---
+
 ## ✅ Tests à effectuer avant soumission
 
 Codex doit écrire ou modifier des tests dans `/tests` avec `pytest`.

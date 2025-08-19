@@ -221,6 +221,7 @@ def parse_rinex_nav(path: str) -> Any:
 def build_casic_ephemeris(
     year: int,
     doy: int,
+    hour: Optional[int] = None,
     workdir: str | None = None,
     url_template: Optional[str] = None,
     token: Optional[str] = None,
@@ -233,14 +234,20 @@ def build_casic_ephemeris(
 
     workdir = workdir or os.getcwd()
     os.makedirs(workdir, exist_ok=True)
-    gz_path = os.path.join(
-        workdir, f"brdc{doy:03d}0.{year % 100:02d}n.gz"
-    )
+    # Choose a local filename; remote name can differ
+    if hour is not None:
+        gz_name = f"hour{doy:03d}{hour}.{year % 100:02d}n.gz"
+    else:
+        gz_name = f"brdc{doy:03d}0.{year % 100:02d}n.gz"
+    gz_path = os.path.join(workdir, gz_name)
     # Build optional override URL from template
     url = None
     if url_template:
+        # Support {year}, {doy}, {yy}, and optional {hour}/{HH}
         try:
-            url = url_template.format(year=year, doy=doy, yy=year % 100)
+            url = url_template.format(
+                year=year, doy=doy, yy=year % 100, hour=hour if hour is not None else "", HH=(f"{hour:02d}" if hour is not None else "")
+            )
         except Exception:
             url = url_template
     try:

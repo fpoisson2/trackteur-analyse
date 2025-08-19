@@ -1134,6 +1134,10 @@ def create_app(
         try:
             year = int(request.args.get('year', datetime.utcnow().year))
             doy = int(request.args.get('doy', datetime.utcnow().timetuple().tm_yday))
+            hour_param = request.args.get('hour')
+            hour = int(hour_param) if hour_param is not None else None
+            if hour is not None and not (0 <= hour <= 23):
+                return jsonify({'error': 'Invalid hour parameter (0-23)'}), 400
         except ValueError:
             return jsonify({'error': 'Invalid date parameters'}), 400
         try:
@@ -1143,6 +1147,7 @@ def create_app(
             frames = casic.build_casic_ephemeris(
                 year,
                 doy,
+                hour=hour,
                 url_template=url_template or None,
                 token=token or None,
             )
