@@ -63,7 +63,7 @@
         {% if form and form.base_url.errors %}
         <div class="invalid-feedback">{{ form.base_url.errors[0] }}</div>
         {% endif %}
-        <div class="form-text">Vous pouvez utiliser des placeholders: {year}, {yy}, {doy}, {hour}, {HH}. Exemple CDDIS hourly: https://cddis.nasa.gov/archive/gnss/data/hourly/{year}/{doy:03d}/hour{doy:03d}{HH}.{yy:02d}n.gz</div>
+        <div class="form-text">Placeholders: {year}, {yy}, {doy}, {hour}, {HH}. Si le template contient {hour}/{HH} et que le paramètre 'hour' n'est pas fourni, l'heure UTC courante est utilisée (avec un essai sur l'heure précédente en cas de 404). Exemple CDDIS hourly: https://cddis.nasa.gov/archive/gnss/data/hourly/{year}/{doy:03d}/hour{doy:03d}{hour}.{yy:02d}n.gz</div>
       </div>
       <div class="mb-4">
         <label for="token_global" class="form-label fw-bold">Token d'accès (optionnel)</label>

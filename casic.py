@@ -14,6 +14,7 @@ import struct
 from dataclasses import dataclass
 import logging
 from typing import Any, Iterable, List, Optional
+from datetime import datetime, timezone
 
 try:  # Optional dependencies
     import georinex as grx  # type: ignore[import-untyped]
@@ -303,31 +304,63 @@ def build_casic_ephemeris(
     workdir = workdir or os.getcwd()
     os.makedirs(workdir, exist_ok=True)
     # Choose a local filename; remote name can differ
+    # If template expects an hour and none provided, infer current UTC hour
+    inferred_hour = False
+    if url_template and hour is None and ("{hour" in url_template or "{HH" in url_template):
+        hour = datetime.now(timezone.utc).hour
+        inferred_hour = True
     logger.info(
         "Building CASIC ephemeris",
-        extra={"year": year, "doy": doy, "hour": hour},
+        extra={"year": year, "doy": doy, "hour": hour, "inferred_hour": inferred_hour},
     )
-    if hour is not None:
-        gz_name = f"hour{doy:03d}{hour}.{year % 100:02d}n.gz"
-    else:
-        gz_name = f"brdc{doy:03d}0.{year % 100:02d}n.gz"
+    def _gz_name(h: Optional[int]) -> str:
+        if h is not None:
+            return f"hour{doy:03d}{h}.{year % 100:02d}n.gz"
+        return f"brdc{doy:03d}0.{year % 100:02d}n.gz"
+    gz_name = _gz_name(hour)
     gz_path = os.path.join(workdir, gz_name)
     # Build optional override URL from template
     url = None
-    if url_template:
-        # Support {year}, {doy}, {yy}, and optional {hour}/{HH}
+    def _format_url(h: Optional[int]) -> str:
+        if not url_template:
+            return ""
         try:
-            url = url_template.format(
-                year=year, doy=doy, yy=year % 100, hour=hour if hour is not None else "", HH=(f"{hour:02d}" if hour is not None else "")
+            return url_template.format(
+                year=year,
+                doy=doy,
+                yy=year % 100,
+                hour=(h if h is not None else ""),
+                HH=(f"{h:02d}" if h is not None else ""),
             )
         except Exception:
-            url = url_template
+            return url_template
+
+    if url_template:
+        # Support {year}, {doy}, {yy}, and optional {hour}/{HH}
+        url = _format_url(hour)
     logger.debug(
         "Resolved ephemeris URL",
         extra={"url": url, "gz_path": gz_path, "has_token": bool(token)},
     )
     try:
-        fetch_rinex_brdc(year, doy, gz_path, url=url, timeout=10, token=token)
+        try:
+            fetch_rinex_brdc(year, doy, gz_path, url=url, timeout=10, token=token)
+        except RuntimeError as exc:
+            msg = str(exc)
+            # If hourly fetch 404s, try previous hour once
+            if hour is not None and "404" in msg:
+                prev_hour = (hour - 1) % 24
+                alt_name = _gz_name(prev_hour)
+                gz_path = os.path.join(workdir, alt_name)
+                alt_url = _format_url(prev_hour) if url_template else url
+                logger.info(
+                    "Retrying previous hour",
+                    extra={"prev_hour": prev_hour, "url": alt_url, "gz_path": gz_path},
+                )
+                fetch_rinex_brdc(year, doy, gz_path, url=alt_url or None, timeout=10, token=token)
+                hour = prev_hour
+            else:
+                raise
         nav_path = open_rinex_file(gz_path)
         ds = parse_rinex_nav(nav_path)
     except Exception as exc:  # pragma: no cover - runtime failure
