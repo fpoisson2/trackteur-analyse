@@ -76,6 +76,7 @@ fournir ou de surcharger cette configuration lors du déploiement :
 | `TRACCAR_DEVICE_NAME` | Nom de l’équipement à suivre (option)|
 | `SKIP_INITIAL_ANALYSIS` | Désactiver l’analyse initiale (0/1) |
 | `FLASK_SECRET_KEY`    | Clé secrète Flask                    |
+| `CDDIS_TOKEN`         | Jeton d’accès au dépôt NASA CDDIS     |
 
 **Codex ne doit jamais coder ces valeurs en dur.**
 

@@ -155,11 +155,15 @@ def make_casic_gps_eph_frames(ds: Any) -> Iterable[bytes]:
 
 
 def default_brdc_url(year: int, doy: int) -> str:
-    """Return the default RINEX navigation URL for a given day."""
+    """Return the default RINEX navigation URL for a given day.
+
+    The default points to the NASA CDDIS archive which requires an
+    authentication token. See :func:`fetch_rinex_brdc` for details.
+    """
     yy = year % 100
     fname = f"brdc{doy:03d}0.{yy:02d}n.gz"
     return (
-        "https://igs.ign.fr/pub/igs/data/daily/"
+        "https://cddis.nasa.gov/archive/gnss/data/daily/"
         f"{year}/{doy:03d}/{yy:02d}n/{fname}"
     )
 
@@ -170,13 +174,23 @@ def fetch_rinex_brdc(
     out_path: str,
     url: Optional[str] = None,
     timeout: int = 10,
+    token: Optional[str] = None,
 ) -> str:
-    """Download a RINEX navigation file."""
+    """Download a RINEX navigation file.
+
+    If ``token`` is provided (or the ``CDDIS_TOKEN`` environment variable
+    is set), it is sent as a Bearer token to authenticate against the
+    CDDIS archive.
+    """
     if requests is None:  # pragma: no cover - dependency check
         raise RuntimeError("requests not installed")
     url = url or default_brdc_url(year, doy)
+    headers: dict[str, str] = {}
+    token = token or os.getenv("CDDIS_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        resp = requests.get(url, timeout=timeout)
+        resp = requests.get(url, timeout=timeout, headers=headers or None)
         resp.raise_for_status()
     except Exception as exc:  # pragma: no cover - network failure
         raise RuntimeError(f"failed to fetch {url}: {exc}") from exc
