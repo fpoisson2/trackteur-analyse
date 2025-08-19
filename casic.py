@@ -318,8 +318,9 @@ def _pick_latest_per_gps_sv(ds: Any) -> list[dict[str, float]]:
     out: list[dict[str, float]] = []
     for sv in svs:
         rows = ds.sel(sv=sv)
-        arr = getattr(rows, "sqrtA", None)
-        if arr is None:
+        try:
+            arr = rows["sqrtA"]
+        except Exception:
             continue
         values = arr.values  # xarray -> numpy
         valid_idx = np.where(~np.isnan(values))[0]
@@ -355,6 +356,18 @@ def _pick_latest_per_gps_sv(ds: Any) -> list[dict[str, float]]:
             except Exception:
                 toc = 0.0
 
+        # Compute GPS week if not present
+        week_val = g_any(["week"], float("nan"))
+        if not (week_val == week_val):  # NaN check
+            try:
+                # seconds since GPS epoch
+                t_posix = _np.datetime64(r["time"].values, "s").astype(int)
+                gps_epoch = datetime(1980, 1, 6, tzinfo=timezone.utc).timestamp()
+                sec_since_gps = float(t_posix - gps_epoch)
+                week_val = int(sec_since_gps // (7 * 86400))
+            except Exception:
+                week_val = 0
+
         item = {
             "svid": int(str(sv)[1:]),
             "sqrtA": g_any(["sqrtA"]),
@@ -373,7 +386,7 @@ def _pick_latest_per_gps_sv(ds: Any) -> list[dict[str, float]]:
             "cic": g_any(["cic", "Cic"]),
             "cis": g_any(["cis", "Cis"]),
             "toe": g_any(["toe", "Toe"]),
-            "week": int(g_any(["week"], 0.0)),
+            "week": int(week_val) if isinstance(week_val, (int, float)) else 0,
             "toc": toc,
             "af0": g_any(["af0", "SVclockBias"]),
             "af1": g_any(["af1", "SVclockDrift"]),
@@ -508,14 +521,35 @@ def build_casic_bin_latest(
         except Exception as exc:  # pragma: no cover
             raise RuntimeError(f"RINEX processing failed: {exc}") from exc
     else:
-        # No template: use BKG candidate list (like test_eph.py)
-        try:
-            gz_path = fetch_best_nav_bkg(year, doy, workdir, timeout=20)
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError(f"RINEX processing failed: {exc}") from exc
+        # No template: iterate BKG candidates; download, parse GPS-only, build frames
+        last_err: Exception | None = None
+        for url in _bkg_v3_candidates(year, doy):
+            try:
+                if requests is None:  # pragma: no cover
+                    raise RuntimeError("requests not installed")
+                r = requests.get(url, timeout=20, allow_redirects=True)
+                if r.status_code != 200 or not r.content or len(r.content) <= 1024:
+                    continue
+                fname = url.rsplit('/', 1)[-1]
+                path_gz = os.path.join(workdir, fname)
+                with open(path_gz, 'wb') as fh:
+                    fh.write(r.content)
+                nav_path = open_rinex_file(path_gz)
+                ds = parse_rinex_nav_filtered(nav_path, systems="G")
+                bin_bytes = build_latest_gps_bin_from_ds(ds)
+                if bin_bytes:
+                    logger.info("Built CASIC from BKG candidate", extra={"url": url, "bytes": len(bin_bytes)})
+                    return bin_bytes
+            except Exception as exc:  # pragma: no cover
+                last_err = exc
+                logger.debug("Candidate failed", extra={"url": url, "error": str(exc)})
+                continue
+        if last_err:
+            raise RuntimeError(f"RINEX processing failed: {last_err}") from last_err
+        raise RuntimeError("RINEX processing failed: no valid candidate produced frames")
     try:
         nav_path = open_rinex_file(gz_path)
-        ds = parse_rinex_nav(nav_path)
+        ds = parse_rinex_nav_filtered(nav_path, systems="G")
     except Exception as exc:  # pragma: no cover
         raise RuntimeError(f"RINEX processing failed: {exc}") from exc
 

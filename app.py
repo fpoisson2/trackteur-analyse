@@ -1150,22 +1150,13 @@ def create_app(
         except ValueError:
             return jsonify({'error': 'Invalid date parameters'}), 400
         try:
-            cfg = Config.query.first()
-            url_template = (cfg.ephemeris_url or "") if cfg else ""
-            token = (cfg.ephemeris_token or "") if cfg else ""
-            app.logger.info(
-                "Ephemeris config",
-                extra={
-                    "has_template": bool(url_template),
-                    "has_token": bool(token),
-                },
-            )
+            # Build from BKG candidates (test_eph.py behavior). Ignore DB config.
             bin_bytes = casic.build_casic_bin_latest(
                 year,
                 doy,
                 hour=hour,
-                url_template=url_template or None,
-                token=token or None,
+                url_template=None,
+                token=None,
             )
         except Exception as exc:  # pragma: no cover - runtime dependency
             app.logger.exception("casic_ephemeris failed: %s", exc)
