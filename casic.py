@@ -481,25 +481,33 @@ def build_casic_bin_latest(
                 hour = resolved_hour
             gz_name = fname
             gz_path = os.path.join(workdir, gz_name)
-
-    try:
         try:
-            fetch_rinex_brdc(year, doy, gz_path, url=url, timeout=10, token=token)
-        except RuntimeError as exc:
-            msg = str(exc)
-            if hour is not None and "404" in msg:
-                prev_hour = (hour - 1) % 24
-                alt_name = _gz_name(prev_hour)
-                gz_path = os.path.join(workdir, alt_name)
-                alt_url = _format_url(prev_hour) if url_template else url
-                logger.info(
-                    "Retry previous hour (bin)",
-                    extra={"prev_hour": prev_hour, "url": alt_url, "gz_path": gz_path},
-                )
-                fetch_rinex_brdc(year, doy, gz_path, url=alt_url or None, timeout=10, token=token)
-                hour = prev_hour
-            else:
-                raise
+            try:
+                fetch_rinex_brdc(year, doy, gz_path, url=url, timeout=10, token=token)
+            except RuntimeError as exc:
+                msg = str(exc)
+                if hour is not None and "404" in msg:
+                    prev_hour = (hour - 1) % 24
+                    alt_name = _gz_name(prev_hour)
+                    gz_path = os.path.join(workdir, alt_name)
+                    alt_url = _format_url(prev_hour)
+                    logger.info(
+                        "Retry previous hour (bin)",
+                        extra={"prev_hour": prev_hour, "url": alt_url, "gz_path": gz_path},
+                    )
+                    fetch_rinex_brdc(year, doy, gz_path, url=alt_url or None, timeout=10, token=token)
+                    hour = prev_hour
+                else:
+                    raise
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(f"RINEX processing failed: {exc}") from exc
+    else:
+        # No template: use BKG candidate list (like test_eph.py)
+        try:
+            gz_path = fetch_best_nav_bkg(year, doy, workdir, timeout=20)
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(f"RINEX processing failed: {exc}") from exc
+    try:
         nav_path = open_rinex_file(gz_path)
         ds = parse_rinex_nav(nav_path)
     except Exception as exc:  # pragma: no cover
@@ -522,6 +530,48 @@ def default_brdc_url(year: int, doy: int) -> str:
     )
     logger.debug("Default BRDC URL built", extra={"year": year, "doy": doy, "url": url})
     return url
+
+
+# ---- BKG/IGS BRDC v3 candidates (same as test_eph.py) ----
+BKG_BASE = "https://igs.bkg.bund.de/root_ftp/IGS/BRDC/{yyyy}/{ddd:03d}/"
+
+def _bkg_v3_candidates(year: int, doy: int) -> list[str]:
+    stamp = f"{year}{doy:03d}0000"
+    names = [
+        f"BRDC00IGS_R_{stamp}_01D_MN.rnx.gz",
+        f"BRDC00WRD_R_{stamp}_01D_MN.rnx.gz",
+        f"BRDM00DLR_S_{stamp}_01D_MN.rnx.gz",
+        f"BRD400DLR_S_{stamp}_01D_MN.rnx.gz",
+        f"BRDC00WRD_S_{stamp}_01D_MN.rnx.gz",
+    ]
+    yy = year % 100
+    names.append(f"brdc{doy:03d}0.{yy:02d}n.gz")
+    base = BKG_BASE.format(yyyy=year, ddd=doy)
+    return [base + n for n in names]
+
+def fetch_best_nav_bkg(year: int, doy: int, out_dir: str, timeout: int = 20) -> str:
+    if requests is None:  # pragma: no cover
+        raise RuntimeError("requests not installed")
+    os.makedirs(out_dir, exist_ok=True)
+    sess = requests.Session()
+    sess.headers.update({"User-Agent": "trackteur-analyse/1.0 (+https://www.trackteur.cc)"})
+    last_url: str | None = None
+    for url in _bkg_v3_candidates(year, doy):
+        last_url = url
+        try:
+            r = sess.get(url, timeout=timeout, allow_redirects=True)
+            if r.status_code == 200 and r.content and len(r.content) > 1024:
+                fname = url.rsplit("/", 1)[-1]
+                out_path = os.path.join(out_dir, fname)
+                with open(out_path, "wb") as fh:
+                    fh.write(r.content)
+                logger.info("Fetched BKG RINEX", extra={"url": url, "bytes": len(r.content)})
+                return out_path
+            logger.debug("Skip candidate", extra={"url": url, "status": r.status_code})
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Candidate error", extra={"url": url, "error": str(exc)})
+            continue
+    raise RuntimeError(f"No RINEX candidate succeeded (last: {last_url})")
 
 
 def fetch_rinex_brdc(
