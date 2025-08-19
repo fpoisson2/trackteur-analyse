@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Iterable, List, Optional
 from datetime import datetime, timezone
+import re
 
 try:  # Optional dependencies
     import georinex as grx  # type: ignore[import-untyped]
@@ -287,6 +288,83 @@ def parse_rinex_nav(path: str) -> Any:
     return ds
 
 
+def _auth_headers(token: Optional[str]) -> dict[str, str]:
+    hdrs: dict[str, str] = {"User-Agent": "trackteur-analyse/1.0 (+https://www.trackteur.cc)"}
+    if token:
+        tok = str(token).strip()
+        if tok:
+            if tok.lower().startswith("bearer "):
+                hdrs["Authorization"] = tok
+            else:
+                hdrs["Authorization"] = f"Bearer {tok}"
+    return hdrs
+
+
+def discover_hourly_filename(
+    base_dir_url: str,
+    year: int,
+    doy: int,
+    hour: Optional[int],
+    token: Optional[str],
+    timeout: int = 10,
+) -> tuple[str, int]:
+    """Return the best-matching hourly file name and resolved hour.
+
+    Fetches the directory listing at ``base_dir_url`` and finds files
+    matching the pattern for GPS nav: ``hour{doy:03d}{H}.{yy:02d}n.gz``.
+    If ``hour`` is provided, prefers that hour; otherwise chooses the
+    latest available hour.
+    """
+    if requests is None:  # pragma: no cover
+        raise RuntimeError("requests not installed")
+    yy = year % 100
+    pattern = re.compile(rf"hour{doy:03d}(\d{{1,2}})\.{yy:02d}n\.gz$")
+    headers = _auth_headers(token)
+    logger.info("Discovering hourly file", extra={"dir": base_dir_url, "hour": hour})
+    resp = requests.get(base_dir_url, headers=headers or None, timeout=timeout, allow_redirects=True)
+    resp.raise_for_status()
+    text = resp.text
+    # Find candidate filenames via regex (works on simple HTML listing, XML, or text)
+    candidates = set(m.group(0) for m in pattern.finditer(text))
+    # Some listings include href="filename"; catch that too
+    href_pat = re.compile(r'href=[\"\']([^\"\']+)[\"\']')
+    for hm in href_pat.finditer(text):
+        name = hm.group(1)
+        if pattern.search(name):
+            # Extract just the filename segment
+            fname = name.rsplit('/', 1)[-1]
+            candidates.add(fname)
+    if not candidates:
+        logger.error("No hourly files found in directory", extra={"dir": base_dir_url})
+        raise RuntimeError("no hourly files found in directory")
+    # Map hour->filename
+    hour_map: dict[int, str] = {}
+    for fname in candidates:
+        m = pattern.search(fname)
+        if not m:
+            continue
+        try:
+            h = int(m.group(1))
+            if 0 <= h <= 23:
+                hour_map[h] = fname
+        except Exception:
+            continue
+    if not hour_map:
+        raise RuntimeError("no matching hourly filenames parsed")
+    chosen_hour: int
+    if hour is not None and hour in hour_map:
+        chosen_hour = hour
+    elif hour is not None:
+        # pick greatest hour <= requested, else max available
+        leq = [h for h in hour_map.keys() if h <= hour]
+        chosen_hour = (max(leq) if leq else max(hour_map.keys()))
+    else:
+        chosen_hour = max(hour_map.keys())
+    chosen_name = hour_map[chosen_hour]
+    logger.info("Discovered hourly file", extra={"hour": chosen_hour, "file": chosen_name})
+    return chosen_name, chosen_hour
+
+
 def build_casic_ephemeris(
     year: int,
     doy: int,
@@ -338,6 +416,20 @@ def build_casic_ephemeris(
     if url_template:
         # Support {year}, {doy}, {yy}, and optional {hour}/{HH}
         url = _format_url(hour)
+        # If template is a directory (not a file), list and pick a file
+        if url and not url.endswith('.gz'):
+            if not url.endswith('/'):
+                url += '/'
+            try:
+                fname, resolved_hour = discover_hourly_filename(url, year, doy, hour, token)
+                url = url + fname
+                if hour is None:
+                    hour = resolved_hour
+                gz_name = fname
+                gz_path = os.path.join(workdir, gz_name)
+            except Exception as exc:  # pragma: no cover - network
+                logger.exception("Directory discovery failed", extra={"dir": url})
+                raise RuntimeError(f"directory discovery failed: {exc}") from exc
     logger.debug(
         "Resolved ephemeris URL",
         extra={"url": url, "gz_path": gz_path, "has_token": bool(token)},

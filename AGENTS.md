@@ -92,7 +92,8 @@ fournir ou de surcharger cette configuration lors du déploiement :
   - `{doy}`: jour julien (001–366)
   - `{hour}`: heure (0–23, sans padding)
   - `{HH}`: heure (00–23, 2 chiffres)
-- Exemple CDDIS hourly: `https://cddis.nasa.gov/archive/gnss/data/hourly/{year}/{doy:03d}/hour{doy:03d}{HH}.{yy:02d}n.gz`
+- Exemple CDDIS hourly (fichier): `https://cddis.nasa.gov/archive/gnss/data/hourly/{year}/{doy:03d}/hour{doy:03d}{hour}.{yy:02d}n.gz`
+- Exemple CDDIS hourly (répertoire): `https://cddis.nasa.gov/archive/gnss/data/hourly/{year}/{doy:03d}/` — l’app listera le répertoire et choisira le meilleur fichier disponible (heure demandée, sinon dernière heure; avec fallback heure-1 en cas de 404).
 
 ---
 
