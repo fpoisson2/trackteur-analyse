@@ -132,6 +132,20 @@ def create_app(
         if "config" in tables:
             config_cols = {c["name"] for c in inspector.get_columns("config")}
             with db.engine.begin() as conn:
+                if "ephemeris_url" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN ephemeris_url "
+                            "VARCHAR DEFAULT ''"
+                        )
+                    )
+                if "ephemeris_token" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN ephemeris_token "
+                            "VARCHAR DEFAULT ''"
+                        )
+                    )
                 if "eps_meters" not in config_cols:
                     conn.execute(
                         text(
@@ -594,6 +608,54 @@ def create_app(
 
         return render_template(
             'admin_traccar.html',
+            existing_token=existing_token,
+            existing_url=existing_url,
+            message=message,
+            error=error,
+            form=form,
+        )
+
+    @app.route('/admin/ephemeris', methods=['GET', 'POST'])
+    @login_required
+    def admin_ephemeris():
+        """Configurer l'URL et le token pour l'endpoint d'éphémérides."""
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+
+        cfg = Config.query.first()
+        message = request.args.get('msg')
+        error = None
+        form = AdminConfigForm()
+
+        if request.method == 'POST':
+            if form.validate_on_submit():
+                url_val = request.form.get('base_url', '') or ''
+                token_val = request.form.get('token_global', '') or ''
+                if cfg:
+                    cfg.ephemeris_url = url_val
+                    cfg.ephemeris_token = token_val
+                else:
+                    cfg = Config(
+                        traccar_url="",
+                        traccar_token="",
+                        ephemeris_url=url_val,
+                        ephemeris_token=token_val,
+                    )
+                    db.session.add(cfg)
+                db.session.commit()
+                message = "Configuration enregistrée !"
+            else:
+                error = 'Veuillez corriger les erreurs de validation'
+
+        if request.method == 'POST' and not form.validate():
+            existing_token = request.form.get('token_global', '')
+            existing_url = request.form.get('base_url', '')
+        else:
+            existing_token = cfg.ephemeris_token if cfg else ""
+            existing_url = cfg.ephemeris_url if cfg else ""
+
+        return render_template(
+            'admin_ephemeris.html',
             existing_token=existing_token,
             existing_url=existing_url,
             message=message,
