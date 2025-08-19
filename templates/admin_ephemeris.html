@@ -67,7 +67,7 @@
       </div>
       <div class="mb-4">
         <label for="token_global" class="form-label fw-bold">Token d'accès (optionnel)</label>
-        <input type="text" class="form-control {% if form and form.token_global.errors %}is-invalid{% endif %}" id="token_global" name="token_global" placeholder="Token pour accéder à la source privée (si nécessaire)" value="">
+        <input type="text" class="form-control {% if form and form.token_global.errors %}is-invalid{% endif %}" id="token_global" name="token_global" placeholder="Jeton CDDIS (sans 'Bearer', accepté aussi si présent)" value="">
         {% if form and form.token_global.errors %}
         <div class="invalid-feedback">{{ form.token_global.errors[0] }}</div>
         {% endif %}

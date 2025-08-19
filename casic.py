@@ -189,10 +189,15 @@ def fetch_rinex_brdc(
     if requests is None:  # pragma: no cover - dependency check
         raise RuntimeError("requests not installed")
     url = url or default_brdc_url(year, doy)
-    headers: dict[str, str] = {}
-    token = token or os.getenv("CDDIS_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    headers: dict[str, str] = {"User-Agent": "trackteur-analyse/1.0 (+https://www.trackteur.cc)"}
+    token_in = token or os.getenv("CDDIS_TOKEN")
+    if token_in:
+        tok = str(token_in).strip()
+        # Accept either raw token or full "Bearer ..." value
+        if tok.lower().startswith("bearer "):
+            headers["Authorization"] = tok
+        else:
+            headers["Authorization"] = f"Bearer {tok}"
     logger.info(
         "Fetching RINEX",
         extra={
@@ -202,17 +207,37 @@ def fetch_rinex_brdc(
         },
     )
     try:
-        resp = requests.get(url, timeout=timeout, headers=headers or None)
+        resp = requests.get(url, timeout=timeout, headers=headers or None, allow_redirects=True)
         logger.debug(
             "RINEX response",
-            extra={"status_code": getattr(resp, "status_code", None), "length": len(getattr(resp, "content", b""))},
+            extra={
+                "status_code": getattr(resp, "status_code", None),
+                "length": len(getattr(resp, "content", b"")),
+                "final_url": getattr(resp, "url", url),
+                "content_type": (resp.headers.get("Content-Type") if hasattr(resp, "headers") else None),
+            },
         )
         resp.raise_for_status()
     except Exception as exc:  # pragma: no cover - network failure
         logger.exception("Failed to fetch RINEX", extra={"url": url})
         raise RuntimeError(f"failed to fetch {url}: {exc}") from exc
+    data = resp.content
+    # Heuristic: if expecting .gz but content does not start with gzip magic
+    if url.endswith('.gz') and not data.startswith(b"\x1f\x8b"):
+        head = data[:120]
+        ct = resp.headers.get("Content-Type", "") if hasattr(resp, "headers") else ""
+        final_url = getattr(resp, "url", url)
+        logger.error(
+            "Unexpected non-gzip content",
+            extra={"url": final_url, "content_type": ct, "head": head},
+        )
+        raise RuntimeError(
+            f"unexpected content (not gzip): status={getattr(resp, 'status_code', '?')} "
+            f"content_type={ct!r} url={final_url} head={head!r}. "
+            "Check authentication token or URL template."
+        )
     with open(out_path, "wb") as fh:
-        fh.write(resp.content)
+        fh.write(data)
     logger.debug("Saved RINEX file", extra={"path": out_path, "bytes": len(resp.content)})
     return out_path
 
@@ -220,8 +245,21 @@ def fetch_rinex_brdc(
 def open_rinex_file(path: str) -> str:
     """Return path to decompressed RINEX file."""
     if path.endswith(".gz"):
-        with gzip.open(path, "rb") as gz:
-            raw = gz.read()
+        try:
+            with gzip.open(path, "rb") as gz:
+                raw = gz.read()
+        except Exception as exc:
+            # Provide a clearer error if file is actually HTML or similar
+            try:
+                with open(path, "rb") as fh:
+                    head = fh.read(200)
+            except Exception:
+                head = b""
+            logger.error(
+                "Failed to decompress RINEX",
+                extra={"path": path, "error": str(exc), "head": head},
+            )
+            raise
         nav_path = path[:-3]
         with open(nav_path, "wb") as fh:
             fh.write(raw)
