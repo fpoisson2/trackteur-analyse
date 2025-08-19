@@ -12,6 +12,7 @@ import gzip
 import os
 import struct
 from dataclasses import dataclass
+import logging
 from typing import Any, Iterable, List, Optional
 
 try:  # Optional dependencies
@@ -26,6 +27,7 @@ except Exception:  # pragma: no cover - handled at runtime
 
 CASIC_HDR0 = 0xBA
 CASIC_HDR1 = 0xCE
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -162,10 +164,12 @@ def default_brdc_url(year: int, doy: int) -> str:
     """
     yy = year % 100
     fname = f"brdc{doy:03d}0.{yy:02d}n.gz"
-    return (
+    url = (
         "https://cddis.nasa.gov/archive/gnss/data/daily/"
         f"{year}/{doy:03d}/{yy:02d}n/{fname}"
     )
+    logger.debug("Default BRDC URL built", extra={"year": year, "doy": doy, "url": url})
+    return url
 
 
 def fetch_rinex_brdc(
@@ -189,13 +193,27 @@ def fetch_rinex_brdc(
     token = token or os.getenv("CDDIS_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    logger.info(
+        "Fetching RINEX",
+        extra={
+            "url": url,
+            "timeout": timeout,
+            "auth": bool(token),
+        },
+    )
     try:
         resp = requests.get(url, timeout=timeout, headers=headers or None)
+        logger.debug(
+            "RINEX response",
+            extra={"status_code": getattr(resp, "status_code", None), "length": len(getattr(resp, "content", b""))},
+        )
         resp.raise_for_status()
     except Exception as exc:  # pragma: no cover - network failure
+        logger.exception("Failed to fetch RINEX", extra={"url": url})
         raise RuntimeError(f"failed to fetch {url}: {exc}") from exc
     with open(out_path, "wb") as fh:
         fh.write(resp.content)
+    logger.debug("Saved RINEX file", extra={"path": out_path, "bytes": len(resp.content)})
     return out_path
 
 
@@ -207,7 +225,12 @@ def open_rinex_file(path: str) -> str:
         nav_path = path[:-3]
         with open(nav_path, "wb") as fh:
             fh.write(raw)
+        logger.debug(
+            "Decompressed RINEX",
+            extra={"gz_path": path, "nav_path": nav_path, "bytes": len(raw)},
+        )
         return nav_path
+    logger.debug("RINEX not compressed", extra={"path": path})
     return path
 
 
@@ -215,7 +238,14 @@ def parse_rinex_nav(path: str) -> Any:
     """Parse a RINEX navigation file using georinex."""
     if grx is None:  # pragma: no cover - dependency check
         raise RuntimeError("georinex not installed")
-    return grx.load(path)
+    logger.info("Parsing RINEX with georinex", extra={"path": path})
+    ds = grx.load(path)
+    try:
+        sv_count = len(getattr(ds, "sv", []))
+    except Exception:
+        sv_count = None
+    logger.debug("Parsed RINEX dataset", extra={"sv_count": sv_count})
+    return ds
 
 
 def build_casic_ephemeris(
@@ -235,6 +265,10 @@ def build_casic_ephemeris(
     workdir = workdir or os.getcwd()
     os.makedirs(workdir, exist_ok=True)
     # Choose a local filename; remote name can differ
+    logger.info(
+        "Building CASIC ephemeris",
+        extra={"year": year, "doy": doy, "hour": hour},
+    )
     if hour is not None:
         gz_name = f"hour{doy:03d}{hour}.{year % 100:02d}n.gz"
     else:
@@ -250,6 +284,10 @@ def build_casic_ephemeris(
             )
         except Exception:
             url = url_template
+    logger.debug(
+        "Resolved ephemeris URL",
+        extra={"url": url, "gz_path": gz_path, "has_token": bool(token)},
+    )
     try:
         fetch_rinex_brdc(year, doy, gz_path, url=url, timeout=10, token=token)
         nav_path = open_rinex_file(gz_path)
@@ -257,4 +295,5 @@ def build_casic_ephemeris(
     except Exception as exc:  # pragma: no cover - runtime failure
         raise RuntimeError(f"RINEX processing failed: {exc}") from exc
     frames = list(make_casic_gps_eph_frames(ds))
+    logger.info("Generated CASIC frames", extra={"count": len(frames)})
     return [fr.hex() for fr in frames]

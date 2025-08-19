@@ -1138,12 +1138,23 @@ def create_app(
             hour = int(hour_param) if hour_param is not None else None
             if hour is not None and not (0 <= hour <= 23):
                 return jsonify({'error': 'Invalid hour parameter (0-23)'}), 400
+            app.logger.debug(
+                "Ephemeris request",
+                extra={"year": year, "doy": doy, "hour": hour},
+            )
         except ValueError:
             return jsonify({'error': 'Invalid date parameters'}), 400
         try:
             cfg = Config.query.first()
             url_template = (cfg.ephemeris_url or "") if cfg else ""
             token = (cfg.ephemeris_token or "") if cfg else ""
+            app.logger.info(
+                "Ephemeris config",
+                extra={
+                    "has_template": bool(url_template),
+                    "has_token": bool(token),
+                },
+            )
             frames = casic.build_casic_ephemeris(
                 year,
                 doy,
@@ -1152,6 +1163,7 @@ def create_app(
                 token=token or None,
             )
         except Exception as exc:  # pragma: no cover - runtime dependency
+            app.logger.exception("casic_ephemeris failed: %s", exc)
             return jsonify({'error': str(exc)}), 502
         return jsonify({'frames': frames})
 
