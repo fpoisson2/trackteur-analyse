@@ -169,14 +169,17 @@ def fetch_rinex_brdc(
     doy: int,
     out_path: str,
     url: Optional[str] = None,
-    timeout: int = 60,
+    timeout: int = 10,
 ) -> str:
     """Download a RINEX navigation file."""
     if requests is None:  # pragma: no cover - dependency check
         raise RuntimeError("requests not installed")
     url = url or default_brdc_url(year, doy)
-    resp = requests.get(url, timeout=timeout)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(url, timeout=timeout)
+        resp.raise_for_status()
+    except Exception as exc:  # pragma: no cover - network failure
+        raise RuntimeError(f"failed to fetch {url}: {exc}") from exc
     with open(out_path, "wb") as fh:
         fh.write(resp.content)
     return out_path
@@ -217,8 +220,11 @@ def build_casic_ephemeris(
     gz_path = os.path.join(
         workdir, f"brdc{doy:03d}0.{year % 100:02d}n.gz"
     )
-    fetch_rinex_brdc(year, doy, gz_path)
-    nav_path = open_rinex_file(gz_path)
-    ds = parse_rinex_nav(nav_path)
+    try:
+        fetch_rinex_brdc(year, doy, gz_path)
+        nav_path = open_rinex_file(gz_path)
+        ds = parse_rinex_nav(nav_path)
+    except Exception as exc:  # pragma: no cover - runtime failure
+        raise RuntimeError(f"RINEX processing failed: {exc}") from exc
     frames = list(make_casic_gps_eph_frames(ds))
     return [fr.hex() for fr in frames]

@@ -1076,7 +1076,7 @@ def create_app(
         try:
             frames = casic.build_casic_ephemeris(year, doy)
         except Exception as exc:  # pragma: no cover - runtime dependency
-            return jsonify({'error': str(exc)}), 500
+            return jsonify({'error': str(exc)}), 502
         return jsonify({'frames': frames})
 
     @app.route('/equipment/<int:equipment_id>/last.geojson')
