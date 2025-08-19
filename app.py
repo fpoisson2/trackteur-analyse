@@ -28,6 +28,8 @@ from forms import (
 )
 import zone
 
+import casic
+
 from datetime import datetime, date, timedelta, timezone
 from typing import Iterable, Any
 from werkzeug.datastructures import MultiDict
@@ -1061,6 +1063,21 @@ def create_app(
     @login_required
     def equipment_status():
         return jsonify(get_equipment_data())
+
+    @app.route('/casic_ephemeris')
+    @login_required
+    def casic_ephemeris():
+        """Return CASIC GPS ephemeris frames as hexadecimal strings."""
+        try:
+            year = int(request.args.get('year', datetime.utcnow().year))
+            doy = int(request.args.get('doy', datetime.utcnow().timetuple().tm_yday))
+        except ValueError:
+            return jsonify({'error': 'Invalid date parameters'}), 400
+        try:
+            frames = casic.build_casic_ephemeris(year, doy)
+        except Exception as exc:  # pragma: no cover - runtime dependency
+            return jsonify({'error': str(exc)}), 500
+        return jsonify({'frames': frames})
 
     @app.route('/equipment/<int:equipment_id>/last.geojson')
     @login_required
