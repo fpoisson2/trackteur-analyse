@@ -47,7 +47,7 @@ class AdminConfigForm(FlaskForm):
     )
     token_global = StringField(
         "Token API",
-        validators=[Optional(), Length(min=3, max=256, message="Le token doit faire au moins 3 caractères")],
+        validators=[Optional(), Length(min=0, max=4096)],
     )
     analysis_hour = IntegerField(
         "Heure d'analyse",
@@ -96,3 +96,12 @@ class ResetPasswordForm(FlaskForm):
 class DeleteUserForm(FlaskForm):
     action = HiddenField(default="delete")
     user_id = IntegerField("ID utilisateur", validators=[DataRequired()])
+
+
+class EphemerisConfigForm(FlaskForm):
+    base_url = StringField(
+        "Adresse du serveur",
+        validators=[Optional(), URL(message="URL invalide")],
+    )
+    # Token optionnel sans contrainte de longueur (peut être très court)
+    token_global = StringField("Token API", validators=[Optional()])

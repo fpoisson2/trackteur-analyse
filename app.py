@@ -22,6 +22,7 @@ from models import db, User, Equipment, Position, Config, Track, DailyZone
 from forms import (
     LoginForm,
     AdminConfigForm,
+    EphemerisConfigForm,
     AddUserForm,
     ResetPasswordForm,
     DeleteUserForm,
@@ -493,7 +494,7 @@ def create_app(
 
         message = request.args.get('msg')
         error = None
-        form = AdminConfigForm()
+        form = EphemerisConfigForm()
         try:
             devices = zone.fetch_devices()
         except (OSError, requests.exceptions.HTTPError, requests.exceptions.RequestException) as exc:
@@ -1136,7 +1137,15 @@ def create_app(
         except ValueError:
             return jsonify({'error': 'Invalid date parameters'}), 400
         try:
-            frames = casic.build_casic_ephemeris(year, doy)
+            cfg = Config.query.first()
+            url_template = (cfg.ephemeris_url or "") if cfg else ""
+            token = (cfg.ephemeris_token or "") if cfg else ""
+            frames = casic.build_casic_ephemeris(
+                year,
+                doy,
+                url_template=url_template or None,
+                token=token or None,
+            )
         except Exception as exc:  # pragma: no cover - runtime dependency
             return jsonify({'error': str(exc)}), 502
         return jsonify({'frames': frames})

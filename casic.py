@@ -222,6 +222,8 @@ def build_casic_ephemeris(
     year: int,
     doy: int,
     workdir: str | None = None,
+    url_template: Optional[str] = None,
+    token: Optional[str] = None,
 ) -> List[str]:
     """Return CASIC GPS ephemeris frames for the specified date.
 
@@ -234,8 +236,15 @@ def build_casic_ephemeris(
     gz_path = os.path.join(
         workdir, f"brdc{doy:03d}0.{year % 100:02d}n.gz"
     )
+    # Build optional override URL from template
+    url = None
+    if url_template:
+        try:
+            url = url_template.format(year=year, doy=doy, yy=year % 100)
+        except Exception:
+            url = url_template
     try:
-        fetch_rinex_brdc(year, doy, gz_path)
+        fetch_rinex_brdc(year, doy, gz_path, url=url, timeout=10, token=token)
         nav_path = open_rinex_file(gz_path)
         ds = parse_rinex_nav(nav_path)
     except Exception as exc:  # pragma: no cover - runtime failure
