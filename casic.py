@@ -16,6 +16,7 @@ import logging
 from typing import Any, Iterable, List, Optional
 from datetime import datetime, timezone
 import re
+import warnings
 
 try:  # Optional dependencies
     import georinex as grx  # type: ignore[import-untyped]
@@ -26,6 +27,11 @@ try:  # Optional dependencies
     import requests  # type: ignore[import-untyped]
 except Exception:  # pragma: no cover - handled at runtime
     requests = None
+
+try:  # Optional dependency for merge patching
+    import xarray as xr  # type: ignore[import-untyped]
+except Exception:  # pragma: no cover
+    xr = None  # type: ignore[assignment]
 
 CASIC_HDR0 = 0xBA
 CASIC_HDR1 = 0xCE
@@ -675,11 +681,51 @@ def open_rinex_file(path: str) -> str:
 
 
 def parse_rinex_nav(path: str) -> Any:
-    """Parse a RINEX navigation file using georinex."""
+    """Parse a RINEX navigation file using georinex.
+
+    Note: To avoid GeoRinex/xarray merge pitfalls and noisy warnings,
+    we patch xr.merge defaults and filter to GPS by default.
+    """
+    return parse_rinex_nav_filtered(path, systems="G")
+
+
+class _XRMergeOuter:
+    """Context manager to set safer defaults for xarray.merge.
+
+    Mirrors the approach from test_eph.py to avoid AlignmentError and
+    adopt future defaults proactively.
+    """
+
+    def __enter__(self):
+        if xr is None:  # pragma: no cover
+            self._orig = None
+            return None
+        self._orig = xr.merge
+        def _merge_patched(objs, *args, **kwargs):
+            kwargs.setdefault("join", "outer")
+            kwargs.setdefault("compat", "no_conflicts")
+            return self._orig(objs, *args, **kwargs)
+        xr.merge = _merge_patched  # type: ignore[assignment]
+        return xr.merge
+
+    def __exit__(self, exc_type, exc, tb):
+        if xr is not None and getattr(self, "_orig", None):  # pragma: no cover
+            xr.merge = self._orig  # type: ignore[assignment]
+
+
+def parse_rinex_nav_filtered(path: str, systems: str = "G") -> Any:
     if grx is None:  # pragma: no cover - dependency check
         raise RuntimeError("georinex not installed")
-    logger.info("Parsing RINEX with georinex", extra={"path": path})
-    ds = grx.load(path)
+    logger.info(
+        "Parsing RINEX with georinex",
+        extra={"path": path, "systems": systems},
+    )
+    with _XRMergeOuter():
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", category=FutureWarning, module=r"xarray.*|georinex.*|numpy.*"
+            )
+            ds = grx.load(path, use=systems)
     try:
         sv_count = len(getattr(ds, "sv", []))
     except Exception:
@@ -854,7 +900,8 @@ def build_casic_ephemeris(
             else:
                 raise
         nav_path = open_rinex_file(gz_path)
-        ds = parse_rinex_nav(nav_path)
+        # Limit to GPS to avoid parsing issues with other constellations
+        ds = parse_rinex_nav_filtered(nav_path, systems="G")
     except Exception as exc:  # pragma: no cover - runtime failure
         raise RuntimeError(f"RINEX processing failed: {exc}") from exc
     frames = list(make_casic_gps_eph_frames(ds))
