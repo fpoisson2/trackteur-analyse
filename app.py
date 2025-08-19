@@ -328,6 +328,38 @@ def create_app(
         logout_user()
         return redirect(url_for('login'))
 
+    # ---------- Ephemeris hourly cache job ----------
+    def _ephemeris_cache_job() -> None:
+        with app.app_context():
+            try:
+                now = datetime.now(timezone.utc)
+                year = now.year
+                doy = int(now.timetuple().tm_yday)
+                cache_dir = os.path.join(app.instance_path, 'ephemeris')
+                os.makedirs(cache_dir, exist_ok=True)
+                def _write(sys: str, data: bytes) -> None:
+                    path = os.path.join(cache_dir, f"eph_{sys}_{year}_{doy:03d}.bin")
+                    tmp = path + '.tmp'
+                    with open(tmp, 'wb') as fh:
+                        fh.write(data)
+                    os.replace(tmp, path)
+                # GPS
+                try:
+                    g = casic.build_casic_bin_latest_multi(year, doy, systems='G')
+                    if g:
+                        _write('G', g)
+                except Exception as exc:
+                    app.logger.warning("Hourly GPS eph build failed: %s", exc)
+                # BDS
+                try:
+                    c = casic.build_casic_bin_latest_multi(year, doy, systems='C')
+                    if c:
+                        _write('C', c)
+                except Exception as exc:
+                    app.logger.warning("Hourly BDS eph build failed: %s", exc)
+            except Exception as exc:
+                app.logger.exception("Ephemeris cache job error: %s", exc)
+
     @app.route('/setup', methods=['GET', 'POST'])
     def setup():
         """Assistant de première configuration."""
@@ -527,6 +559,13 @@ def create_app(
             error=error,
             form=form,
         )
+
+    # Schedule hourly ephemeris cache
+    if start_scheduler:
+        try:
+            scheduler.add_job(_ephemeris_cache_job, 'cron', minute=0, id='ephemeris_cache')
+        except Exception as exc:
+            app.logger.warning("Failed to schedule ephemeris cache: %s", exc)
 
     @app.route('/admin/analysis', methods=['GET', 'POST'])
     @login_required
@@ -1130,45 +1169,69 @@ def create_app(
     @app.route('/casic_ephemeris')
     @login_required
     def casic_ephemeris():
-        """Return latest CASIC GPSEPH as a binary (.bin).
+        """Return latest CASIC ephemeris as a binary (.bin).
 
-        Selects the best available RINEX (hourly if configured, otherwise
-        daily) and builds CASIC GPSEPH frames for the most recent
-        ephemeris of each GPS SV, concatenated into a single binary.
+        Builds or serves from cache the concatenated frames for selected
+        constellations (GPS and/or BDS).
         """
         try:
             year = int(request.args.get('year', datetime.utcnow().year))
             doy = int(request.args.get('doy', datetime.utcnow().timetuple().tm_yday))
             hour_param = request.args.get('hour')
             hour = int(hour_param) if hour_param is not None else None
+            systems = (request.args.get('systems') or 'G').upper()
+            if systems not in ('G', 'C', 'GC', 'CG'):
+                return jsonify({'error': 'Invalid systems (use G, C, or GC)'}), 400
             if hour is not None and not (0 <= hour <= 23):
                 return jsonify({'error': 'Invalid hour parameter (0-23)'}), 400
             app.logger.debug(
                 "Ephemeris request",
-                extra={"year": year, "doy": doy, "hour": hour},
+                extra={"year": year, "doy": doy, "hour": hour, "systems": systems},
             )
         except ValueError:
             return jsonify({'error': 'Invalid date parameters'}), 400
+        # Try cache first
+        from flask import Response, send_file
+        cache_dir = os.path.join(app.instance_path, 'ephemeris')
+        os.makedirs(cache_dir, exist_ok=True)
+        def cache_path(sys: str) -> str:
+            hh = f"_{hour:02d}" if hour is not None else ""
+            return os.path.join(cache_dir, f"eph_{sys}_{year}_{doy:03d}{hh}.bin")
         try:
-            # Build from BKG candidates (test_eph.py behavior). Ignore DB config.
-            bin_bytes = casic.build_casic_bin_latest(
-                year,
-                doy,
-                hour=hour,
-                url_template=None,
-                token=None,
-            )
+            if systems in ("G", "C"):
+                p = cache_path(systems)
+                if os.path.exists(p) and os.path.getsize(p) > 0:
+                    return send_file(p, mimetype='application/octet-stream', as_attachment=True, download_name=os.path.basename(p))
+            else:  # GC
+                pg, pc = cache_path('G'), cache_path('C')
+                if all(os.path.exists(pp) and os.path.getsize(pp) > 0 for pp in (pg, pc)):
+                    # serve concatenated
+                    with open(pg, 'rb') as fg, open(pc, 'rb') as fc:
+                        data = fg.read() + fc.read()
+                    fname = f"eph_GC_{year}_{doy:03d}.bin"
+                    resp = Response(data, mimetype='application/octet-stream')
+                    resp.headers['Content-Disposition'] = f"attachment; filename={fname}"
+                    return resp
+            # Cache miss → build on demand (BKG behavior)
+            if systems in ("G", "C"):
+                data = casic.build_casic_bin_latest_multi(year, doy, systems=systems)
+                # Write cache
+                tmp = cache_path(systems) + ".tmp"
+                with open(tmp, 'wb') as fh:
+                    fh.write(data)
+                os.replace(tmp, cache_path(systems))
+                return send_file(cache_path(systems), mimetype='application/octet-stream', as_attachment=True, download_name=os.path.basename(cache_path(systems)))
+            else:
+                data = casic.build_casic_bin_latest_multi(year, doy, systems='G') + \
+                       casic.build_casic_bin_latest_multi(year, doy, systems='C')
+                fname = f"eph_GC_{year}_{doy:03d}.bin"
+                resp = Response(data, mimetype='application/octet-stream')
+                resp.headers['Content-Disposition'] = f"attachment; filename={fname}"
+                return resp
         except Exception as exc:  # pragma: no cover - runtime dependency
             app.logger.exception("casic_ephemeris failed: %s", exc)
             return jsonify({'error': str(exc)}), 502
-        # Prepare binary response
-        from flask import Response
-        hh = f"_{hour:02d}" if hour is not None else ""
-        fname = f"gps_eph_{year}_{doy:03d}{hh}.bin"
-        resp = Response(bin_bytes, mimetype='application/octet-stream')
-        resp.headers['Content-Disposition'] = f"attachment; filename={fname}"
-        resp.headers['Cache-Control'] = 'no-store'
-        return resp
+        
 
     @app.route('/equipment/<int:equipment_id>/last.geojson')
     @login_required

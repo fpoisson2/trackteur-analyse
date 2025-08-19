@@ -587,6 +587,165 @@ def build_casic_bin_latest(
     return build_latest_gps_bin_from_ds(ds)
 
 
+def build_latest_bds_bin_from_ds(ds: Any) -> bytes:
+    try:
+        import numpy as np  # type: ignore[import-untyped]
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("numpy not installed") from exc
+    try:
+        sv_values = ds.sv.values
+    except Exception:
+        sv_values = []
+    svs = [sv for sv in sv_values if str(sv).startswith("C")]
+    frames: list[bytes] = []
+    for sv in svs:
+        rows = ds.sel(sv=sv)
+        if "sqrtA" not in rows.variables:
+            continue
+        values = rows["sqrtA"].values
+        valid_idx = np.where(~np.isnan(values))[0]
+        if valid_idx.size == 0:
+            continue
+        r = rows.isel(time=int(valid_idx[-1]))
+
+        def g_any(names: str | list[str], default: float = 0.0) -> float:
+            keys = [names] if isinstance(names, str) else names
+            for name in keys:
+                if name in r.variables:
+                    try:
+                        return float(r[name].values)
+                    except Exception:
+                        pass
+            return default
+
+        # Epochs and derived week (BDT starting 2006-01-01)
+        try:
+            import numpy as _np  # type: ignore[import-untyped]
+            t_posix = _np.datetime64(r["time"].values, "s").astype(int)
+            from datetime import datetime as _dt
+            bdt_epoch = _dt(2006, 1, 1, tzinfo=timezone.utc).timestamp()
+            sec_since_bdt = float(t_posix - bdt_epoch)
+            if sec_since_bdt < 0:
+                sec_since_bdt = 0.0
+            toc = sec_since_bdt % (7 * 86400)
+            week = int(sec_since_bdt // (7 * 86400))
+        except Exception:
+            toc = 0.0
+            week = 0
+
+        # Extract fields with v3 aliases
+        sqrtA = g_any(["sqrtA"])
+        e = g_any(["e", "Eccentricity"])
+        i0 = g_any(["i0", "Io"])
+        OMEGA0 = g_any(["OMEGA0", "Omega0"])
+        omega = g_any(["omega"])
+        M0 = g_any(["M0"])
+        DeltaN = g_any(["DeltaN"])
+        ODOT = g_any(["OMEGADOT", "OmegaDot"])
+        IDOT = g_any(["IDOT"])
+        cuc = g_any(["cuc", "Cuc"])  # rad
+        cus = g_any(["cus", "Cus"])  # rad
+        crc = g_any(["crc", "Crc"])  # m
+        crs = g_any(["crs", "Crs"])  # m
+        cic = g_any(["cic", "Cic"])  # rad
+        cis = g_any(["cis", "Cis"])  # rad
+        toe = g_any(["toe", "Toe"])  # seconds-of-week (BDT)
+        af0 = g_any(["af0", "SVclockBias"])  # s
+        af1 = g_any(["af1", "SVclockDrift"])  # s/s
+        af2 = g_any(["af2", "SVclockDriftRate"])  # s/s^2
+        # TGD: prefer TGD1 when present
+        if "TGD1" in r.variables:
+            tgd = g_any("TGD1")
+        elif "tgd" in r.variables:
+            tgd = g_any("tgd")
+        elif "TGD" in r.variables:
+            tgd = g_any("TGD")
+        else:
+            tgd = 0.0
+        # IOD/URA/health
+        def g_int(name_list, default=0):
+            for nm in ([name_list] if isinstance(name_list, str) else name_list):
+                if nm in r.variables:
+                    try:
+                        return int(r[nm].values)
+                    except Exception:
+                        try:
+                            return int(float(r[nm].values))
+                        except Exception:
+                            return default
+            return default
+        iodc = g_int(["IODC", "AODC"])  # aliases
+        iode = g_int(["IODE", "AODE"])  # kept for completeness
+        ura = g_int(["URA"])  
+        health = g_int(["health"])  
+
+        svid = int(str(sv)[1:])
+        frame = make_msg_bdseph(
+            svid, sqrtA, e, omega, M0, i0, OMEGA0, ODOT, DeltaN, IDOT,
+            cuc, cus, crc, crs, cic, cis, toe, week, toc, af0, af1, af2,
+            tgd, iodc, iode, ura, health, valid=3
+        )
+        frames.append(frame)
+    return b"".join(frames)
+
+
+def build_casic_bin_latest_multi(
+    year: int,
+    doy: int,
+    systems: str = "G",
+) -> bytes:
+    """Build concatenated CASIC bins for requested constellations (e.g., 'G', 'C', 'GC').
+
+    Uses BKG candidates and the same GPS/BDS selection logic.
+    """
+    # Reuse the BKG candidate loop to get one RINEX file
+    workdir = os.getcwd()
+    last_err: Exception | None = None
+    # Try today then yesterday
+    import datetime as _dt
+    def _build_for_day(y: int, d: int) -> bytes | None:
+        nonlocal last_err
+        for url in _bkg_v3_candidates(y, d):
+            try:
+                if requests is None:
+                    raise RuntimeError("requests not installed")
+                r = requests.get(url, timeout=20, allow_redirects=True, headers={"User-Agent": "agnss-builder/1.0"})
+                if r.status_code != 200 or not r.content or len(r.content) <= 1024:
+                    continue
+                fname = url.rsplit('/', 1)[-1]
+                path_gz = os.path.join(workdir, fname)
+                with open(path_gz, 'wb') as fh:
+                    fh.write(r.content)
+                nav_path = open_rinex_file(path_gz)
+                # Load full dataset; we’ll split per system
+                ds = parse_rinex_nav_filtered(nav_path, systems="G")  # GPS only to avoid problematic systems first
+                bins = []
+                up = systems.upper()
+                if 'G' in up:
+                    bins.append(build_latest_gps_bin_from_ds(ds))
+                if 'C' in up:
+                    # Load BDS specifically from the same file
+                    ds_c = parse_rinex_nav_filtered(nav_path, systems="C")
+                    bins.append(build_latest_bds_bin_from_ds(ds_c))
+                out = b"".join(bins)
+                if out:
+                    return out
+            except Exception as exc:
+                last_err = exc
+                continue
+        return None
+    # today
+    today = _dt.datetime.now(_dt.timezone.utc).date()
+    y = today.year
+    d = int(today.strftime("%j"))
+    out = _build_for_day(y, d)
+    if out:
+        return out
+    # yesterday
+    prev = today - _dt.timedelta(days=1)
+    return _build_for_day(prev.year, int(prev.strftime("%j"))) or b""
+
+
 def default_brdc_url(year: int, doy: int) -> str:
     """Return the default RINEX navigation URL for a given day.
 
