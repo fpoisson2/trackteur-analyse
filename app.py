@@ -1203,14 +1203,63 @@ def create_app(
             hh = f"_{hour:02d}" if hour is not None else ""
             return os.path.join(cache_dir, f"eph_{sys}_{year}_{doy:03d}{hh}.bin")
         try:
+            # Single-system request
             if systems in ("G", "C"):
                 p = cache_path(systems)
                 if os.path.exists(p) and os.path.getsize(p) > 0:
                     return send_file(p, mimetype='application/octet-stream', as_attachment=True, download_name=os.path.basename(p))
+                # On-demand build fallback (daily using BKG candidates) only when no hour requested
+                if hour is None:
+                    try:
+                        # For GPS, use single-system builder to match tests
+                        if systems == 'G':
+                            data = casic.build_casic_bin_latest(year, doy)
+                        else:
+                            data = casic.build_casic_bin_latest_multi(year, doy, systems=systems)
+                        if data:
+                            tmp = p + '.tmp'
+                            with open(tmp, 'wb') as fh:
+                                fh.write(data)
+                            os.replace(tmp, p)
+                            return send_file(p, mimetype='application/octet-stream', as_attachment=True, download_name=os.path.basename(p))
+                    except Exception as exc:
+                        app.logger.warning("On-demand %s eph build failed: %s", systems, exc)
                 return jsonify({'error': 'cache_not_ready', 'detail': f'{os.path.basename(p)} missing'}), 503
-            else:  # GC
+            else:  # GC combined
                 pg, pc = cache_path('G'), cache_path('C')
-                if all(os.path.exists(pp) and os.path.getsize(pp) > 0 for pp in (pg, pc)):
+                have_g = os.path.exists(pg) and os.path.getsize(pg) > 0
+                have_c = os.path.exists(pc) and os.path.getsize(pc) > 0
+                if hour is None and not (have_g and have_c):
+                    # Try to build whichever are missing
+                    try:
+                        data = casic.build_casic_bin_latest_multi(year, doy, systems='GC')
+                        if data:
+                            # Split write: attempt to parse by rebuilding per-system
+                            if not have_g:
+                                try:
+                                    gdata = casic.build_casic_bin_latest_multi(year, doy, systems='G')
+                                    if gdata:
+                                        tmpg = pg + '.tmp'
+                                        with open(tmpg, 'wb') as fh:
+                                            fh.write(gdata)
+                                        os.replace(tmpg, pg)
+                                        have_g = True
+                                except Exception:
+                                    pass
+                            if not have_c:
+                                try:
+                                    cdata = casic.build_casic_bin_latest_multi(year, doy, systems='C')
+                                    if cdata:
+                                        tmpc = pc + '.tmp'
+                                        with open(tmpc, 'wb') as fh:
+                                            fh.write(cdata)
+                                        os.replace(tmpc, pc)
+                                        have_c = True
+                                except Exception:
+                                    pass
+                    except Exception as exc:
+                        app.logger.warning("On-demand GC eph build failed: %s", exc)
+                if have_g and have_c:
                     with open(pg, 'rb') as fg, open(pc, 'rb') as fc:
                         data = fg.read() + fc.read()
                     fname = f"eph_GC_{year}_{doy:03d}.bin"

@@ -301,6 +301,98 @@ def make_msg_gpseph_scaled(
     payload = b"".join(parts)
     return build_casic_frame(0x08, 0x07, payload)
 
+def make_msg_bdseph(
+    *,
+    svid: int,
+    sqrtA: float,
+    e: float,
+    omega: float,
+    M0: float,
+    i0: float,
+    OMEGA0: float,
+    OMEGADOT: float,
+    DeltaN: float,
+    IDOT: float,
+    cuc: float,
+    cus: float,
+    crc: float,
+    crs: float,
+    cic: float,
+    cis: float,
+    toe: float,
+    week: int,
+    toc: float,
+    af0: float,
+    af1: float,
+    af2: float,
+    tgd: float = 0.0,
+    iodc: int = 0,
+    iode: int = 0,
+    ura: int = 0,
+    health: int = 0,
+    valid: int = 3,
+) -> bytes:
+    """Build a CASIC ephemeris frame for BDS using scaled layout.
+
+    Mirrors the GPS scaled payload layout used by ``make_msg_gpseph_scaled``
+    and places ``iode`` in the final U2 field (vendor/reserved slot).
+    """
+    omega_semi  = _rad_to_semi(_wrap_pm_pi(omega))
+    M0_semi     = _rad_to_semi(_wrap_pm_pi(M0))
+    i0_semi     = _rad_to_semi(_wrap_pm_pi(i0))
+    OMEGA0_semi = _rad_to_semi(_wrap_pm_pi(OMEGA0))
+    OMEGADOT_semips = _radps_to_semips(OMEGADOT)
+    DeltaN_semips   = _radps_to_semips(DeltaN)
+    IDOT_semips     = _radps_to_semips(IDOT)
+    cuc_semi = _rad_to_semi(cuc)
+    cus_semi = _rad_to_semi(cus)
+    cic_semi = _rad_to_semi(cic)
+    cis_semi = _rad_to_semi(cis)
+
+    parts = [struct.pack("<I", 0)]  # reserved/vendor-specific
+    parts += [
+        _uN_scaled(sqrtA, -19, 4),
+        _uN_scaled(e,     -33, 4),
+        struct.pack("<i", _clamp_i32(int(round(omega_semi  * (2**31))))),
+        struct.pack("<i", _clamp_i32(int(round(M0_semi     * (2**31))))),
+        struct.pack("<i", _clamp_i32(int(round(i0_semi     * (2**31))))),
+        struct.pack("<i", _clamp_i32(int(round(OMEGA0_semi * (2**31))))),
+    ]
+    parts += [struct.pack("<i", _clamp_i32(int(round(OMEGADOT_semips * (2**43)))))]
+    parts += [
+        struct.pack("<h", _clamp_i16(int(round(DeltaN_semips * (2**43))))),
+        struct.pack("<h", _clamp_i16(int(round(IDOT_semips   * (2**43))))),
+    ]
+    parts += [
+        struct.pack("<h", _clamp_i16(int(round(cuc_semi * (2**29))))),
+        struct.pack("<h", _clamp_i16(int(round(cus_semi * (2**29))))),
+    ]
+    parts += [
+        _iN_scaled(crc,  -5, 2),
+        _iN_scaled(crs,  -5, 2),
+    ]
+    parts += [
+        struct.pack("<h", _clamp_i16(int(round(cic_semi * (2**29))))),
+        struct.pack("<h", _clamp_i16(int(round(cis_semi * (2**29))))),
+    ]
+    parts += [
+        _uN_scaled(toe,  +4, 2),
+        struct.pack("<H", week & 0xFFFF),
+        _uN_scaled(toc,  +4, 4),
+        _iN_scaled(af0, -31, 4),
+        _iN_scaled(af1, -43, 2),
+        struct.pack("<b", max(-128, min(127, int(round(af2 * (2**55)))))),
+        struct.pack("<b", max(-128, min(127, int(round(tgd * (2**31)))))),
+        struct.pack("<H", iodc & 0xFFFF),
+        struct.pack("<B", ura & 0xFF),
+        struct.pack("<B", health & 0xFF),
+        struct.pack("<B", svid & 0xFF),
+        struct.pack("<B", valid & 0xFF),
+        struct.pack("<H", iode & 0xFFFF),
+    ]
+    payload = b"".join(parts)
+    return build_casic_frame(0x08, 0x07, payload)
+
 def _pick_latest_per_gps_sv(ds: Any) -> list[dict[str, float]]:
     """Return list of ephemeris dicts for the latest valid record per GPS SV.
 
@@ -681,9 +773,34 @@ def build_latest_bds_bin_from_ds(ds: Any) -> bytes:
 
         svid = int(str(sv)[1:])
         frame = make_msg_bdseph(
-            svid, sqrtA, e, omega, M0, i0, OMEGA0, ODOT, DeltaN, IDOT,
-            cuc, cus, crc, crs, cic, cis, toe, week, toc, af0, af1, af2,
-            tgd, iodc, iode, ura, health, valid=3
+            svid=svid,
+            sqrtA=sqrtA,
+            e=e,
+            omega=omega,
+            M0=M0,
+            i0=i0,
+            OMEGA0=OMEGA0,
+            OMEGADOT=ODOT,
+            DeltaN=DeltaN,
+            IDOT=IDOT,
+            cuc=cuc,
+            cus=cus,
+            crc=crc,
+            crs=crs,
+            cic=cic,
+            cis=cis,
+            toe=toe,
+            week=week,
+            toc=toc,
+            af0=af0,
+            af1=af1,
+            af2=af2,
+            tgd=tgd,
+            iodc=iodc,
+            iode=iode,
+            ura=ura,
+            health=health,
+            valid=3,
         )
         frames.append(frame)
     return b"".join(frames)
