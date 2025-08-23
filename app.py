@@ -256,6 +256,43 @@ def create_app(
                             "ALTER TABLE position ADD COLUMN battery_level FLOAT"
                         )
                     )
+        if "provider" not in tables:
+            with db.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "CREATE TABLE provider ("
+                        "id INTEGER PRIMARY KEY,"
+                        "name VARCHAR NOT NULL,"
+                        "type VARCHAR NOT NULL DEFAULT 'hologram',"
+                        "token VARCHAR NOT NULL,"
+                        "orgid VARCHAR"
+                        ")"
+                    )
+                )
+        else:
+            provider_cols = {
+                c["name"] for c in inspector.get_columns("provider")
+            }
+            if "orgid" not in provider_cols:
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE provider ADD COLUMN orgid VARCHAR"
+                        )
+                    )
+        if "sim_card" not in tables:
+            with db.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "CREATE TABLE sim_card ("
+                        "id INTEGER PRIMARY KEY,"
+                        "iccid VARCHAR UNIQUE NOT NULL,"
+                        "device_id VARCHAR,"
+                        "provider_id INTEGER NOT NULL REFERENCES provider(id),"
+                        "equipment_id INTEGER NOT NULL REFERENCES equipment(id)"
+                        ")"
+                    )
+                )
 
     if hasattr(app, "before_first_request"):
         @app.before_first_request
