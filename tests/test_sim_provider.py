@@ -7,7 +7,7 @@ if ROOT_DIR not in sys.path:
 
 import requests  # type: ignore[import-untyped]  # noqa: E402
 from models import db, Provider, SimCard, Equipment  # noqa: E402
-from tests.utils import login  # noqa: E402
+from tests.utils import login, get_csrf  # noqa: E402
 
 
 def test_sim_status_and_sms(make_app, monkeypatch):
@@ -33,6 +33,10 @@ def test_sim_status_and_sms(make_app, monkeypatch):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data[0]["connected"] is True
-    resp = client.get(f"/sim/{eqid}/request_position")
+    token = get_csrf(client, "/")
+    resp = client.post(
+        f"/sim/{eqid}/request_position",
+        headers={"X-CSRFToken": token},
+    )
     assert resp.status_code == 200
     assert resp.get_json()["success"] is True

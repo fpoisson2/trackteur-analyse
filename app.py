@@ -1179,7 +1179,7 @@ def create_app(
             db.session.commit()
         return redirect(url_for('index'))
 
-    @app.route('/sim/<int:eq_id>/request_position')
+    @app.route('/sim/<int:eq_id>/request_position', methods=['POST'])
     @login_required
     def request_position(eq_id: int):
         sim = SimCard.query.filter_by(equipment_id=eq_id).first()

@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Équipements</title>
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
@@ -239,7 +240,13 @@
     document.querySelectorAll('.request-pos').forEach(btn => {
       btn.addEventListener('click', async () => {
         const eqid = btn.getAttribute('data-eqid');
-        try { await fetch(`/sim/${eqid}/request_position`); } catch (e) { console.error(e); }
+        const token = document.querySelector('meta[name="csrf-token"]').content;
+        try {
+          await fetch(`/sim/${eqid}/request_position`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': token },
+          });
+        } catch (e) { console.error(e); }
       });
     });
   </script>
