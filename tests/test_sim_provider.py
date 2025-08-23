@@ -52,12 +52,15 @@ def test_list_provider_sims(make_app, monkeypatch):
         db.session.commit()
         pid = prov.id
     class Resp:
+        def raise_for_status(self):
+            pass
         def json(self):
             return {
+                "success": True,
                 "data": [
-                    {"id": 1, "name": "Dev1", "links": [{"iccid": "111"}]},
-                    {"id": 2, "name": "Dev2", "links": [{"iccid": "222"}]},
-                ]
+                    {"deviceid": 1, "devicename": "Dev1", "sim": "111"},
+                    {"deviceid": 2, "devicename": "Dev2", "sim": "222"},
+                ],
             }
     monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
     resp = client.get(f"/providers/{pid}/sims")

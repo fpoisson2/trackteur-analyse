@@ -1194,9 +1194,9 @@ def create_app(
         provider = Provider.query.get_or_404(prov_id)
         if provider.type != 'hologram':
             return jsonify([])
-        params: dict[str, str] = {}
+        params: dict[str, str] = {"limit": "1000"}
         if provider.orgid:
-            params['orgid'] = provider.orgid
+            params["orgid"] = provider.orgid
         app.logger.info(
             "Fetching SIM list for provider %s (org %s)",
             provider.name,
@@ -1204,30 +1204,35 @@ def create_app(
         )
         try:
             resp = requests.get(
-                'https://dashboard.hologram.io/api/1/devices',
-                auth=('apikey', provider.token),
+                "https://dashboard.hologram.io/api/1/links/cellular",
+                auth=("apikey", provider.token),
                 params=params,
                 timeout=10,
             )
-            data = resp.json().get('data', [])
-            app.logger.info("Received %s devices from Hologram", len(data))
+            resp.raise_for_status()
+            payload = resp.json()
+            if not payload.get("success"):
+                app.logger.error(
+                    "Hologram SIM fetch error: %s", payload.get("error")
+                )
+                return jsonify([]), 502
+            data = payload.get("data", [])
+            app.logger.info("Received %s links from Hologram", len(data))
         except Exception as e:
             app.logger.exception("Hologram SIM fetch failed: %s", e)
             return jsonify([]), 500
         sims = []
-        for dev in data:
-            dev_id = dev.get('id')
-            name = dev.get('name') or str(dev_id)
-            for link in dev.get('links', []):
-                iccid = link.get('iccid')
-                if iccid and dev_id:
-                    sims.append(
-                        {
-                            'value': f"{dev_id}:{iccid}",
-                            'label': f"{name} ({iccid})",
-                        }
-                    )
-                    break
+        for link in data:
+            iccid = link.get("sim")
+            dev_id = link.get("deviceid")
+            name = link.get("devicename") or str(dev_id)
+            if iccid and dev_id:
+                sims.append(
+                    {
+                        "value": f"{dev_id}:{iccid}",
+                        "label": f"{name} ({iccid})",
+                    }
+                )
         return jsonify(sims)
 
     @app.route('/sim/status')
