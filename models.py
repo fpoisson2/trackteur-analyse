@@ -59,6 +59,7 @@ class Provider(db.Model):  # type: ignore[name-defined]
     name = db.Column(db.String, nullable=False)
     type = db.Column(db.String, nullable=False, default="hologram")
     token = db.Column(db.String, nullable=False)
+    orgid = db.Column(db.String, nullable=True)
 
     sims = db.relationship("SimCard", backref="provider", lazy=True)
 

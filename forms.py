@@ -111,6 +111,10 @@ class ProviderForm(FlaskForm):
             Length(min=3, max=256),
         ],
     )
+    orgid = StringField(
+        "Organization ID",
+        validators=[Optional(), Length(min=1, max=64)],
+    )
 
 
 class SimAssociationForm(FlaskForm):
@@ -120,11 +124,9 @@ class SimAssociationForm(FlaskForm):
         coerce=int,
         validators=[DataRequired(message="Fournisseur requis")],
     )
-    iccid = StringField(
-        "ICCID",
-        validators=[DataRequired(message="ICCID requis"), Length(min=5, max=32)],
-    )
-    device_id = StringField(
-        "Device ID",
-        validators=[DataRequired(message="Device ID requis"), Length(min=1, max=64)],
+    sim = SelectField(
+        "Carte SIM",
+        coerce=str,
+        validators=[DataRequired(message="SIM requise")],
+        choices=[],
     )

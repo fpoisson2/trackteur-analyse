@@ -189,12 +189,8 @@
               {{ sim_form.provider(class="form-select") }}
             </div>
             <div class="mb-3">
-              {{ sim_form.iccid.label(class="form-label") }}
-              {{ sim_form.iccid(class="form-control") }}
-            </div>
-            <div class="mb-3">
-              {{ sim_form.device_id.label(class="form-label") }}
-              {{ sim_form.device_id(class="form-control") }}
+              {{ sim_form.sim.label(class="form-label") }}
+              {{ sim_form.sim(class="form-select", id="sim-select") }}
             </div>
           </div>
           <div class="modal-footer">
@@ -212,7 +208,30 @@
         const eqid = button.getAttribute('data-eqid');
         const input = simModal.querySelector('#sim-equipment-id');
         if (input) input.value = eqid;
+        loadSims();
       });
+      const providerSelect = simModal.querySelector('select[name="provider"]');
+      if (providerSelect) {
+        providerSelect.addEventListener('change', loadSims);
+      }
+      async function loadSims() {
+        const providerSelect = simModal.querySelector('select[name="provider"]');
+        const simSelect = simModal.querySelector('#sim-select');
+        if (!providerSelect || !simSelect) return;
+        try {
+          const resp = await fetch(`/providers/${providerSelect.value}/sims`);
+          const data = await resp.json();
+          simSelect.innerHTML = '';
+          data.forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt.value;
+            o.textContent = opt.label;
+            simSelect.appendChild(o);
+          });
+        } catch (e) {
+          console.error('loadSims', e);
+        }
+      }
     }
 
     async function refreshSimStatus() {

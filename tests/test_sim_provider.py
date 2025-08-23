@@ -40,3 +40,27 @@ def test_sim_status_and_sms(make_app, monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.get_json()["success"] is True
+
+
+def test_list_provider_sims(make_app, monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    with app.app_context():
+        prov = Provider(name="Hologram", token="t")
+        db.session.add(prov)
+        db.session.commit()
+        pid = prov.id
+    class Resp:
+        def json(self):
+            return {
+                "data": [
+                    {"id": 1, "name": "Dev1", "links": [{"iccid": "111"}]},
+                    {"id": 2, "name": "Dev2", "links": [{"iccid": "222"}]},
+                ]
+            }
+    monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
+    resp = client.get(f"/providers/{pid}/sims")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data[0]["value"] == "1:111"

@@ -628,10 +628,12 @@ def create_app(
                 if provider:
                     provider.name = form.name.data
                     provider.token = form.token.data
+                    provider.orgid = form.orgid.data or None
                 else:
                     provider = Provider(
                         name=form.name.data,
                         token=form.token.data,
+                        orgid=form.orgid.data or None,
                         type='hologram',
                     )
                     db.session.add(provider)
@@ -643,6 +645,7 @@ def create_app(
         if provider and request.method == 'GET':
             form.name.data = provider.name
             form.token.data = provider.token
+            form.orgid.data = provider.orgid
 
         return render_template(
             'admin_providers.html',
@@ -1147,6 +1150,42 @@ def create_app(
             return _hologram_device_connected(sim.provider.token, sim.device_id)
         return False
 
+    @app.route('/providers/<int:prov_id>/sims')
+    @login_required
+    def list_provider_sims(prov_id: int):
+        """Retourne la liste des SIM disponibles chez le fournisseur."""
+        provider = Provider.query.get_or_404(prov_id)
+        if provider.type != 'hologram':
+            return jsonify([])
+        params: dict[str, str] = {}
+        if provider.orgid:
+            params['orgid'] = provider.orgid
+        try:
+            resp = requests.get(
+                'https://dashboard.hologram.io/api/1/devices',
+                auth=('apikey', provider.token),
+                params=params,
+                timeout=10,
+            )
+            data = resp.json().get('data', [])
+        except Exception:
+            return jsonify([]), 500
+        sims = []
+        for dev in data:
+            dev_id = dev.get('id')
+            name = dev.get('name') or str(dev_id)
+            for link in dev.get('links', []):
+                iccid = link.get('iccid')
+                if iccid and dev_id:
+                    sims.append(
+                        {
+                            'value': f"{dev_id}:{iccid}",
+                            'label': f"{name} ({iccid})",
+                        }
+                    )
+                    break
+        return jsonify(sims)
+
     @app.route('/sim/status')
     @login_required
     def sim_status_all():
@@ -1169,9 +1208,10 @@ def create_app(
         providers = Provider.query.all()
         form.provider.choices = [(p.id, p.name) for p in providers]
         if form.validate_on_submit():
+            device_id, iccid = form.sim.data.split(':', 1)
             sim = SimCard(
-                iccid=form.iccid.data,
-                device_id=form.device_id.data,
+                iccid=iccid,
+                device_id=device_id,
                 provider_id=form.provider.data,
                 equipment_id=int(form.equipment_id.data),
             )
