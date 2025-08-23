@@ -1197,6 +1197,11 @@ def create_app(
         params: dict[str, str] = {}
         if provider.orgid:
             params['orgid'] = provider.orgid
+        app.logger.info(
+            "Fetching SIM list for provider %s (org %s)",
+            provider.name,
+            provider.orgid or "",
+        )
         try:
             resp = requests.get(
                 'https://dashboard.hologram.io/api/1/devices',
@@ -1205,7 +1210,9 @@ def create_app(
                 timeout=10,
             )
             data = resp.json().get('data', [])
-        except Exception:
+            app.logger.info("Received %s devices from Hologram", len(data))
+        except Exception as e:
+            app.logger.exception("Hologram SIM fetch failed: %s", e)
             return jsonify([]), 500
         sims = []
         for dev in data:

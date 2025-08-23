@@ -208,19 +208,21 @@
         const eqid = button.getAttribute('data-eqid');
         const input = simModal.querySelector('#sim-equipment-id');
         if (input) input.value = eqid;
-        loadSims();
+        fetchSims();
       });
       const providerSelect = simModal.querySelector('select[name="provider"]');
       if (providerSelect) {
-        providerSelect.addEventListener('change', loadSims);
+        providerSelect.addEventListener('change', fetchSims);
       }
-      async function loadSims() {
+      async function fetchSims() {
         const providerSelect = simModal.querySelector('select[name="provider"]');
         const simSelect = simModal.querySelector('#sim-select');
         if (!providerSelect || !simSelect) return;
+        console.log('fetchSims for provider', providerSelect.value);
         try {
           const resp = await fetch(`/providers/${providerSelect.value}/sims`);
           const data = await resp.json();
+          console.log('fetched', data.length, 'SIMs');
           simSelect.innerHTML = '';
           data.forEach(opt => {
             const o = document.createElement('option');
@@ -229,7 +231,7 @@
             simSelect.appendChild(o);
           });
         } catch (e) {
-          console.error('loadSims', e);
+          console.error('fetchSims', e);
         }
       }
     }
