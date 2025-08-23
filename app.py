@@ -18,13 +18,25 @@ from flask_login import (
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from models import db, User, Equipment, Position, Config, Track, DailyZone
+from models import (
+    db,
+    User,
+    Equipment,
+    Position,
+    Config,
+    Track,
+    DailyZone,
+    Provider,
+    SimCard,
+)
 from forms import (
     LoginForm,
     AdminConfigForm,
     AddUserForm,
     ResetPasswordForm,
     DeleteUserForm,
+    ProviderForm,
+    SimAssociationForm,
 )
 import zone
 
@@ -599,6 +611,46 @@ def create_app(
             form=form,
         )
 
+    @app.route('/admin/providers', methods=['GET', 'POST'])
+    @login_required
+    def admin_providers():
+        """Configurer les fournisseurs de cartes SIM."""
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+
+        form = ProviderForm()
+        provider = Provider.query.first()
+        message = None
+        error = None
+
+        if request.method == 'POST':
+            if form.validate_on_submit():
+                if provider:
+                    provider.name = form.name.data
+                    provider.token = form.token.data
+                else:
+                    provider = Provider(
+                        name=form.name.data,
+                        token=form.token.data,
+                        type='hologram',
+                    )
+                    db.session.add(provider)
+                db.session.commit()
+                message = 'Fournisseur enregistré'
+            else:
+                error = 'Veuillez corriger les erreurs'
+
+        if provider and request.method == 'GET':
+            form.name.data = provider.name
+            form.token.data = provider.token
+
+        return render_template(
+            'admin_providers.html',
+            form=form,
+            message=message,
+            error=error,
+        )
+
     @app.route('/admin/add_osmand', methods=['POST'])
     @login_required
     def add_osmand_device():
@@ -987,6 +1039,7 @@ def create_app(
             else:
                 source = 'traccar'
 
+            sim = SimCard.query.filter_by(equipment_id=eq.id).first()
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
@@ -1001,6 +1054,8 @@ def create_app(
                 "ratio_eff": ratio_eff,
                 "delta_str": delta_str,
                 "battery_level": eq.battery_level,
+                "sim_present": sim is not None,
+                "sim_device_id": sim.device_id if sim else None,
             })
 
         def normalize(values, value, invert=False):
@@ -1051,16 +1106,89 @@ def create_app(
     def index():
         message = None
         equipment_data = get_equipment_data()
+        providers = Provider.query.all()
+        sim_form = SimAssociationForm()
+        sim_form.provider.choices = [(p.id, p.name) for p in providers]
         return render_template(
             'index.html',
             equipment_data=equipment_data,
-            message=message
+            message=message,
+            sim_form=sim_form,
         )
 
     @app.route('/equipment_status')
     @login_required
     def equipment_status():
         return jsonify(get_equipment_data())
+
+    def _hologram_device_connected(token: str, device_id: str) -> bool:
+        """Retourne True si l'appareil Hologram est en ligne."""
+        try:
+            url = f"https://dashboard.hologram.io/api/1/devices/{device_id}"
+            resp = requests.get(url, auth=("apikey", token), timeout=10)
+            data = resp.json()
+            status = data.get("data", {}).get("status", "").upper()
+            return status == "LIVE"
+        except Exception:
+            return False
+
+    def _hologram_send_sms(token: str, device_id: str, body: str) -> bool:
+        """Envoie un SMS via l'API Hologram."""
+        try:
+            url = "https://dashboard.hologram.io/api/1/sms/incoming"
+            payload = {"deviceid": device_id, "body": body}
+            resp = requests.post(url, auth=("apikey", token), json=payload, timeout=10)
+            return resp.ok
+        except Exception:
+            return False
+
+    def _get_sim_status(sim: SimCard) -> bool:
+        if sim.provider.type == 'hologram' and sim.device_id:
+            return _hologram_device_connected(sim.provider.token, sim.device_id)
+        return False
+
+    @app.route('/sim/status')
+    @login_required
+    def sim_status_all():
+        """Retourne l'état de connexion des SIM."""
+        sims = SimCard.query.all()
+        result = []
+        for sim in sims:
+            result.append(
+                {
+                    "id": sim.equipment_id,
+                    "connected": _get_sim_status(sim),
+                }
+            )
+        return jsonify(result)
+
+    @app.route('/sim/associate', methods=['POST'])
+    @login_required
+    def associate_sim():
+        form = SimAssociationForm()
+        providers = Provider.query.all()
+        form.provider.choices = [(p.id, p.name) for p in providers]
+        if form.validate_on_submit():
+            sim = SimCard(
+                iccid=form.iccid.data,
+                device_id=form.device_id.data,
+                provider_id=form.provider.data,
+                equipment_id=int(form.equipment_id.data),
+            )
+            db.session.add(sim)
+            db.session.commit()
+        return redirect(url_for('index'))
+
+    @app.route('/sim/<int:eq_id>/request_position')
+    @login_required
+    def request_position(eq_id: int):
+        sim = SimCard.query.filter_by(equipment_id=eq_id).first()
+        if not sim:
+            return jsonify({"success": False}), 404
+        ok = False
+        if sim.provider.type == 'hologram' and sim.device_id:
+            ok = _hologram_send_sms(sim.provider.token, sim.device_id, 'POSITION')
+        return jsonify({"success": ok})
 
     @app.route('/equipment/<int:equipment_id>/last.geojson')
     @login_required
@@ -1113,7 +1241,10 @@ def create_app(
         end_date = date.fromisoformat(end_str) if end_str else None
         show_all = request.args.get('show') == 'all'
 
-        agg_all = zone.get_aggregated_zones(equipment_id)
+        if DailyZone.query.filter_by(equipment_id=equipment_id).count():
+            agg_all = zone.get_aggregated_zones(equipment_id)
+        else:
+            agg_all = []
         dates = {
             date.fromisoformat(d)
             for z in agg_all

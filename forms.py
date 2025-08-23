@@ -7,6 +7,7 @@ from wtforms import (
     IntegerField,
     FloatField,
     HiddenField,
+    SelectField,
 )
 from wtforms.validators import (
     DataRequired,
@@ -96,3 +97,34 @@ class ResetPasswordForm(FlaskForm):
 class DeleteUserForm(FlaskForm):
     action = HiddenField(default="delete")
     user_id = IntegerField("ID utilisateur", validators=[DataRequired()])
+
+
+class ProviderForm(FlaskForm):
+    name = StringField(
+        "Nom du fournisseur",
+        validators=[DataRequired(message="Nom requis"), Length(min=2, max=64)],
+    )
+    token = StringField(
+        "Token API",
+        validators=[
+            DataRequired(message="Token requis"),
+            Length(min=3, max=256),
+        ],
+    )
+
+
+class SimAssociationForm(FlaskForm):
+    equipment_id = HiddenField(validators=[DataRequired()])
+    provider = SelectField(
+        "Fournisseur",
+        coerce=int,
+        validators=[DataRequired(message="Fournisseur requis")],
+    )
+    iccid = StringField(
+        "ICCID",
+        validators=[DataRequired(message="ICCID requis"), Length(min=5, max=32)],
+    )
+    device_id = StringField(
+        "Device ID",
+        validators=[DataRequired(message="Device ID requis"), Length(min=1, max=64)],
+    )

@@ -33,6 +33,7 @@
               <li><a class="dropdown-item" href="{{ url_for('admin_analysis') }}">Paramètres de l'analyse</a></li>
               <li><a class="dropdown-item" href="{{ url_for('users') }}">Gestion des utilisateurs</a></li>
               <li><a class="dropdown-item" href="{{ url_for('admin_traccar') }}">Paramètres Traccar</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_providers') }}">Fournisseurs SIM</a></li>
             </ul>
           </li>
           {% endif %}
@@ -70,6 +71,7 @@
             <th><i class="bi bi-battery-half me-1"></i>Batterie</th>
             <th><i class="bi bi-clock me-1"></i>Temps écoulé</th>
             <th><i class="bi bi-trophy me-1"></i>Score</th>
+            <th>SIM</th>
           </tr>
         </thead>
         <tbody>
@@ -107,6 +109,14 @@
               <span class="ms-1">🥇</span>
               {% elif eq.rank == 2 %}
               <span class="ms-1">🥈</span>
+              {% endif %}
+            </td>
+            <td class="sim-status">
+              {% if eq.sim_present %}
+                <span class="status-text">–</span>
+                <button class="btn btn-sm btn-outline-primary ms-2 request-pos" data-eqid="{{ eq.id }}">Demander position</button>
+              {% else %}
+                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#sim-modal" data-eqid="{{ eq.id }}">Associer SIM</button>
               {% endif %}
             </td>
           </tr>
@@ -160,6 +170,78 @@
         });
       });
     }
+  </script>
+  <!-- Modal association SIM -->
+  <div class="modal fade" id="sim-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Associer une carte SIM</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+        </div>
+        <form method="post" action="{{ url_for('associate_sim') }}">
+          <div class="modal-body">
+            {{ sim_form.hidden_tag() }}
+            <input type="hidden" name="equipment_id" id="sim-equipment-id">
+            <div class="mb-3">
+              {{ sim_form.provider.label(class="form-label") }}
+              {{ sim_form.provider(class="form-select") }}
+            </div>
+            <div class="mb-3">
+              {{ sim_form.iccid.label(class="form-label") }}
+              {{ sim_form.iccid(class="form-control") }}
+            </div>
+            <div class="mb-3">
+              {{ sim_form.device_id.label(class="form-label") }}
+              {{ sim_form.device_id(class="form-control") }}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-success">Associer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <script>
+    const simModal = document.getElementById('sim-modal');
+    if (simModal) {
+      simModal.addEventListener('show.bs.modal', event => {
+        const button = event.relatedTarget;
+        const eqid = button.getAttribute('data-eqid');
+        const input = simModal.querySelector('#sim-equipment-id');
+        if (input) input.value = eqid;
+      });
+    }
+
+    async function refreshSimStatus() {
+      try {
+        const resp = await fetch('{{ url_for('sim_status_all') }}');
+        if (!resp.ok) {
+          return;
+        }
+        const data = await resp.json();
+        data.forEach(s => {
+          const row = document.querySelector(`tr[data-eqid="${s.id}"]`);
+          if (!row) return;
+          const cell = row.querySelector('.sim-status .status-text');
+          if (cell) {
+            cell.textContent = s.connected ? 'connecté' : 'hors ligne';
+          }
+        });
+      } catch (e) {
+        console.error('refreshSimStatus', e);
+      }
+    }
+    refreshSimStatus();
+    setInterval(refreshSimStatus, 300000);
+
+    document.querySelectorAll('.request-pos').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const eqid = btn.getAttribute('data-eqid');
+        try { await fetch(`/sim/${eqid}/request_position`); } catch (e) { console.error(e); }
+      });
+    });
   </script>
 </body>
 </html>

@@ -52,6 +52,33 @@ class Equipment(db.Model):  # type: ignore[name-defined]
     tracks = db.relationship('Track', backref='equipment', lazy=True)
 
 
+class Provider(db.Model):  # type: ignore[name-defined]
+    """Fournisseur de cartes SIM (ex: Hologram)."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String, nullable=False)
+    type = db.Column(db.String, nullable=False, default="hologram")
+    token = db.Column(db.String, nullable=False)
+
+    sims = db.relationship("SimCard", backref="provider", lazy=True)
+
+
+class SimCard(db.Model):  # type: ignore[name-defined]
+    """Carte SIM associée à un équipement."""
+
+    id = db.Column(db.Integer, primary_key=True)
+    iccid = db.Column(db.String, unique=True, nullable=False)
+    device_id = db.Column(db.String, nullable=True)
+    provider_id = db.Column(db.Integer, db.ForeignKey('provider.id'), nullable=False)
+    equipment_id = db.Column(
+        db.Integer, db.ForeignKey('equipment.id'), nullable=False
+    )
+
+    equipment = db.relationship(
+        'Equipment', backref=db.backref('sim_card', uselist=False)
+    )
+
+
 class Track(db.Model):  # type: ignore[name-defined]
     """Segment de trajet entre deux zones."""
 
