@@ -67,8 +67,16 @@ def test_list_provider_sims(make_app, monkeypatch):
             return {
                 "success": True,
                 "data": [
-                    {"deviceid": 1, "devicename": "Dev1", "sim": "111"},
-                    {"deviceid": 2, "devicename": "Dev2", "sim": "222"},
+                    {
+                        "id": 1,
+                        "name": "Dev1",
+                        "links": {"cellular": [{"sim": "111"}]},
+                    },
+                    {
+                        "id": 2,
+                        "name": "Dev2",
+                        "links": {"cellular": [{"sim": "222"}]},
+                    },
                 ],
             }
     monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
