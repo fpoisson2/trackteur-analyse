@@ -50,7 +50,7 @@ from forms import (
 import zone
 
 from datetime import datetime, date, timedelta, timezone
-from typing import Iterable, Any
+from typing import Iterable, Any, Optional
 from werkzeug.datastructures import MultiDict
 from werkzeug.exceptions import BadRequest
 
@@ -302,6 +302,29 @@ def create_app(
                         ")"
                     )
                 )
+        else:
+            sim_cols = {
+                c["name"] for c in inspector.get_columns("sim_card")
+            }
+            with db.engine.begin() as conn:
+                if "connected" not in sim_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE sim_card ADD COLUMN connected BOOLEAN"
+                        )
+                    )
+                if "last_session" not in sim_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE sim_card ADD COLUMN last_session DATETIME"
+                        )
+                    )
+                if "status_checked" not in sim_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE sim_card ADD COLUMN status_checked DATETIME"
+                        )
+                    )
 
     if hasattr(app, "before_first_request"):
         @app.before_first_request
@@ -1089,7 +1112,12 @@ def create_app(
                 source = 'traccar'
 
             sim = SimCard.query.filter_by(equipment_id=eq.id).first()
-            connected = _get_sim_status(sim) if sim else None
+            connected = sim.connected if sim else None
+            last_session_str = (
+                sim.last_session.strftime('%Y-%m-%d %H:%M:%S')
+                if sim and sim.last_session
+                else None
+            )
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
@@ -1107,6 +1135,7 @@ def create_app(
                 "sim_present": sim is not None,
                 "sim_device_id": sim.device_id if sim else None,
                 "sim_connected": connected,
+                "sim_last_session": last_session_str,
             })
 
         def normalize(values, value, invert=False):
@@ -1170,8 +1199,10 @@ def create_app(
     def equipment_status():
         return jsonify(get_equipment_data())
 
-    def _hologram_device_connected(token: str, device_id: str) -> bool:
-        """Retourne True si la carte SIM s'est connectée récemment."""
+    def _hologram_device_status(
+        token: str, device_id: str
+    ) -> tuple[bool, Optional[datetime]]:
+        """Retourne l'état de connexion et la dernière session."""
         try:
             url = f"https://dashboard.hologram.io/api/1/devices/{device_id}"
             app.logger.info("Hologram GET %s", url)
@@ -1182,16 +1213,27 @@ def create_app(
             data = resp.json().get("data", {})
             links = data.get("links", {}).get("cellular", [])
             last_connect = links[0].get("last_connect_time") if links else None
-            app.logger.info("Hologram last_connect_time: %s", last_connect)
-            if not last_connect:
-                return False
-            try:
-                dt = datetime.strptime(last_connect, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                return False
-            return datetime.utcnow() - dt < timedelta(minutes=5)
+            last_session_str = (
+                data.get("lastsession", {}).get("session_end")
+            )
+            last_session = None
+            if last_session_str and last_session_str != "0000-00-00 00:00:00":
+                try:
+                    last_session = datetime.strptime(
+                        last_session_str, "%Y-%m-%d %H:%M:%S"
+                    )
+                except ValueError:
+                    last_session = None
+            connected = False
+            if last_connect:
+                try:
+                    dt = datetime.strptime(last_connect, "%Y-%m-%d %H:%M:%S")
+                    connected = datetime.utcnow() - dt < timedelta(hours=1)
+                except ValueError:
+                    connected = False
+            return connected, last_session
         except Exception:
-            return False
+            return False, None
 
     def _hologram_send_sms(token: str, device_id: str, body: str) -> bool:
         """Envoie un SMS via l'API Hologram."""
@@ -1211,10 +1253,17 @@ def create_app(
         except Exception:
             return False
 
-    def _get_sim_status(sim: SimCard) -> bool:
+    def _update_sim_status(sim: SimCard) -> None:
         if sim.provider.type == 'hologram' and sim.device_id:
-            return _hologram_device_connected(sim.provider.token, sim.device_id)
-        return False
+            connected, last_session = _hologram_device_status(
+                sim.provider.token, sim.device_id
+            )
+            sim.connected = connected
+            sim.last_session = last_session
+        else:
+            sim.connected = False
+            sim.last_session = None
+        sim.status_checked = datetime.utcnow()
 
     @app.route('/providers/<int:prov_id>/sims')
     @login_required
@@ -1277,13 +1326,26 @@ def create_app(
         """Retourne l'état de connexion des SIM."""
         sims = SimCard.query.all()
         result = []
+        updated = False
+        now = datetime.utcnow()
         for sim in sims:
+            if (
+                sim.status_checked is None
+                or now - sim.status_checked > timedelta(hours=1)
+            ):
+                _update_sim_status(sim)
+                updated = True
             result.append(
                 {
                     "id": sim.equipment_id,
-                    "connected": _get_sim_status(sim),
+                    "connected": sim.connected,
+                    "last_session": sim.last_session.strftime("%Y-%m-%d %H:%M:%S")
+                    if sim.last_session
+                    else None,
                 }
             )
+        if updated:
+            db.session.commit()
         return jsonify(result)
 
     @app.route('/sim/associate', methods=['POST'])
@@ -1309,6 +1371,8 @@ def create_app(
                 equipment_id=eq_id,
             )
             db.session.add(sim)
+            db.session.commit()
+            _update_sim_status(sim)
             db.session.commit()
             flash("Carte SIM associée", "success")
         else:

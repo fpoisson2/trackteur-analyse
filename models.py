@@ -74,6 +74,9 @@ class SimCard(db.Model):  # type: ignore[name-defined]
     equipment_id = db.Column(
         db.Integer, db.ForeignKey('equipment.id'), nullable=False
     )
+    connected = db.Column(db.Boolean, nullable=True)
+    last_session = db.Column(db.DateTime, nullable=True)
+    status_checked = db.Column(db.DateTime, nullable=True)
 
     equipment = db.relationship(
         'Equipment', backref=db.backref('sim_card', uselist=False)

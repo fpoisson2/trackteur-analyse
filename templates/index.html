@@ -70,6 +70,7 @@
           <tr>
             <th>Équipement</th>
             <th>Dernière position</th>
+            <th>Dernière session</th>
             <th>Ha traités</th>
             <th>Ha uniques</th>
             <th>Distance zones (km)</th>
@@ -97,6 +98,7 @@
               {% endif %}
             </td>
             <td class="last-seen">{{ eq.last_seen or '–' }}</td>
+            <td class="last-session">{{ eq.sim_last_session or '–' }}</td>
             <td>{{ eq.total_hectares|round(2) }}</td>
             <td>{{ eq.relative_hectares|round(2) }}</td>
             <td>{{ eq.distance_km|round(2) }}</td>
@@ -255,13 +257,16 @@
           if (cell) {
             cell.textContent = s.connected ? 'connecté' : 'hors ligne';
           }
+          const sess = row.querySelector('.last-session');
+          if (sess) {
+            sess.textContent = s.last_session || '–';
+          }
         });
       } catch (e) {
         console.error('refreshSimStatus', e);
       }
     }
-    refreshSimStatus();
-    setInterval(refreshSimStatus, 300000);
+    setInterval(refreshSimStatus, 3600000);
 
     document.querySelectorAll('.request-pos').forEach(btn => {
       btn.addEventListener('click', async () => {

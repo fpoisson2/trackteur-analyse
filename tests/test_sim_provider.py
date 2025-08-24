@@ -36,7 +36,10 @@ def test_sim_status_and_sms(make_app, monkeypatch):
         def json(self):
             ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             return {
-                "data": {"links": {"cellular": [{"last_connect_time": ts}]}}
+                "data": {
+                    "links": {"cellular": [{"last_connect_time": ts}]},
+                    "lastsession": {"session_end": ts},
+                }
             }
 
     class RespPost:
@@ -49,6 +52,7 @@ def test_sim_status_and_sms(make_app, monkeypatch):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data[0]["connected"] is True
+    assert data[0]["last_session"] is not None
     token = get_csrf(client, "/")
     resp = client.post(
         f"/sim/{eqid}/request_position",
@@ -98,7 +102,7 @@ def test_list_provider_sims(make_app, monkeypatch):
     assert data[0]["value"] == "1:111"
 
 
-def test_associate_sim_creates_record(make_app):
+def test_associate_sim_creates_record(make_app, monkeypatch):
     """Posting to /sim/associate should persist the SIM card."""
     app = make_app()
     client = app.test_client()
@@ -110,6 +114,20 @@ def test_associate_sim_creates_record(make_app):
         db.session.commit()
         pid = prov.id
         eqid = eq.id
+    class Resp:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            return {
+                "data": {
+                    "links": {"cellular": [{"last_connect_time": ts}]},
+                    "lastsession": {"session_end": ts},
+                }
+            }
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
     token = get_csrf(client, "/")
     resp = client.post(
         "/sim/associate",
@@ -146,7 +164,10 @@ def test_associate_sim_shows_feedback(make_app, monkeypatch):
         def json(self):
             ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             return {
-                "data": {"links": {"cellular": [{"last_connect_time": ts}]}}
+                "data": {
+                    "links": {"cellular": [{"last_connect_time": ts}]},
+                    "lastsession": {"session_end": ts},
+                }
             }
 
     monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
