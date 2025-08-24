@@ -14,6 +14,7 @@ from flask import (
     url_for,
     jsonify,
     current_app,
+    flash,
 )
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
@@ -1088,6 +1089,7 @@ def create_app(
                 source = 'traccar'
 
             sim = SimCard.query.filter_by(equipment_id=eq.id).first()
+            connected = _get_sim_status(sim) if sim else None
             equipment_data.append({
                 "id": eq.id,
                 "name": eq.name,
@@ -1104,6 +1106,7 @@ def create_app(
                 "battery_level": eq.battery_level,
                 "sim_present": sim is not None,
                 "sim_device_id": sim.device_id if sim else None,
+                "sim_connected": connected,
             })
 
         def normalize(values, value, invert=False):
@@ -1152,7 +1155,6 @@ def create_app(
     @app.route('/')
     @login_required
     def index():
-        message = None
         equipment_data = get_equipment_data()
         providers = Provider.query.all()
         sim_form = SimAssociationForm()
@@ -1160,7 +1162,6 @@ def create_app(
         return render_template(
             'index.html',
             equipment_data=equipment_data,
-            message=message,
             sim_form=sim_form,
         )
 
@@ -1305,8 +1306,10 @@ def create_app(
             )
             db.session.add(sim)
             db.session.commit()
+            flash("Carte SIM associée", "success")
         else:
             current_app.logger.warning("SIM association failed: %s", form.errors)
+            flash("Échec de l'association de la SIM", "danger")
         return redirect(url_for('index'))
 
     @app.route('/sim/<int:eq_id>/request_position', methods=['POST'])

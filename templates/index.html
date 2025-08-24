@@ -52,9 +52,13 @@
   </nav>
 
   <div class="container">
-    {% if message %}
-    <div class="alert alert-info">{{ message }}</div>
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      {% for cat, msg in msgs %}
+      <div class="alert alert-{{ 'success' if cat == 'success' else 'danger' if cat == 'danger' else 'info' }}">{{ msg }}</div>
+      {% endfor %}
     {% endif %}
+    {% endwith %}
     <div class="input-group mb-3">
       <span class="input-group-text"><i class="bi bi-search"></i></span>
       <input type="text" id="equipment-filter" class="form-control" placeholder="Rechercher un équipement">
@@ -114,7 +118,7 @@
             </td>
             <td class="sim-status">
               {% if eq.sim_present %}
-                <span class="status-text">–</span>
+                <span class="status-text">{{ 'connecté' if eq.sim_connected else 'hors ligne' }}</span>
                 <button class="btn btn-sm btn-outline-primary ms-2 request-pos" data-eqid="{{ eq.id }}">Demander position</button>
               {% else %}
                 <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#sim-modal" data-eqid="{{ eq.id }}">Associer SIM</button>

@@ -121,3 +121,40 @@ def test_associate_sim_creates_record(make_app):
         sim = SimCard.query.filter_by(equipment_id=eqid).first()
         assert sim is not None
         assert sim.iccid == "999"
+
+
+def test_associate_sim_shows_feedback(make_app, monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    with app.app_context():
+        prov = Provider(name="Hologram", token="t")
+        db.session.add(prov)
+        eq = Equipment.query.first()
+        db.session.commit()
+        pid = prov.id
+        eqid = eq.id
+
+    class Resp:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"data": {"links": {"cellular": [{"state": "LIVE"}]}}}
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
+
+    token = get_csrf(client, "/")
+    resp = client.post(
+        "/sim/associate",
+        data={
+            "equipment_id": eqid,
+            "provider": pid,
+            "sim": "123:999",
+            "csrf_token": token,
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Carte SIM associ\xc3\xa9e" in resp.data
+    assert b"connect\xc3\xa9" in resp.data
