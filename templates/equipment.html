@@ -126,13 +126,14 @@
     <a href="{{ url_for('index') }}">
       <img src="{{ url_for('static', filename='logo.png') }}" alt="Trackteur Analyse" height="40">
     </a>
-    {% if zones or has_tracks %}
-    <div id="date-nav" class="input-group ms-2">
-      <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
-      <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>
-        <i class="bi bi-calendar3"></i>
-      </button>
-    </div>
+    {# Show date selector whenever there are any dates (zones, tracks, or points) #}
+    {% if available_dates %}
+      <div id="date-nav" class="input-group ms-2">
+        <input type="text" id="date-display" class="form-control text-center" value="{{ date_value or '' }}" readonly>
+        <button id="open-calendar" class="btn btn-outline-secondary" {% if not available_dates %}disabled{% endif %}>
+          <i class="bi bi-calendar3"></i>
+        </button>
+      </div>
     {% endif %}
   </header>
 
@@ -164,7 +165,7 @@
           </div>
           <div class="modal-body">
             <div class="form-check form-switch">
-              <input class="form-check-input" type="checkbox" id="show-points">
+              <input class="form-check-input" type="checkbox" id="show-points" {% if show_points_default %}checked{% endif %}>
               <label class="form-check-label" for="show-points">Afficher les points GPS</label>
             </div>
           </div>
@@ -203,6 +204,9 @@
         <div class="d-flex align-items-center justify-content-between mb-2">
           <h5 class="mb-0">{{ equipment.name }}</h5>
           <div class="d-none d-lg-flex gap-2">
+            <button type="button" id="export-csv-btn" class="btn btn-primary btn-sm" title="Exporter CSV">
+              <i class="bi bi-download me-1"></i> Exporter CSV
+            </button>
             <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#legend-modal" title="Légende">
               <i class="bi bi-question-circle"></i>
             </button>
@@ -290,6 +294,22 @@
     const day = {{ day|tojson if day else 'null' }};
     const showAll = {{ 'true' if show_all else 'false' }};
     const availableDates = {{ available_dates|tojson }};
+
+    function exportCsv() {
+      const params = new URLSearchParams();
+      if (startDate !== null) params.set('start', startDate);
+      if (endDate !== null) params.set('end', endDate);
+      if (startDate === null && endDate === null) {
+        if (year !== null) params.set('year', year);
+        if (month !== null) params.set('month', month);
+        if (day !== null) params.set('day', day);
+        if (year === null && month === null && day === null && showAll) {
+          params.set('show', 'all');
+        }
+      }
+      const url = `/equipment/${equipmentId}/export.csv` + (params.toString() ? `?${params.toString()}` : '');
+      window.location.href = url;
+    }
 
     function rebuildDateLayers() {
       dateLayers = {};
@@ -452,7 +472,11 @@
     }
 
     function setupMap() {
-      map = L.map('map-container', { zoomControl: false });
+      map = L.map('map-container', {
+        zoomControl: false,
+        preferCanvas: true,
+        tapTolerance: 30
+      });
       const baseLayers = {
         hybrid: L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
           maxZoom: 20,
@@ -493,8 +517,70 @@
         }
       }).addTo(map);
 
+      // Ensure points stay above polygons/lines and are easy to tap on mobile
+      map.createPane('pointsPane');
+      map.getPane('pointsPane').style.zIndex = 650; // above overlayPane (400) and markerPane (600)
+      const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+      const pointRadius = isCoarsePointer ? 6 : 5;        // visible dot stays small
+      const hitRadius = isCoarsePointer ? 28 : 14;        // larger invisible tap target
       pointLayer = L.geoJSON(null, {
-        pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 2 })
+        pane: 'pointsPane',
+        pointToLayer: (f, latlng) => {
+          // Large invisible hit area + small visible dot
+          const hit = L.circleMarker(latlng, {
+            pane: 'pointsPane',
+            radius: hitRadius,
+            stroke: false,
+            fill: true,
+            fillColor: '#000',
+            fillOpacity: 0.001, // not zero to keep events
+            bubblingMouseEvents: false,
+          });
+          const dot = L.circleMarker(latlng, {
+            pane: 'pointsPane',
+            radius: pointRadius,
+            stroke: true,
+            weight: 2,
+            color: '#0d6efd',
+            fillColor: '#3d8bfd',
+            fillOpacity: 0.9,
+            bubblingMouseEvents: false,
+          });
+          return L.layerGroup([hit, dot]);
+        },
+        onEachFeature: (feature, layer) => {
+          const coords = (feature.geometry && feature.geometry.coordinates) || [null, null];
+          const lon = coords[0], lat = coords[1];
+          const ts = (feature.properties && feature.properties.timestamp) || '';
+          const batt = (feature.properties && feature.properties.battery_level);
+          const latStr = (typeof lat === 'number') ? Number(lat).toFixed(6) : '';
+          const lonStr = (typeof lon === 'number') ? Number(lon).toFixed(6) : '';
+          const battStr = (batt === null || batt === undefined) ? '–' : `${parseInt(batt, 10)}%`;
+          const html = `<b>Point GPS</b><br>` +
+                       `Lat: ${latStr}<br>` +
+                       `Lon: ${lonStr}<br>` +
+                       `Horodatage: ${ts}<br>` +
+                       `Batterie: ${battStr}`;
+
+          const centerLatLng = (typeof lat === 'number' && typeof lon === 'number')
+            ? L.latLng(lat, lon)
+            : (layer.getLatLng ? layer.getLatLng() : null);
+
+          const openAtCenter = () => {
+            if (!centerLatLng) return;
+            L.popup({ autoPan: true, closeButton: true, maxWidth: 260 })
+              .setLatLng(centerLatLng)
+              .setContent(html)
+              .openOn(map);
+          };
+
+          if (layer && layer.getLayers) {
+            const children = layer.getLayers();
+            children.forEach(l => l.on('click', openAtCenter));
+          } else {
+            layer.on('click', openAtCenter);
+          }
+        }
       }).addTo(map);
 
       trackLayer = L.geoJSON(null, {
@@ -632,6 +718,21 @@
       };
       layerBtn.addTo(map);
 
+      // Export CSV control (visible on mobile)
+      const exportBtnCtl = L.control({ position: 'topright' });
+      exportBtnCtl.onAdd = () => {
+        const div = L.DomUtil.create('div', 'export-btn-container');
+        const button = L.DomUtil.create('button', 'map-ctrl-btn', div);
+        button.id = 'export-map-btn';
+        button.type = 'button';
+        button.title = 'Exporter CSV';
+        button.innerHTML = '<i class="bi bi-download"></i>';
+        L.DomEvent.disableClickPropagation(button);
+        L.DomEvent.on(button, 'click', () => exportCsv());
+        return div;
+      };
+      exportBtnCtl.addTo(map);
+
       const layerModalEl = document.getElementById('layer-modal');
       if (layerModalEl) {
         layerModalEl.addEventListener('show.bs.modal', () => {
@@ -755,6 +856,10 @@
     }
 
     function setupInteractions() {
+      const exportBtn = document.getElementById('export-csv-btn');
+      if (exportBtn) {
+        exportBtn.addEventListener('click', exportCsv);
+      }
       document.querySelectorAll('.zone-row').forEach(row => {
         row.addEventListener('click', async () => {
           const zoneId = row.dataset.zoneId;

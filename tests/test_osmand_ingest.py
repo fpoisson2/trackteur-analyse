@@ -3,16 +3,20 @@ import json
 import logging
 
 import pytest
+from pytest import approx
 
-from models import Equipment, Position
+from models import Equipment, Position, db
 from tests.utils import login, get_csrf
 
 
 @pytest.mark.usefixtures("base_make_app")
-def test_osmand_get_query_creates_position(make_app):
+def test_osmand_get_query_updates_position(make_app):
     app = make_app()
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
+        eq = Equipment(id_traccar=0, name="dev", osmand_id="dev123")
+        db.session.add(eq)
+        db.session.commit()
         client = app.test_client()
         resp = client.get(
             "/osmand",
@@ -20,12 +24,10 @@ def test_osmand_get_query_creates_position(make_app):
                 "id": "dev123",
                 "lat": "48.1",
                 "lon": "2.3",
-                "timestamp": "1609459200000",  # 2021-01-01T00:00:00Z
+                "timestamp": "1609459200000",
             },
         )
         assert resp.status_code == 200
-        eq = Equipment.query.filter_by(osmand_id="dev123").first()
-        assert eq is not None
         pos = Position.query.filter_by(equipment_id=eq.id).first()
         assert pos is not None
         assert abs(pos.latitude - 48.1) < 1e-9
@@ -36,15 +38,14 @@ def test_osmand_get_query_creates_position(make_app):
 def test_osmand_json_creates_position(make_app):
     app = make_app()
     with app.app_context():
+        eq = Equipment(id_traccar=0, name="osdev", osmand_id="osdev-42")
+        db.session.add(eq)
+        db.session.commit()
         client = app.test_client()
         payload = {
             "location": {
                 "timestamp": "2023-01-01T00:00:00.000Z",
-                "coords": {
-                    "latitude": 45.0,
-                    "longitude": 3.0,
-                    "accuracy": 5,
-                },
+                "coords": {"latitude": 45.0, "longitude": 3.0, "accuracy": 5},
                 "is_moving": False,
             },
             "device_id": "osdev-42",
@@ -55,8 +56,6 @@ def test_osmand_json_creates_position(make_app):
             content_type="application/json",
         )
         assert resp.status_code == 200
-        eq = Equipment.query.filter_by(osmand_id="osdev-42").first()
-        assert eq is not None
         pos = (
             Position.query.filter_by(equipment_id=eq.id)
             .order_by(Position.timestamp.desc())
@@ -71,18 +70,15 @@ def test_osmand_json_creates_position(make_app):
 def test_osmand_gzip_json_creates_positions(make_app):
     app = make_app()
     with app.app_context():
+        eq = Equipment(id_traccar=0, name="gz", osmand_id="gz-1")
+        db.session.add(eq)
+        db.session.commit()
         client = app.test_client()
         payload = {
             "device_id": "gz-1",
             "locations": [
-                {
-                    "coords": {"latitude": 1.0, "longitude": 2.0},
-                    "timestamp": "2024-01-01T00:00:00Z",
-                },
-                {
-                    "coords": {"latitude": 1.1, "longitude": 2.1},
-                    "timestamp": "2024-01-01T00:01:00Z",
-                },
+                {"coords": {"latitude": 1.0, "longitude": 2.0}, "timestamp": "2024-01-01T00:00:00Z"},
+                {"coords": {"latitude": 1.1, "longitude": 2.1}, "timestamp": "2024-01-01T00:01:00Z"},
             ],
         }
         body = gzip.compress(json.dumps(payload).encode("utf-8"))
@@ -93,8 +89,6 @@ def test_osmand_gzip_json_creates_positions(make_app):
             headers={"Content-Encoding": "gzip"},
         )
         assert resp.status_code == 200
-        eq = Equipment.query.filter_by(osmand_id="gz-1").first()
-        assert eq is not None
         cnt = Position.query.filter_by(equipment_id=eq.id).count()
         assert cnt == 2
 
@@ -103,6 +97,9 @@ def test_osmand_gzip_json_creates_positions(make_app):
 def test_osmand_json_with_battery_updates_equipment(make_app):
     app = make_app()
     with app.app_context():
+        eq = Equipment(id_traccar=0, name="bat", osmand_id="bat-1")
+        db.session.add(eq)
+        db.session.commit()
         client = app.test_client()
         payload = {
             "location": {
@@ -118,15 +115,16 @@ def test_osmand_json_with_battery_updates_equipment(make_app):
             content_type="application/json",
         )
         assert resp.status_code == 200
-        eq = Equipment.query.filter_by(osmand_id="bat-1").first()
-        assert eq is not None
-        assert eq.battery_level == 88
+        assert eq.battery_level == approx(88)
 
 
 @pytest.mark.usefixtures("base_make_app")
 def test_osmand_json_with_battery_object(make_app):
     app = make_app()
     with app.app_context():
+        eq = Equipment(id_traccar=0, name="batobj", osmand_id="bat-obj")
+        db.session.add(eq)
+        db.session.commit()
         client = app.test_client()
         payload = {
             "location": {
@@ -142,8 +140,6 @@ def test_osmand_json_with_battery_object(make_app):
             content_type="application/json",
         )
         assert resp.status_code == 200
-        eq = Equipment.query.filter_by(osmand_id="bat-obj").first()
-        assert eq is not None
         assert eq.battery_level == 44
 
 
@@ -151,6 +147,9 @@ def test_osmand_json_with_battery_object(make_app):
 def test_osmand_json_logs_battery_level(make_app, caplog):
     app = make_app()
     with app.app_context():
+        eq = Equipment(id_traccar=0, name="log", osmand_id="log-1")
+        db.session.add(eq)
+        db.session.commit()
         client = app.test_client()
         payload = {
             "location": {
@@ -177,11 +176,10 @@ def test_osmand_json_logs_battery_level(make_app, caplog):
 def test_admin_add_osmand_device(make_app):
     app = make_app()
     client = app.test_client()
-    # login
     login(client)
-    token = get_csrf(client, "/admin/equipment")
+    token = get_csrf(client, "/")
     resp = client.post(
-        "/admin/add_osmand",
+        "/osmand/add",
         data={
             "csrf_token": token,
             "osmand_name": "Tracteur OsmAnd",
@@ -196,3 +194,56 @@ def test_admin_add_osmand_device(make_app):
         assert eq is not None
         assert eq.name == "Tracteur OsmAnd"
         assert eq.token_api == "secret"
+
+
+@pytest.mark.usefixtures("base_make_app")
+def test_osmand_json_top_level_battery(make_app):
+    app = make_app()
+    with app.app_context():
+        eq = Equipment(id_traccar=0, name="top", osmand_id="top-bat-1")
+        db.session.add(eq)
+        db.session.commit()
+        client = app.test_client()
+        payload = {
+            "device_id": "top-bat-1",
+            "battery": 42,
+            "locations": [
+                {"coords": {"latitude": 12.34, "longitude": 56.78}, "timestamp": "2024-08-14T12:00:00Z"},
+                {"coords": {"latitude": 12.35, "longitude": 56.79}, "timestamp": "2024-08-14T12:01:00Z"},
+            ],
+        }
+        resp = client.post(
+            "/osmand",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        assert eq.battery_level == 42
+
+
+@pytest.mark.usefixtures("base_make_app")
+def test_unknown_osmand_device_rejected(make_app):
+    app = make_app()
+    client = app.test_client()
+    resp = client.get(
+        "/osmand",
+        query_string={"id": "unknown", "lat": "0", "lon": "0"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.usefixtures("base_make_app")
+def test_delete_osmand_device(make_app):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    with app.app_context():
+        eq = Equipment(id_traccar=0, name="Del", osmand_id="del-1")
+        db.session.add(eq)
+        db.session.commit()
+        eq_id = eq.id
+    token = get_csrf(client, "/")
+    resp = client.post(f"/osmand/{eq_id}/delete", data={"csrf_token": token})
+    assert resp.status_code == 302
+    with app.app_context():
+        assert Equipment.query.get(eq_id) is None
