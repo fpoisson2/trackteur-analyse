@@ -120,6 +120,7 @@
               {% if eq.sim_present %}
                 <span class="status-text">{{ 'connecté' if eq.sim_connected else 'hors ligne' }}</span>
                 <button class="btn btn-sm btn-outline-primary ms-2 request-pos" data-eqid="{{ eq.id }}">Demander position</button>
+                <button class="btn btn-sm btn-outline-danger ms-2 dissoc-sim" data-eqid="{{ eq.id }}">Dissocier</button>
               {% else %}
                 <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#sim-modal" data-eqid="{{ eq.id }}">Associer SIM</button>
               {% endif %}
@@ -271,6 +272,23 @@
             method: 'POST',
             headers: { 'X-CSRFToken': token },
           });
+        } catch (e) { console.error(e); }
+      });
+    });
+
+    document.querySelectorAll('.dissoc-sim').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const eqid = btn.getAttribute('data-eqid');
+        const token = document.querySelector('meta[name="csrf-token"]').content;
+        try {
+          const resp = await fetch(`/sim/${eqid}/dissociate`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': token },
+          });
+          const data = await resp.json();
+          if (data.success) {
+            window.location.reload();
+          }
         } catch (e) { console.error(e); }
       });
     });

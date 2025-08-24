@@ -33,7 +33,7 @@ def test_sim_status_and_sms(make_app, monkeypatch):
         text = "{}"
 
         def json(self):
-            return {"data": {"links": {"cellular": [{"state": "LIVE"}]}}}
+            return {"data": {"lastsession": {"active": True}}}
 
     class RespPost:
         ok = True
@@ -140,7 +140,7 @@ def test_associate_sim_shows_feedback(make_app, monkeypatch):
         text = "{}"
 
         def json(self):
-            return {"data": {"links": {"cellular": [{"state": "LIVE"}]}}}
+            return {"data": {"lastsession": {"active": True}}}
 
     monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
 
@@ -158,3 +158,31 @@ def test_associate_sim_shows_feedback(make_app, monkeypatch):
     assert resp.status_code == 200
     assert b"Carte SIM associ\xc3\xa9e" in resp.data
     assert b"connect\xc3\xa9" in resp.data
+
+
+def test_dissociate_sim_removes_record(make_app):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    with app.app_context():
+        prov = Provider(name="Hologram", token="t")
+        db.session.add(prov)
+        eq = Equipment.query.first()
+        sim = SimCard(
+            iccid="123",
+            device_id="456",
+            provider=prov,
+            equipment=eq,
+        )
+        db.session.add(sim)
+        db.session.commit()
+        eqid = eq.id
+    token = get_csrf(client, "/")
+    resp = client.post(
+        f"/sim/{eqid}/dissociate",
+        headers={"X-CSRFToken": token},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["success"] is True
+    with app.app_context():
+        assert SimCard.query.filter_by(equipment_id=eqid).first() is None

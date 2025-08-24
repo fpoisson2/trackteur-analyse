@@ -1171,7 +1171,7 @@ def create_app(
         return jsonify(get_equipment_data())
 
     def _hologram_device_connected(token: str, device_id: str) -> bool:
-        """Retourne True si l'appareil Hologram est en ligne."""
+        """Retourne True si l'appareil Hologram a une session active."""
         try:
             url = f"https://dashboard.hologram.io/api/1/devices/{device_id}"
             app.logger.info("Hologram GET %s", url)
@@ -1179,13 +1179,9 @@ def create_app(
             app.logger.info(
                 "Hologram response %s: %s", resp.status_code, resp.text
             )
-            data = resp.json()
-            links = data.get("data", {}).get("links", {})
-            cellular = links.get("cellular", [])
-            if cellular:
-                state = cellular[0].get("state", "").upper()
-                return state == "LIVE"
-            return False
+            data = resp.json().get("data", {})
+            lastsession = data.get("lastsession", {})
+            return bool(lastsession.get("active"))
         except Exception:
             return False
 
@@ -1322,6 +1318,16 @@ def create_app(
         if sim.provider.type == 'hologram' and sim.device_id:
             ok = _hologram_send_sms(sim.provider.token, sim.device_id, 'POSITION')
         return jsonify({"success": ok})
+
+    @app.route('/sim/<int:eq_id>/dissociate', methods=['POST'])
+    @login_required
+    def dissociate_sim(eq_id: int):
+        sim = SimCard.query.filter_by(equipment_id=eq_id).first()
+        if not sim:
+            return jsonify({"success": False}), 404
+        db.session.delete(sim)
+        db.session.commit()
+        return jsonify({"success": True})
 
     @app.route('/equipment/<int:equipment_id>/last.geojson')
     @login_required
