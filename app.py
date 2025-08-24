@@ -1171,7 +1171,7 @@ def create_app(
         return jsonify(get_equipment_data())
 
     def _hologram_device_connected(token: str, device_id: str) -> bool:
-        """Retourne True si l'appareil Hologram a une session active."""
+        """Retourne True si la carte SIM s'est connectée récemment."""
         try:
             url = f"https://dashboard.hologram.io/api/1/devices/{device_id}"
             app.logger.info("Hologram GET %s", url)
@@ -1180,8 +1180,16 @@ def create_app(
                 "Hologram response %s: %s", resp.status_code, resp.text
             )
             data = resp.json().get("data", {})
-            lastsession = data.get("lastsession", {})
-            return bool(lastsession.get("active"))
+            links = data.get("links", {}).get("cellular", [])
+            last_connect = links[0].get("last_connect_time") if links else None
+            app.logger.info("Hologram last_connect_time: %s", last_connect)
+            if not last_connect:
+                return False
+            try:
+                dt = datetime.strptime(last_connect, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return False
+            return datetime.utcnow() - dt < timedelta(minutes=5)
         except Exception:
             return False
 

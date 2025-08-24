@@ -6,6 +6,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import requests  # type: ignore[import-untyped]  # noqa: E402
+from datetime import datetime  # noqa: E402
 from models import db, Provider, SimCard, Equipment  # noqa: E402
 from tests.utils import login, get_csrf  # noqa: E402
 
@@ -33,7 +34,10 @@ def test_sim_status_and_sms(make_app, monkeypatch):
         text = "{}"
 
         def json(self):
-            return {"data": {"lastsession": {"active": True}}}
+            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            return {
+                "data": {"links": {"cellular": [{"last_connect_time": ts}]}}
+            }
 
     class RespPost:
         ok = True
@@ -140,7 +144,10 @@ def test_associate_sim_shows_feedback(make_app, monkeypatch):
         text = "{}"
 
         def json(self):
-            return {"data": {"lastsession": {"active": True}}}
+            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            return {
+                "data": {"links": {"cellular": [{"last_connect_time": ts}]}}
+            }
 
     monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
 
