@@ -1331,7 +1331,7 @@ def create_app(
         for sim in sims:
             if (
                 sim.status_checked is None
-                or now - sim.status_checked > timedelta(hours=1)
+                or now - sim.status_checked > timedelta(minutes=5)
             ):
                 _update_sim_status(sim)
                 updated = True

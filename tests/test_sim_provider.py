@@ -6,7 +6,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import requests  # type: ignore[import-untyped]  # noqa: E402
-from datetime import datetime  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
 from models import db, Provider, SimCard, Equipment  # noqa: E402
 from tests.utils import login, get_csrf  # noqa: E402
 
@@ -214,3 +214,41 @@ def test_dissociate_sim_removes_record(make_app):
     assert resp.get_json()["success"] is True
     with app.app_context():
         assert SimCard.query.filter_by(equipment_id=eqid).first() is None
+
+
+def test_sim_status_cache_interval(make_app, monkeypatch):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    with app.app_context():
+        prov = Provider(name="Hologram", token="t")
+        db.session.add(prov)
+        eq = Equipment.query.first()
+        sim = SimCard(
+            iccid="123",
+            device_id="456",
+            provider=prov,
+            equipment=eq,
+        )
+        db.session.add(sim)
+        db.session.commit()
+    calls = {"n": 0}
+
+    def fake_status(token, device_id):
+        calls["n"] += 1
+        return True, datetime.utcnow()
+
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "_hologram_device_status", fake_status)
+
+    client.get("/sim/status")
+    assert calls["n"] == 1
+    client.get("/sim/status")
+    assert calls["n"] == 1
+    with app.app_context():
+        sim = SimCard.query.first()
+        sim.status_checked = datetime.utcnow() - timedelta(minutes=6)
+        db.session.commit()
+    client.get("/sim/status")
+    assert calls["n"] == 2
