@@ -186,8 +186,8 @@
         </div>
         <form method="post" action="{{ url_for('associate_sim') }}">
           <div class="modal-body">
-            {{ sim_form.hidden_tag() }}
-            <input type="hidden" name="equipment_id" id="sim-equipment-id">
+            {{ sim_form.csrf_token }}
+            {{ sim_form.equipment_id(id='sim-equipment-id') }}
             <div class="mb-3">
               {{ sim_form.provider.label(class="form-label") }}
               {{ sim_form.provider(class="form-select") }}
