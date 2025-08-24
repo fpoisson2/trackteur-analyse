@@ -1165,7 +1165,11 @@ def create_app(
         """Retourne True si l'appareil Hologram est en ligne."""
         try:
             url = f"https://dashboard.hologram.io/api/1/devices/{device_id}"
+            app.logger.info("Hologram GET %s", url)
             resp = requests.get(url, auth=("apikey", token), timeout=10)
+            app.logger.info(
+                "Hologram response %s: %s", resp.status_code, resp.text
+            )
             data = resp.json()
             links = data.get("data", {}).get("links", {})
             cellular = links.get("cellular", [])
@@ -1181,7 +1185,15 @@ def create_app(
         try:
             url = "https://dashboard.hologram.io/api/1/sms/incoming"
             payload = {"deviceid": device_id, "body": body}
-            resp = requests.post(url, auth=("apikey", token), json=payload, timeout=10)
+            app.logger.info(
+                "Hologram POST %s payload=%s", url, payload
+            )
+            resp = requests.post(
+                url, auth=("apikey", token), json=payload, timeout=10
+            )
+            app.logger.info(
+                "Hologram response %s: %s", resp.status_code, resp.text
+            )
             return resp.ok
         except Exception:
             return False
@@ -1207,11 +1219,16 @@ def create_app(
             provider.orgid or "",
         )
         try:
+            url = "https://dashboard.hologram.io/api/1/devices"
+            app.logger.info("Hologram GET %s params=%s", url, params)
             resp = requests.get(
-                "https://dashboard.hologram.io/api/1/devices",
+                url,
                 auth=("apikey", provider.token),
                 params=params,
                 timeout=10,
+            )
+            app.logger.info(
+                "Hologram response %s: %s", resp.status_code, resp.text
             )
             resp.raise_for_status()
             payload = resp.json()

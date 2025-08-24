@@ -29,11 +29,16 @@ def test_sim_status_and_sms(make_app, monkeypatch):
         eqid = eq.id
 
     class RespGet:
+        status_code = 200
+        text = "{}"
+
         def json(self):
             return {"data": {"links": {"cellular": [{"state": "LIVE"}]}}}
 
     class RespPost:
         ok = True
+        status_code = 200
+        text = "{}"
     monkeypatch.setattr(requests, "get", lambda *a, **k: RespGet())
     monkeypatch.setattr(requests, "post", lambda *a, **k: RespPost())
     resp = client.get("/sim/status")
@@ -60,6 +65,9 @@ def test_list_provider_sims(make_app, monkeypatch):
         pid = prov.id
 
     class Resp:
+        status_code = 200
+        text = "{}"
+
         def raise_for_status(self):
             pass
 
