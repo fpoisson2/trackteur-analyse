@@ -6,7 +6,15 @@ import json
 import gzip
 
 import requests  # type: ignore[import-untyped]
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    jsonify,
+    current_app,
+)
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
 from flask_login import (
@@ -1281,14 +1289,24 @@ def create_app(
         form.provider.choices = [(p.id, p.name) for p in providers]
         if form.validate_on_submit():
             device_id, iccid = form.sim.data.split(':', 1)
+            eq_id = int(form.equipment_id.data)
+            current_app.logger.info(
+                "Associating SIM %s (device %s) to equipment %s via provider %s",
+                iccid,
+                device_id,
+                eq_id,
+                form.provider.data,
+            )
             sim = SimCard(
                 iccid=iccid,
                 device_id=device_id,
                 provider_id=form.provider.data,
-                equipment_id=int(form.equipment_id.data),
+                equipment_id=eq_id,
             )
             db.session.add(sim)
             db.session.commit()
+        else:
+            current_app.logger.warning("SIM association failed: %s", form.errors)
         return redirect(url_for('index'))
 
     @app.route('/sim/<int:eq_id>/request_position', methods=['POST'])

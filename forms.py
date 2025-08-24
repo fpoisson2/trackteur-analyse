@@ -129,4 +129,5 @@ class SimAssociationForm(FlaskForm):
         coerce=str,
         validators=[DataRequired(message="SIM requise")],
         choices=[],
+        validate_choice=False,
     )

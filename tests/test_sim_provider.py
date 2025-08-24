@@ -92,3 +92,32 @@ def test_list_provider_sims(make_app, monkeypatch):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data[0]["value"] == "1:111"
+
+
+def test_associate_sim_creates_record(make_app):
+    """Posting to /sim/associate should persist the SIM card."""
+    app = make_app()
+    client = app.test_client()
+    login(client)
+    with app.app_context():
+        prov = Provider(name="Hologram", token="t")
+        db.session.add(prov)
+        eq = Equipment.query.first()
+        db.session.commit()
+        pid = prov.id
+        eqid = eq.id
+    token = get_csrf(client, "/")
+    resp = client.post(
+        "/sim/associate",
+        data={
+            "equipment_id": eqid,
+            "provider": pid,
+            "sim": "123:999",
+            "csrf_token": token,
+        },
+    )
+    assert resp.status_code == 302
+    with app.app_context():
+        sim = SimCard.query.filter_by(equipment_id=eqid).first()
+        assert sim is not None
+        assert sim.iccid == "999"
