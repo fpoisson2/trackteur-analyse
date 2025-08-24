@@ -11,7 +11,7 @@ from models import db, Provider, SimCard, Equipment  # noqa: E402
 from tests.utils import login, get_csrf  # noqa: E402
 
 
-def test_sim_status_and_sms(make_app, monkeypatch):
+def test_sim_status_and_debug(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
@@ -55,7 +55,7 @@ def test_sim_status_and_sms(make_app, monkeypatch):
     assert data[0]["last_session"] is not None
     token = get_csrf(client, "/")
     resp = client.post(
-        f"/sim/{eqid}/request_position",
+        f"/sim/{eqid}/debug",
         headers={"X-CSRFToken": token},
     )
     assert resp.status_code == 200

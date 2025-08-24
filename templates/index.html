@@ -30,7 +30,6 @@
               <i class="bi bi-speedometer2 me-1"></i> Admin
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
-              <li><a class="dropdown-item" href="{{ url_for('admin_equipment') }}">Gestion des équipements</a></li>
               <li><a class="dropdown-item" href="{{ url_for('admin_analysis') }}">Paramètres de l'analyse</a></li>
               <li><a class="dropdown-item" href="{{ url_for('users') }}">Gestion des utilisateurs</a></li>
               <li><a class="dropdown-item" href="{{ url_for('admin_traccar') }}">Paramètres Traccar</a></li>
@@ -121,11 +120,13 @@
             <td class="sim-status">
               {% if eq.sim_present %}
                 <span class="status-text">{{ 'connecté' if eq.sim_connected else 'hors ligne' }}</span>
-                <button class="btn btn-sm btn-outline-primary ms-2 request-pos" data-eqid="{{ eq.id }}">Demander position</button>
                 <button class="btn btn-sm btn-outline-danger ms-2 dissoc-sim" data-eqid="{{ eq.id }}">Dissocier</button>
               {% else %}
                 <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#sim-modal" data-eqid="{{ eq.id }}">Associer SIM</button>
               {% endif %}
+              <button class="btn btn-sm btn-outline-secondary ms-2" data-bs-toggle="modal" data-bs-target="#settings-{{ eq.id }}">
+                <i class="bi bi-gear"></i>
+              </button>
             </td>
           </tr>
           {% endfor %}
@@ -207,6 +208,49 @@
       </div>
     </div>
   </div>
+
+  {% for eq in equipment_data %}
+  <div class="modal fade" id="settings-{{ eq.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ eq.name }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+        </div>
+        <form method="post" action="{{ url_for('equipment_settings', eq_id=eq.id) }}">
+          <div class="modal-body">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+              <label class="form-label">Type d'appareil</label>
+              <select class="form-select" name="marker_icon">
+                <option value="tractor" {% if eq.icon == 'tractor' %}selected{% endif %}>Tracteur</option>
+                <option value="combine-harvester" {% if eq.icon == 'combine-harvester' %}selected{% endif %}>Moissonneuse</option>
+                <option value="truck" {% if eq.icon == 'truck' %}selected{% endif %}>Camion</option>
+                <option value="car" {% if eq.icon == 'car' %}selected{% endif %}>Voiture</option>
+                <option value="motorbike" {% if eq.icon == 'motorbike' %}selected{% endif %}>Moto</option>
+                <option value="help-circle-outline" {% if eq.icon == 'help-circle-outline' %}selected{% endif %}>Autre</option>
+              </select>
+            </div>
+            <div class="form-check mb-3">
+              <input class="form-check-input" type="checkbox" id="include-{{ eq.id }}" name="include_in_analysis" value="1" {% if eq.include_in_analysis %}checked{% endif %}>
+              <label class="form-check-label" for="include-{{ eq.id }}">Inclure dans l'analyse</label>
+            </div>
+            {% if eq.source == 'osmand' and eq.sim_present %}
+            <div class="mb-3">
+              <button type="button" class="btn btn-warning debug-btn" data-eqid="{{ eq.id }}">Mode debug</button>
+            </div>
+            {% endif %}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
   <script>
     const simModal = document.getElementById('sim-modal');
     if (simModal) {
@@ -268,12 +312,12 @@
     }
     setInterval(refreshSimStatus, 300000);
 
-    document.querySelectorAll('.request-pos').forEach(btn => {
+    document.querySelectorAll('.debug-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const eqid = btn.getAttribute('data-eqid');
         const token = document.querySelector('meta[name="csrf-token"]').content;
         try {
-          await fetch(`/sim/${eqid}/request_position`, {
+          await fetch(`/sim/${eqid}/debug`, {
             method: 'POST',
             headers: { 'X-CSRFToken': token },
           });

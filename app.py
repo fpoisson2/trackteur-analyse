@@ -62,6 +62,59 @@ reanalysis_progress = {
 }
 
 
+def _hologram_device_status(
+    token: str, device_id: str
+) -> tuple[bool, Optional[datetime]]:
+    """Retourne l'état de connexion et la dernière session."""
+    try:
+        url = f"https://dashboard.hologram.io/api/1/devices/{device_id}"
+        current_app.logger.info("Hologram GET %s", url)
+        resp = requests.get(url, auth=("apikey", token), timeout=10)
+        current_app.logger.info(
+            "Hologram response %s: %s", resp.status_code, resp.text
+        )
+        data = resp.json().get("data", {})
+        links = data.get("links", {}).get("cellular", [])
+        last_connect = links[0].get("last_connect_time") if links else None
+        last_session_str = data.get("lastsession", {}).get("session_end")
+        last_session = None
+        if last_session_str and last_session_str != "0000-00-00 00:00:00":
+            try:
+                last_session = datetime.strptime(
+                    last_session_str, "%Y-%m-%d %H:%M:%S"
+                )
+            except ValueError:
+                last_session = None
+        connected = False
+        if last_connect:
+            try:
+                dt = datetime.strptime(last_connect, "%Y-%m-%d %H:%M:%S")
+                connected = datetime.utcnow() - dt < timedelta(hours=1)
+            except ValueError:
+                connected = False
+        return connected, last_session
+    except Exception:
+        return False, None
+
+
+def _hologram_send_sms(token: str, device_id: str, body: str) -> bool:
+    """Envoie un SMS via l'API Hologram."""
+    try:
+        url = "https://dashboard.hologram.io/api/1/sms/incoming"
+        payload = {"deviceid": device_id, "body": body}
+        current_app.logger.info("Hologram POST %s payload=%s", url, payload)
+        resp = requests.post(
+            url, auth=("apikey", token), json=payload, timeout=10
+        )
+        current_app.logger.info(
+            "Hologram response %s: %s", resp.status_code, resp.text
+        )
+        return resp.ok
+    except Exception as exc:
+        current_app.logger.error("Hologram SMS failed: %s", exc)
+        return False
+
+
 def create_app(
     start_scheduler: bool = True, run_initial_analysis: bool = True
 ):
@@ -1199,59 +1252,20 @@ def create_app(
     def equipment_status():
         return jsonify(get_equipment_data())
 
-    def _hologram_device_status(
-        token: str, device_id: str
-    ) -> tuple[bool, Optional[datetime]]:
-        """Retourne l'état de connexion et la dernière session."""
-        try:
-            url = f"https://dashboard.hologram.io/api/1/devices/{device_id}"
-            app.logger.info("Hologram GET %s", url)
-            resp = requests.get(url, auth=("apikey", token), timeout=10)
-            app.logger.info(
-                "Hologram response %s: %s", resp.status_code, resp.text
-            )
-            data = resp.json().get("data", {})
-            links = data.get("links", {}).get("cellular", [])
-            last_connect = links[0].get("last_connect_time") if links else None
-            last_session_str = (
-                data.get("lastsession", {}).get("session_end")
-            )
-            last_session = None
-            if last_session_str and last_session_str != "0000-00-00 00:00:00":
-                try:
-                    last_session = datetime.strptime(
-                        last_session_str, "%Y-%m-%d %H:%M:%S"
-                    )
-                except ValueError:
-                    last_session = None
-            connected = False
-            if last_connect:
-                try:
-                    dt = datetime.strptime(last_connect, "%Y-%m-%d %H:%M:%S")
-                    connected = datetime.utcnow() - dt < timedelta(hours=1)
-                except ValueError:
-                    connected = False
-            return connected, last_session
-        except Exception:
-            return False, None
-
-    def _hologram_send_sms(token: str, device_id: str, body: str) -> bool:
-        """Envoie un SMS via l'API Hologram."""
-        try:
-            url = "https://dashboard.hologram.io/api/1/sms/incoming"
-            payload = {"deviceid": device_id, "body": body}
-            app.logger.info(
-                "Hologram POST %s payload=%s", url, payload
-            )
-            resp = requests.post(
-                url, auth=("apikey", token), json=payload, timeout=10
-            )
-            app.logger.info(
-                "Hologram response %s: %s", resp.status_code, resp.text
-            )
-            return resp.ok
-        except Exception:
-            return False
+    @app.route('/equipment/<int:eq_id>/settings', methods=['POST'])
+    @login_required
+    def equipment_settings(eq_id: int):
+        """Met à jour les paramètres d'un équipement depuis la page d'accueil."""
+        eq = Equipment.query.get_or_404(eq_id)
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+        marker = request.form.get('marker_icon', eq.marker_icon)
+        include = request.form.get('include_in_analysis')
+        eq.marker_icon = marker
+        eq.include_in_analysis = include == '1'
+        db.session.commit()
+        flash('Paramètres mis à jour', 'success')
+        return redirect(url_for('index'))
 
     def _update_sim_status(sim: SimCard) -> None:
         if sim.provider.type == 'hologram' and sim.device_id:
@@ -1380,15 +1394,16 @@ def create_app(
             flash("Échec de l'association de la SIM", "danger")
         return redirect(url_for('index'))
 
-    @app.route('/sim/<int:eq_id>/request_position', methods=['POST'])
+    @app.route('/sim/<int:eq_id>/debug', methods=['POST'])
     @login_required
-    def request_position(eq_id: int):
+    def sim_debug(eq_id: int):
+        """Envoie un SMS pour activer le mode debug sur l'appareil."""
         sim = SimCard.query.filter_by(equipment_id=eq_id).first()
         if not sim:
             return jsonify({"success": False}), 404
         ok = False
         if sim.provider.type == 'hologram' and sim.device_id:
-            ok = _hologram_send_sms(sim.provider.token, sim.device_id, 'POSITION')
+            ok = _hologram_send_sms(sim.provider.token, sim.device_id, 'DEBUG')
         return jsonify({"success": ok})
 
     @app.route('/sim/<int:eq_id>/dissociate', methods=['POST'])
