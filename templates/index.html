@@ -62,6 +62,13 @@
       <span class="input-group-text"><i class="bi bi-search"></i></span>
       <input type="text" id="equipment-filter" class="form-control" placeholder="Rechercher un équipement">
     </div>
+    {% if current_user.is_admin %}
+    <div class="mb-3 text-end">
+      <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#add-osmand-modal">
+        Ajouter appareil OsmAnd
+      </button>
+    </div>
+    {% endif %}
 
     <div class="table-responsive">
       <table class="table table-hover align-middle" id="equipment-table">
@@ -118,12 +125,13 @@
               {% endif %}
             </td>
             <td class="sim-status">
-              {% if eq.sim_present %}
-                <span class="status-text">{{ 'connecté' if eq.sim_connected else 'hors ligne' }}</span>
-                <button class="btn btn-sm btn-outline-danger ms-2 dissoc-sim" data-eqid="{{ eq.id }}">Dissocier</button>
-              {% else %}
-                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#sim-modal" data-eqid="{{ eq.id }}">Associer SIM</button>
-              {% endif %}
+              <span class="status-text">
+                {% if eq.sim_present %}
+                  {{ 'connecté' if eq.sim_connected else 'hors ligne' }}
+                {% else %}
+                  –
+                {% endif %}
+              </span>
               <button class="btn btn-sm btn-outline-secondary ms-2" data-bs-toggle="modal" data-bs-target="#settings-{{ eq.id }}">
                 <i class="bi bi-gear"></i>
               </button>
@@ -180,6 +188,39 @@
       });
     }
   </script>
+  {% if current_user.is_admin %}
+  <div class="modal fade" id="add-osmand-modal" tabindex="-1" aria-labelledby="add-osmand-label" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="add-osmand-label">Ajouter un appareil via OsmAnd</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+        </div>
+        <form method="post" action="{{ url_for('add_osmand_device') }}">
+          <div class="modal-body">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+              <label class="form-label">Nom</label>
+              <input type="text" class="form-control" name="osmand_name" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">ID appareil</label>
+              <input type="text" class="form-control" name="osmand_id" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Clé secrète</label>
+              <input type="text" class="form-control" name="osmand_token">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+            <button type="submit" class="btn btn-primary">Ajouter</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
   <!-- Modal association SIM -->
   <div class="modal fade" id="sim-modal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -235,10 +276,23 @@
               <input class="form-check-input" type="checkbox" id="include-{{ eq.id }}" name="include_in_analysis" value="1" {% if eq.include_in_analysis %}checked{% endif %}>
               <label class="form-check-label" for="include-{{ eq.id }}">Inclure dans l'analyse</label>
             </div>
-            {% if eq.source == 'osmand' and eq.sim_present %}
+            <div class="mb-3">
+              <label class="form-label">Carte SIM</label>
+              {% if eq.sim_present %}
+                <p class="mb-2">Statut : {{ 'connecté' if eq.sim_connected else 'hors ligne' }}</p>
+                <button type="button" class="btn btn-outline-danger dissoc-sim" data-eqid="{{ eq.id }}">Dissocier</button>
+              {% else %}
+                <button type="button" class="btn btn-outline-secondary assoc-sim" data-eqid="{{ eq.id }}" data-bs-toggle="modal" data-bs-target="#sim-modal">Associer</button>
+              {% endif %}
+            </div>
+            {% if eq.source == 'osmand' %}
             <div class="mb-3">
               <button type="button" class="btn btn-warning debug-btn" data-eqid="{{ eq.id }}">Mode debug</button>
             </div>
+            <form method="post" action="{{ url_for('delete_osmand_device', eq_id=eq.id) }}" onsubmit="return confirm('Supprimer cet appareil ?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-outline-danger">Supprimer l'appareil</button>
+            </form>
             {% endif %}
           </div>
           <div class="modal-footer">

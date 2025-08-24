@@ -15,6 +15,7 @@ from flask import (
     jsonify,
     current_app,
     flash,
+    abort,
 )
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
@@ -776,25 +777,42 @@ def create_app(
             error=error,
         )
 
+    @app.route('/osmand/add', methods=['POST'])
     @app.route('/admin/add_osmand', methods=['POST'])
     @login_required
     def add_osmand_device():
         if not current_user.is_admin:
-            return redirect(url_for('index'))
+            abort(403)
         name = request.form.get('osmand_name', '').strip()
         devid = request.form.get('osmand_id', '').strip()
         token = request.form.get('osmand_token', '').strip()
         if not name or not devid:
-            return redirect(url_for('admin_equipment', msg='Nom et ID requis'))
+            flash('Nom et ID requis', 'danger')
+            return redirect(url_for('index'))
         existing = Equipment.query.filter_by(osmand_id=devid).first()
         if existing:
-            return redirect(url_for('admin_equipment', msg='ID déjà existant'))
+            flash('ID déjà existant', 'danger')
+            return redirect(url_for('index'))
         eq = Equipment(id_traccar=0, name=name, osmand_id=devid)
         if token:
             eq.token_api = token
         db.session.add(eq)
         db.session.commit()
-        return redirect(url_for('admin_equipment', msg='Appareil OsmAnd ajouté'))
+        flash('Appareil OsmAnd ajouté', 'success')
+        return redirect(url_for('index'))
+
+    @app.route('/osmand/<int:eq_id>/delete', methods=['POST'])
+    @login_required
+    def delete_osmand_device(eq_id: int):
+        if not current_user.is_admin:
+            abort(403)
+        eq = Equipment.query.get_or_404(eq_id)
+        if eq.id_traccar != 0 or not eq.osmand_id:
+            abort(400)
+        db.session.delete(eq)
+        db.session.commit()
+        flash('Appareil OsmAnd supprimé', 'success')
+        return redirect(url_for('index'))
 
     @app.route('/reanalyze_all', methods=['POST'])
     @login_required
@@ -964,16 +982,9 @@ def create_app(
         except Exception:
             raise BadRequest('Invalid timestamp format')
 
-    def _ensure_equipment(device_id: str) -> Equipment:
-        eq = Equipment.query.filter_by(osmand_id=device_id).first()
-        if eq:
-            return eq
-        # Create new equipment tracked via OsmAnd; use id_traccar=0
-        name = f"Device {device_id}"
-        eq = Equipment(id_traccar=0, name=name, osmand_id=device_id)
-        db.session.add(eq)
-        db.session.commit()
-        return eq
+    def _get_equipment(device_id: str) -> Equipment | None:
+        """Return existing equipment for given OsmAnd ID, if any."""
+        return Equipment.query.filter_by(osmand_id=device_id).first()
 
     def _auth_ok(eq: Equipment) -> bool:
         token = request.args.get('token') or request.headers.get('X-Token')
@@ -991,7 +1002,9 @@ def create_app(
     def osmand_ingest():
         # Accept OsmAnd-like payloads: query params or JSON for a single device
         def ingest_one(device_id: str, locs: list[dict]) -> None:
-            eq = _ensure_equipment(str(device_id))
+            eq = _get_equipment(str(device_id))
+            if not eq:
+                raise BadRequest('Unknown device')
             if not _auth_ok(eq):
                 raise BadRequest('Unauthorized')
             latest_ts = None
@@ -1571,6 +1584,8 @@ def create_app(
                     ),
                     idx,
                 )
+            if full_idx is None or full_idx >= len(agg_all):
+                continue
             info = grouped.setdefault(full_idx, {"dates": [], "surface": 0.0})
             info["dates"].extend(z.get("dates", []))
             info["surface"] += z["geometry"].area / 1e4

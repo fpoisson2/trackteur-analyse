@@ -89,26 +89,27 @@ def test_index_source_badge_and_last_geojson(make_app):
 @pytest.mark.usefixtures("base_make_app")
 def test_osmand_multiple_locations_json(make_app):
     app = make_app()
-    client = app.test_client()
-    payload = {
-        "device_id": "bulk-1",
-        "locations": [
-            {
-                "coords": {"latitude": 10.0, "longitude": 11.0},
-                "timestamp": "2024-01-01T00:00:00Z",
-            },
-            {
-                "coords": {"latitude": 10.1, "longitude": 11.1},
-                "timestamp": "2024-01-01T00:01:00Z",
-            },
-        ],
-    }
-    resp = client.post(
-        "/osmand", data=json.dumps(payload), content_type="application/json"
-    )
-    assert resp.status_code == 200
     with app.app_context():
-        eq1 = Equipment.query.filter_by(osmand_id="bulk-1").first()
-        assert eq1 is not None
-        c1 = Position.query.filter_by(equipment_id=eq1.id).count()
+        eq = Equipment(id_traccar=0, name="bulk", osmand_id="bulk-1")
+        db.session.add(eq)
+        db.session.commit()
+        client = app.test_client()
+        payload = {
+            "device_id": "bulk-1",
+            "locations": [
+                {
+                    "coords": {"latitude": 10.0, "longitude": 11.0},
+                    "timestamp": "2024-01-01T00:00:00Z",
+                },
+                {
+                    "coords": {"latitude": 10.1, "longitude": 11.1},
+                    "timestamp": "2024-01-01T00:01:00Z",
+                },
+            ],
+        }
+        resp = client.post(
+            "/osmand", data=json.dumps(payload), content_type="application/json"
+        )
+        assert resp.status_code == 200
+        c1 = Position.query.filter_by(equipment_id=eq.id).count()
         assert c1 == 2
