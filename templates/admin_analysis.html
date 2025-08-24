@@ -27,10 +27,10 @@
               <i class="bi bi-speedometer2 me-1"></i> Admin
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
-              <li><a class="dropdown-item" href="{{ url_for('admin_equipment') }}">Gestion des équipements</a></li>
               <li><a class="dropdown-item" href="{{ url_for('admin_analysis') }}">Paramètres de l'analyse</a></li>
               <li><a class="dropdown-item" href="{{ url_for('users') }}">Gestion des utilisateurs</a></li>
               <li><a class="dropdown-item" href="{{ url_for('admin_traccar') }}">Paramètres Traccar</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_providers') }}">Fournisseurs SIM</a></li>
             </ul>
           </li>
           {% endif %}

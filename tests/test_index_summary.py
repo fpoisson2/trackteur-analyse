@@ -94,9 +94,9 @@ def test_index_uses_computed_total_hectares(make_app):
     row = soup.select_one("table tbody tr")
     assert row is not None
     cells = row.find_all("td")
-    # Ha traités is the 3rd column
+    # Ha traités is now the 4th column
     # Expect 2.00 (two days x 1 ha)
-    assert cells[2].text.strip() in {"2.0", "2.00"}
+    assert cells[3].text.strip() in {"2.0", "2.00"}
 
 
 def test_reanalysis_updates_index_table(make_app, monkeypatch):
@@ -134,5 +134,5 @@ def test_reanalysis_updates_index_table(make_app, monkeypatch):
     row = soup.select_one("table tbody tr")
     assert row is not None
     cells = row.find_all("td")
-    assert cells[2].text.strip() in {"4.0", "4.00"}
-    assert cells[3].text.strip() in {"2.0", "2.00"}
+    assert cells[3].text.strip() in {"4.0", "4.00"}
+    assert cells[4].text.strip() in {"2.0", "2.00"}
