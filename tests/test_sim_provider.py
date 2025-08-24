@@ -18,13 +18,20 @@ def test_sim_status_and_sms(make_app, monkeypatch):
         prov = Provider(name="Hologram", token="t")
         db.session.add(prov)
         eq = Equipment.query.first()
-        sim = SimCard(iccid="123", device_id="456", provider=prov, equipment=eq)
+        sim = SimCard(
+            iccid="123",
+            device_id="456",
+            provider=prov,
+            equipment=eq,
+        )
         db.session.add(sim)
         db.session.commit()
         eqid = eq.id
+
     class RespGet:
         def json(self):
-            return {"data": {"status": "LIVE"}}
+            return {"data": {"links": {"cellular": [{"state": "LIVE"}]}}}
+
     class RespPost:
         ok = True
     monkeypatch.setattr(requests, "get", lambda *a, **k: RespGet())
@@ -51,9 +58,11 @@ def test_list_provider_sims(make_app, monkeypatch):
         db.session.add(prov)
         db.session.commit()
         pid = prov.id
+
     class Resp:
         def raise_for_status(self):
             pass
+
         def json(self):
             return {
                 "success": True,

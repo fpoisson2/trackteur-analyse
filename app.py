@@ -1167,8 +1167,12 @@ def create_app(
             url = f"https://dashboard.hologram.io/api/1/devices/{device_id}"
             resp = requests.get(url, auth=("apikey", token), timeout=10)
             data = resp.json()
-            status = data.get("data", {}).get("status", "").upper()
-            return status == "LIVE"
+            links = data.get("data", {}).get("links", {})
+            cellular = links.get("cellular", [])
+            if cellular:
+                state = cellular[0].get("state", "").upper()
+                return state == "LIVE"
+            return False
         except Exception:
             return False
 
