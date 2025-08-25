@@ -14,6 +14,7 @@
     <div class="container-fluid">
       <a class="navbar-brand d-flex align-items-center" href="{{ url_for('index') }}">
         <img src="{{ url_for('static', filename='logo.png') }}" alt="Accueil" height="40">
+        <span class="ms-2 small text-muted">v{{ app_version }}</span>
       </a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
@@ -30,6 +31,7 @@
               <li><a class="dropdown-item" href="{{ url_for('users') }}">Gestion des utilisateurs</a></li>
               <li><a class="dropdown-item" href="{{ url_for('admin_traccar') }}">Paramètres Traccar</a></li>
               <li><a class="dropdown-item" href="{{ url_for('admin_providers') }}">Fournisseurs SIM</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_update') }}">Mise à jour</a></li>
             </ul>
           </li>
           {% endif %}

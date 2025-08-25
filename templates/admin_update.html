@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin - Fournisseurs SIM</title>
+  <title>Admin - Mise à jour</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
@@ -50,26 +50,18 @@
   </nav>
 
   <div class="container">
-    {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
-    {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-    <h1 class="h3 mb-4"><i class="bi bi-sim"></i> Fournisseurs de cartes SIM</h1>
-    <form method="post" novalidate>
-      {{ form.hidden_tag() }}
-      <div class="mb-3">
-        {{ form.name.label(class="form-label") }}
-        {{ form.name(class="form-control") }}
-      </div>
-      <div class="mb-3">
-        {{ form.token.label(class="form-label") }}
-        {{ form.token(class="form-control") }}
-      </div>
-      <div class="mb-3">
-        {{ form.orgid.label(class="form-label") }}
-        {{ form.orgid(class="form-control") }}
-      </div>
-      <button type="submit" class="btn btn-primary">Enregistrer</button>
+    <h1 class="h3 mb-4"><i class="bi bi-arrow-repeat me-2"></i>Mise à jour</h1>
+    <div id="update-banner" class="alert text-center mb-3 {% if error %}alert-danger{% else %}alert-info{% endif %}" role="alert" style="{% if not message and not error %}display:none{% endif %}">
+      {% if message %}{{ message }}{% elif error %}{{ error }}{% endif %}
+    </div>
+    <p>Version actuelle : {{ current_version }}</p>
+    <p>Dernière version : {{ latest_version or 'inconnue' }}</p>
+    <form method="post">
+      {{ form.csrf_token }}
+      {{ form.submit(class="btn btn-primary", disabled=(not latest_version or current_version == latest_version)) }}
     </form>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

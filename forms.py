@@ -8,6 +8,7 @@ from wtforms import (
     FloatField,
     HiddenField,
     SelectField,
+    SubmitField,
 )
 from wtforms.validators import (
     DataRequired,
@@ -131,3 +132,9 @@ class SimAssociationForm(FlaskForm):
         choices=[],
         validate_choice=False,
     )
+
+
+class UpdateForm(FlaskForm):
+    """Formulaire pour déclencher la mise à jour."""
+
+    submit = SubmitField("Mettre à jour")

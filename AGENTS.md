@@ -60,6 +60,11 @@ Les agents peuvent être exécutés automatiquement ou manuellement :
 | `analyse_initiale`         | au démarrage     | automatique |
 | `rapport_par_tracteur`     | futur            | script manuel  |
 | `verificateur_inactivite`  | futur            | planifié       |
+| `release_gh_action`        | à chaque push sur `main` ou `Dev` (`b` sur `Dev`) | GitHub Actions |
+| `admin_update`             | sur demande      | interface admin (dernière release) |
+
+Les versions suivent le format `année.mois.version` avec le suffixe `b` pour les préversions issues de `Dev`.
+Le développement se fait sur la branche `Dev` avant fusion dans `main`.
 
 ---
 

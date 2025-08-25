@@ -4,6 +4,7 @@ import time
 import threading
 import json
 import gzip
+import subprocess
 
 import requests  # type: ignore[import-untyped]
 from flask import (
@@ -47,8 +48,16 @@ from forms import (
     DeleteUserForm,
     ProviderForm,
     SimAssociationForm,
+    UpdateForm,
 )
 import zone
+
+from update import (
+    get_current_version,
+    get_latest_version,
+    is_update_available,
+    perform_update,
+)
 
 from datetime import datetime, date, timedelta, timezone
 from typing import Iterable, Any, Optional
@@ -156,6 +165,10 @@ def create_app(
     login_manager = LoginManager(app)
     login_manager.login_view = 'login'
     scheduler = BackgroundScheduler()
+
+    @app.context_processor
+    def inject_version() -> dict[str, str]:
+        return {"app_version": get_current_version()}
 
     # --- Simple login rate limiting (in-memory) ---
     try:
@@ -775,6 +788,42 @@ def create_app(
             form=form,
             message=message,
             error=error,
+        )
+
+    @app.route('/admin/update', methods=['GET', 'POST'])
+    @login_required
+    def admin_update():
+        """Vérifier et appliquer les mises à jour de l'application."""
+        if not current_user.is_admin:
+            return redirect(url_for('index'))
+        form = UpdateForm()
+        current_version = get_current_version()
+        latest_version = get_latest_version()
+        message = None
+        error = None
+
+        if request.method == 'POST' and form.validate_on_submit():
+            latest_version = get_latest_version()
+            if latest_version and is_update_available(current_version, latest_version):
+                try:
+                    perform_update(latest_version)
+                    current_version = get_current_version()
+                    latest_version = get_latest_version()
+                    message = (
+                        f"Mise à jour vers la version {current_version} effectuée."
+                    )
+                except subprocess.CalledProcessError as exc:
+                    error = f"Erreur lors de la mise à jour: {exc}"
+            else:
+                message = "Aucune mise à jour disponible."
+
+        return render_template(
+            'admin_update.html',
+            current_version=current_version,
+            latest_version=latest_version,
+            message=message,
+            error=error,
+            form=form,
         )
 
     @app.route('/osmand/add', methods=['POST'])
