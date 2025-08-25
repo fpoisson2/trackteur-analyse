@@ -31,10 +31,6 @@ jobs:
       - name: Update version file
         run: |
           cat <<EOF > __version__.py
-"""Application version information.
-
-This file is automatically updated by the release workflow.
-"""
 
 __version__ = "${{ steps.calver.outputs.version }}"
 EOF
