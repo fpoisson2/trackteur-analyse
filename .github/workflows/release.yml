@@ -3,6 +3,8 @@ name: Release
 on:
   push:
     branches: [main, dev]
+    paths-ignore:
+      - "__version__.py"
 
 jobs:
   release:
@@ -10,31 +12,74 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Calculate version
+          persist-credentials: true
+
+      - name: Fetch all tags
+        run: |
+          git fetch --tags --force --prune
+
+      - name: "Calculate version (CALVER: YYYY.MM.PATCH)"
         id: calver
+        shell: bash
         run: |
           YEAR=$(date +%Y)
           MONTH=$(date +%m)
           BASE="$YEAR.$MONTH"
-          LAST=$(git tag --list "$BASE.*" | sed -e "s/$BASE.//" | sort -n | tail -n 1)
+
+          # Récupère le dernier patch de ce mois/année (robuste, tri numérique)
+          LAST=$(git tag --list "${BASE}.*" | sed -E "s#^${BASE}\.##" | sort -n | tail -n 1)
           if [ -z "$LAST" ]; then
             PATCH=0
           else
             PATCH=$((LAST + 1))
           fi
-          echo "version=$BASE.$PATCH" >> "$GITHUB_OUTPUT"
-      - name: Create tag
+
+          VERSION="${BASE}.${PATCH}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Update __version__.py
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git tag ${{ steps.calver.outputs.version }}
-          git push origin ${{ steps.calver.outputs.version }}
-      - name: Create release
-        uses: softprops/action-gh-release@v1
+          cat > __version__.py <<'EOF'
+          """Application version information.
+
+          This file is automatically updated by the release workflow.
+          """
+          __version__ = "${{ steps.calver.outputs.version }}"
+          EOF
+
+      - name: Commit version file (no-op safe)
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
+        run: |
+          git add __version__.py
+          git commit -m "chore: bump version to ${{ steps.calver.outputs.version }}" || echo "No changes to commit"
+          git push || echo "Nothing to push"
+
+      # On ne crée le tag et la release QUE sur main
+      - name: Create tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if git rev-parse -q --verify "refs/tags/${{ steps.calver.outputs.version }}" >/dev/null; then
+            echo "Tag already exists, skipping tag creation."
+          else
+            git tag ${{ steps.calver.outputs.version }}
+            git push origin ${{ steps.calver.outputs.version }}
+          fi
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.calver.outputs.version }}
+          name: ${{ steps.calver.outputs.version }}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
