@@ -62,7 +62,14 @@ def _parse_version(version: str) -> Tuple[int, int, int]:
 
 
 def get_current_version() -> str:
-    """Return the latest Git tag or commit hash for the repository."""
+    """Return the latest Git tag or commit hash for the repository.
+
+    If the repository metadata cannot be retrieved (for example when running
+    from a release archive without the ``.git`` directory), the function falls
+    back to reading the ``__version__`` module.  When that file is missing as
+    well, ``"0.0.0"`` is returned.
+    """
+
     try:
         return (
             subprocess.check_output(
@@ -83,7 +90,12 @@ def get_current_version() -> str:
                 .strip()
             )
         except (subprocess.CalledProcessError, OSError):
-            return "0.0.0"
+            try:
+                from __version__ import __version__
+
+                return __version__
+            except Exception:
+                return "0.0.0"
 
 
 def get_latest_version(branch: str = "main") -> str:
