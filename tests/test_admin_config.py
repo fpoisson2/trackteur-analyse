@@ -23,16 +23,12 @@ def test_admin_updates_server_url(make_app, monkeypatch):
     login(client)
     devices = [{"id": 1, "name": "eq"}]
     monkeypatch.setattr(zone, "fetch_devices", lambda: devices)
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/traccar")
     resp = client.post(
-        "/admin",
+        "/admin/traccar",
         data={
             "base_url": "http://new.com",
             "token_global": "tok",
-            "equip_ids": ["1"],
-            "eps_meters": "30",
-            "min_surface": "0.2",
-            "alpha_shape": "0.05",
             "csrf_token": token,
         },
     )
@@ -41,9 +37,6 @@ def test_admin_updates_server_url(make_app, monkeypatch):
         cfg = Config.query.first()
         assert cfg.traccar_url == "http://new.com"
         assert cfg.traccar_token == "tok"
-        assert cfg.eps_meters == 30
-        assert cfg.min_surface_ha == 0.2
-        assert cfg.alpha == 0.05
 
 
 def test_admin_updates_analysis_hour(make_app, monkeypatch):
@@ -51,9 +44,9 @@ def test_admin_updates_analysis_hour(make_app, monkeypatch):
     client = app.test_client()
     login(client)
     monkeypatch.setattr(zone, "fetch_devices", lambda: [])
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/analysis")
     resp = client.post(
-        "/admin",
+        "/admin/analysis",
         data={"analysis_hour": "5", "csrf_token": token},
     )
     assert resp.status_code == 200
@@ -99,7 +92,7 @@ def test_admin_handles_fetch_error(make_app, monkeypatch):
         raise zone.requests.exceptions.HTTPError("401")
 
     monkeypatch.setattr(zone, "fetch_devices", fake_fetch_devices)
-    resp = client.get("/admin")
+    resp = client.get("/admin/equipment")
     assert resp.status_code == 200
     assert (
         "Impossible de récupérer les équipements"
@@ -112,7 +105,7 @@ def test_admin_page_has_status_poll(make_app, monkeypatch):
     client = app.test_client()
     login(client)
     monkeypatch.setattr(zone, "fetch_devices", lambda: [])
-    resp = client.get("/admin")
+    resp = client.get("/admin/equipment")
     html = resp.get_data(as_text=True)
     assert "credentials: 'same-origin'" in html
     assert 'id="analysis-banner"' in html
@@ -142,27 +135,12 @@ def test_reanalyze_saves_params(make_app, monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/equipment")
     resp = client.post(
         "/reanalyze_all",
-        data={
-            "base_url": "http://new.com",
-            "token_global": "tok",
-            "equip_ids": ["1"],
-            "eps_meters": "40",
-            "min_surface": "0.3",
-            "alpha_shape": "0.07",
-            "csrf_token": token,
-        },
+        data={"csrf_token": token},
     )
     assert resp.status_code == 302
-    with app.app_context():
-        cfg = Config.query.first()
-        assert cfg.traccar_url == "http://new.com"
-        assert cfg.traccar_token == "tok"
-        assert cfg.eps_meters == 40
-        assert cfg.min_surface_ha == 0.3
-        assert cfg.alpha == 0.07
     assert called == [1]
     status = client.get("/analysis_status")
     assert status.json == {
@@ -177,26 +155,17 @@ def test_admin_accepts_decimal_comma(make_app, monkeypatch):
     app = make_app()
     client = app.test_client()
     login(client)
-    devices = [{"id": 1, "name": "eq"}]
-    monkeypatch.setattr(zone, "fetch_devices", lambda: devices)
-    token = get_csrf(client, "/admin")
+    monkeypatch.setattr(zone, "fetch_devices", lambda: [])
+    token = get_csrf(client, "/admin/analysis")
     resp = client.post(
-        "/admin",
-        data={
-            "base_url": "http://new.com",
-            "token_global": "tok",
-            "equip_ids": ["1"],
-            "eps_meters": "40,0",
-            "analysis_hour": "3",
-            "csrf_token": token,
-        },
+        "/admin/analysis",
+        data={"eps_meters": "40,0", "analysis_hour": "3", "csrf_token": token},
     )
     assert resp.status_code == 200
     with app.app_context():
         cfg = Config.query.first()
-        assert cfg.traccar_url == "http://new.com"
-        assert cfg.traccar_token == "tok"
         assert cfg.eps_meters == 40.0
+        assert cfg.analysis_hour == 3
 
 
 def test_reanalyze_accepts_decimal_comma(make_app, monkeypatch):
@@ -225,13 +194,10 @@ def test_reanalyze_accepts_decimal_comma(make_app, monkeypatch):
 
     monkeypatch.setattr(zone, "process_equipment", fake_process)
 
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/equipment")
     resp = client.post(
         "/reanalyze_all",
         data={
-            "base_url": "http://new.com",
-            "token_global": "tok",
-            "equip_ids": ["1"],
             "eps_meters": "40,0",
             "min_surface": "0,3",
             "alpha_shape": "0,07",
@@ -245,4 +211,5 @@ def test_reanalyze_accepts_decimal_comma(make_app, monkeypatch):
         assert cfg.eps_meters == 40.0
         assert cfg.min_surface_ha == 0.3
         assert cfg.alpha == 0.07
+        assert cfg.analysis_hour == 4
     assert called == [1]

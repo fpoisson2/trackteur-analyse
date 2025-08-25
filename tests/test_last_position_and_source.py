@@ -1,0 +1,115 @@
+import json
+from datetime import datetime
+
+import pytest
+
+from models import db, Equipment, Position
+from tests.utils import login
+
+
+@pytest.mark.usefixtures("base_make_app")
+def test_index_source_badge_and_last_geojson(make_app):
+    app = make_app()
+    client = app.test_client()
+    login(client)
+
+    with app.app_context():
+        # First equipment is created by fixture; ensure it looks like Traccar
+        eq = Equipment.query.first()
+        eq.id_traccar = eq.id_traccar or 1
+        eq.osmand_id = None
+        eq.marker_icon = 'car'
+        eq.battery_level = 50.0
+        # Add a last position
+        ts = datetime(2023, 1, 1, 15, 0, 0)
+        db.session.add(
+            Position(
+                equipment_id=eq.id,
+                latitude=1.0,
+                longitude=2.0,
+                timestamp=ts,
+            )
+        )
+        db.session.commit()
+
+        # Create a direct OsmAnd device
+        osm = Equipment(
+            id_traccar=0,
+            name="OsmAnd Dev",
+            osmand_id="osm-1",
+            battery_level=80.0,
+        )
+        db.session.add(osm)
+        db.session.flush()  # ensure osm.id is available
+        osm_id = osm.id
+        db.session.add(
+            Position(
+                equipment_id=osm_id,
+                latitude=3.0,
+                longitude=4.0,
+                timestamp=ts,
+            )
+        )
+        db.session.commit()
+
+    # Check index badges
+    resp = client.get("/")
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert "Traccar" in html
+    assert "OsmAnd" in html
+    assert "50%" in html
+    assert "80%" in html
+
+    # Check last.geojson endpoint
+    with app.app_context():
+        eq_id = (
+            Equipment.query.filter(Equipment.osmand_id.is_(None))
+            .first()
+            .id
+        )
+    r2 = client.get(f"/equipment/{eq_id}/last.geojson")
+    assert r2.status_code == 200
+    data = r2.get_json()
+    assert data["type"] == "FeatureCollection"
+    assert len(data["features"]) == 1
+    feature = data["features"][0]
+    geom = feature["geometry"]
+    assert geom["type"] == "Point"
+    assert geom["coordinates"] == [2.0, 1.0]
+    assert feature["properties"]["icon"] == "car"
+
+    # Equipment detail page shows battery
+    r3 = client.get(f"/equipment/{osm_id}")
+    assert r3.status_code == 200
+    html2 = r3.data.decode()
+    assert "80%" in html2
+
+
+@pytest.mark.usefixtures("base_make_app")
+def test_osmand_multiple_locations_json(make_app):
+    app = make_app()
+    with app.app_context():
+        eq = Equipment(id_traccar=0, name="bulk", osmand_id="bulk-1")
+        db.session.add(eq)
+        db.session.commit()
+        client = app.test_client()
+        payload = {
+            "device_id": "bulk-1",
+            "locations": [
+                {
+                    "coords": {"latitude": 10.0, "longitude": 11.0},
+                    "timestamp": "2024-01-01T00:00:00Z",
+                },
+                {
+                    "coords": {"latitude": 10.1, "longitude": 11.1},
+                    "timestamp": "2024-01-01T00:01:00Z",
+                },
+            ],
+        }
+        resp = client.post(
+            "/osmand", data=json.dumps(payload), content_type="application/json"
+        )
+        assert resp.status_code == 200
+        c1 = Position.query.filter_by(equipment_id=eq.id).count()
+        assert c1 == 2

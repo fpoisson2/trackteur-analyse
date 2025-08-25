@@ -4,10 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Équipements</title>
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   
 </head>
@@ -23,15 +25,17 @@
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav ms-md-auto mb-2 mb-md-0">
           {% if current_user.is_admin %}
-          <li class="nav-item">
-            <a class="nav-link d-flex align-items-center" href="{{ url_for('admin') }}">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               <i class="bi bi-speedometer2 me-1"></i> Admin
             </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link d-flex align-items-center" href="{{ url_for('users') }}">
-              <i class="bi bi-people me-1"></i> Utilisateurs
-            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="{{ url_for('admin_analysis') }}">Paramètres de l'analyse</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('users') }}">Gestion des utilisateurs</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_traccar') }}">Paramètres Traccar</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_providers') }}">Fournisseurs SIM</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin_update') }}">Mise à jour</a></li>
+            </ul>
           </li>
           {% endif %}
           <li class="nav-item">
@@ -48,35 +52,70 @@
   </nav>
 
   <div class="container">
-    {% if message %}
-    <div class="alert alert-info">{{ message }}</div>
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      {% for cat, msg in msgs %}
+      <div class="alert alert-{{ 'success' if cat == 'success' else 'danger' if cat == 'danger' else 'info' }}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+    {% endwith %}
+    <div class="input-group mb-3">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input type="text" id="equipment-filter" class="form-control" placeholder="Rechercher un équipement">
+    </div>
+    {% if current_user.is_admin %}
+    <div class="mb-3 text-end">
+      <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#add-osmand-modal">
+        Ajouter appareil OsmAnd
+      </button>
+    </div>
     {% endif %}
 
     <div class="table-responsive">
-      <table class="table table-hover align-middle">
+      <table class="table table-hover align-middle" id="equipment-table">
         <thead class="table-light">
           <tr>
             <th>Équipement</th>
             <th>Dernière position</th>
+            <th>Dernière session</th>
             <th>Ha traités</th>
             <th>Ha uniques</th>
             <th>Distance zones (km)</th>
-            <th>Temps écoulé</th>
-            <th>Score</th>
+            <th><i class="bi bi-battery-half me-1"></i>Batterie</th>
+            <th><i class="bi bi-clock me-1"></i>Temps écoulé</th>
+            <th><i class="bi bi-trophy me-1"></i>Score</th>
+            <th>SIM</th>
           </tr>
         </thead>
         <tbody>
           {% for eq in equipment_data %}
-          <tr>
+          <tr data-eqid="{{ eq.id }}">
             <td>
+              <i class="mdi mdi-{{ eq.icon }} me-1"></i>
               <a href="{{ url_for('equipment_detail', equipment_id=eq.id) }}">
                 {{ eq.name }}
               </a>
+              {% if eq.source == 'traccar' %}
+                <span class="badge text-bg-secondary ms-1">Traccar</span>
+              {% else %}
+                <span class="badge text-bg-info ms-1">OsmAnd</span>
+              {% endif %}
+              {% if not eq.include_in_analysis %}
+                <span class="badge text-bg-warning ms-1">suivi seul</span>
+              {% endif %}
             </td>
-            <td>{{ eq.last_seen or '–' }}</td>
+            <td class="last-seen">{{ eq.last_seen or '–' }}</td>
+            <td class="last-session">{{ eq.sim_last_session or '–' }}</td>
             <td>{{ eq.total_hectares|round(2) }}</td>
             <td>{{ eq.relative_hectares|round(2) }}</td>
             <td>{{ eq.distance_km|round(2) }}</td>
+            <td>
+              {% if eq.battery_level is not none %}
+                {{ eq.battery_level|int }}%
+              {% else %}
+                –
+              {% endif %}
+            </td>
             <td>{{ eq.delta_str }}</td>
             <td>
               {{ eq.score }}
@@ -85,6 +124,18 @@
               {% elif eq.rank == 2 %}
               <span class="ms-1">🥈</span>
               {% endif %}
+            </td>
+            <td class="sim-status">
+              <span class="status-text">
+                {% if eq.sim_present %}
+                  {{ 'connecté' if eq.sim_connected else 'hors ligne' }}
+                {% else %}
+                  –
+                {% endif %}
+              </span>
+              <button class="btn btn-sm btn-outline-secondary ms-2" data-bs-toggle="modal" data-bs-target="#settings-{{ eq.id }}">
+                <i class="bi bi-gear"></i>
+              </button>
             </td>
           </tr>
           {% endfor %}
@@ -97,6 +148,253 @@
     // Améliore la navigation sur mobile (tap unique)
     document.querySelectorAll('.navbar a').forEach(a => {
       a.addEventListener('touchend', function () { window.location.href = this.href; });
+    });
+  </script>
+  <script>
+    async function refreshStatus() {
+      try {
+        const resp = await fetch('{{ url_for('equipment_status') }}');
+        if (!resp.ok) {
+          return;
+        }
+        const data = await resp.json();
+        data.forEach(eq => {
+          const row = document.querySelector(`tr[data-eqid="${eq.id}"]`);
+          if (!row) {
+            return;
+          }
+          const last = row.querySelector('.last-seen');
+          const delta = row.querySelector('.delta');
+          if (last) {
+            last.textContent = eq.last_seen || '–';
+          }
+          if (delta) {
+            delta.textContent = eq.delta_str;
+          }
+        });
+      } catch (e) {
+        console.error('refreshStatus', e);
+      }
+    }
+    setInterval(refreshStatus, 10000);
+
+    const filterInput = document.getElementById('equipment-filter');
+    if (filterInput) {
+      filterInput.addEventListener('input', () => {
+        const query = filterInput.value.toLowerCase();
+        document.querySelectorAll('#equipment-table tbody tr').forEach(row => {
+          const name = row.querySelector('td').textContent.toLowerCase();
+          row.style.display = name.includes(query) ? '' : 'none';
+        });
+      });
+    }
+  </script>
+  {% if current_user.is_admin %}
+  <div class="modal fade" id="add-osmand-modal" tabindex="-1" aria-labelledby="add-osmand-label" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="add-osmand-label">Ajouter un appareil via OsmAnd</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+        </div>
+        <form method="post" action="{{ url_for('add_osmand_device') }}">
+          <div class="modal-body">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+              <label class="form-label">Nom</label>
+              <input type="text" class="form-control" name="osmand_name" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">ID appareil</label>
+              <input type="text" class="form-control" name="osmand_id" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Clé secrète</label>
+              <input type="text" class="form-control" name="osmand_token">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+            <button type="submit" class="btn btn-primary">Ajouter</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  <!-- Modal association SIM -->
+  <div class="modal fade" id="sim-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Associer une carte SIM</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+        </div>
+        <form method="post" action="{{ url_for('associate_sim') }}">
+          <div class="modal-body">
+            {{ sim_form.csrf_token }}
+            {{ sim_form.equipment_id(id='sim-equipment-id') }}
+            <div class="mb-3">
+              {{ sim_form.provider.label(class="form-label") }}
+              {{ sim_form.provider(class="form-select") }}
+            </div>
+            <div class="mb-3">
+              {{ sim_form.sim.label(class="form-label") }}
+              {{ sim_form.sim(class="form-select", id="sim-select") }}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-success">Associer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% for eq in equipment_data %}
+  <div class="modal fade" id="settings-{{ eq.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">{{ eq.name }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+        </div>
+        <form method="post" action="{{ url_for('equipment_settings', eq_id=eq.id) }}">
+          <div class="modal-body">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+              <label class="form-label">Type d'appareil</label>
+              <select class="form-select" name="marker_icon">
+                <option value="tractor" {% if eq.icon == 'tractor' %}selected{% endif %}>Tracteur</option>
+                <option value="combine-harvester" {% if eq.icon == 'combine-harvester' %}selected{% endif %}>Moissonneuse</option>
+                <option value="truck" {% if eq.icon == 'truck' %}selected{% endif %}>Camion</option>
+                <option value="car" {% if eq.icon == 'car' %}selected{% endif %}>Voiture</option>
+                <option value="motorbike" {% if eq.icon == 'motorbike' %}selected{% endif %}>Moto</option>
+                <option value="help-circle-outline" {% if eq.icon == 'help-circle-outline' %}selected{% endif %}>Autre</option>
+              </select>
+            </div>
+            <div class="form-check mb-3">
+              <input class="form-check-input" type="checkbox" id="include-{{ eq.id }}" name="include_in_analysis" value="1" {% if eq.include_in_analysis %}checked{% endif %}>
+              <label class="form-check-label" for="include-{{ eq.id }}">Inclure dans l'analyse</label>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Carte SIM</label>
+              {% if eq.sim_present %}
+                <p class="mb-2">Statut : {{ 'connecté' if eq.sim_connected else 'hors ligne' }}</p>
+                <button type="button" class="btn btn-outline-danger dissoc-sim" data-eqid="{{ eq.id }}">Dissocier</button>
+              {% else %}
+                <button type="button" class="btn btn-outline-secondary assoc-sim" data-eqid="{{ eq.id }}" data-bs-toggle="modal" data-bs-target="#sim-modal">Associer</button>
+              {% endif %}
+            </div>
+            {% if eq.source == 'osmand' %}
+            <div class="mb-3">
+              <button type="button" class="btn btn-warning debug-btn" data-eqid="{{ eq.id }}">Mode debug</button>
+            </div>
+            <form method="post" action="{{ url_for('delete_osmand_device', eq_id=eq.id) }}" onsubmit="return confirm('Supprimer cet appareil ?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-outline-danger">Supprimer l'appareil</button>
+            </form>
+            {% endif %}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <script>
+    const simModal = document.getElementById('sim-modal');
+    if (simModal) {
+      simModal.addEventListener('show.bs.modal', event => {
+        const button = event.relatedTarget;
+        const eqid = button.getAttribute('data-eqid');
+        const input = simModal.querySelector('#sim-equipment-id');
+        if (input) input.value = eqid;
+        fetchSims();
+      });
+      const providerSelect = simModal.querySelector('select[name="provider"]');
+      if (providerSelect) {
+        providerSelect.addEventListener('change', fetchSims);
+      }
+      async function fetchSims() {
+        const providerSelect = simModal.querySelector('select[name="provider"]');
+        const simSelect = simModal.querySelector('#sim-select');
+        if (!providerSelect || !simSelect) return;
+        console.log('fetchSims for provider', providerSelect.value);
+        try {
+          const resp = await fetch(`/providers/${providerSelect.value}/sims`);
+          const data = await resp.json();
+          console.log('fetched', data.length, 'SIMs');
+          simSelect.innerHTML = '';
+          data.forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt.value;
+            o.textContent = opt.label;
+            simSelect.appendChild(o);
+          });
+        } catch (e) {
+          console.error('fetchSims', e);
+        }
+      }
+    }
+
+    async function refreshSimStatus() {
+      try {
+        const resp = await fetch('{{ url_for('sim_status_all') }}');
+        if (!resp.ok) {
+          return;
+        }
+        const data = await resp.json();
+        data.forEach(s => {
+          const row = document.querySelector(`tr[data-eqid="${s.id}"]`);
+          if (!row) return;
+          const cell = row.querySelector('.sim-status .status-text');
+          if (cell) {
+            cell.textContent = s.connected ? 'connecté' : 'hors ligne';
+          }
+          const sess = row.querySelector('.last-session');
+          if (sess) {
+            sess.textContent = s.last_session || '–';
+          }
+        });
+      } catch (e) {
+        console.error('refreshSimStatus', e);
+      }
+    }
+    setInterval(refreshSimStatus, 300000);
+
+    document.querySelectorAll('.debug-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const eqid = btn.getAttribute('data-eqid');
+        const token = document.querySelector('meta[name="csrf-token"]').content;
+        try {
+          await fetch(`/sim/${eqid}/debug`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': token },
+          });
+        } catch (e) { console.error(e); }
+      });
+    });
+
+    document.querySelectorAll('.dissoc-sim').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const eqid = btn.getAttribute('data-eqid');
+        const token = document.querySelector('meta[name="csrf-token"]').content;
+        try {
+          const resp = await fetch(`/sim/${eqid}/dissociate`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': token },
+          });
+          const data = await resp.json();
+          if (data.success) {
+            window.location.reload();
+          }
+        } catch (e) { console.error(e); }
+      });
     });
   </script>
 </body>

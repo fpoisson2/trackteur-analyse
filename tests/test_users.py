@@ -36,7 +36,7 @@ def test_non_admin_cannot_access_admin_page(make_app):
         db.session.commit()
     client = app.test_client()
     login(client, "reader", "pwd")
-    resp = client.get("/admin")
+    resp = client.get("/admin/equipment")
     assert resp.status_code == 302
 
 
@@ -132,7 +132,7 @@ def test_admin_can_trigger_reanalyze(make_app, monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/equipment")
     resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
     assert called == [1]
@@ -169,7 +169,7 @@ def test_admin_can_reanalyze_via_post(make_app, monkeypatch):
     monkeypatch.setattr(threading, "Thread", InstantThread)
 
     monkeypatch.setattr(zone, "fetch_devices", lambda: [])
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/equipment")
     resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
     assert called == [1]
@@ -225,7 +225,7 @@ def test_analysis_status_reports_equipment(make_app, monkeypatch):
     monkeypatch.setattr(zone, "process_equipment", fake_process)
 
     monkeypatch.setattr(zone, "fetch_devices", lambda: [])
-    token = get_csrf(client, "/admin")
+    token = get_csrf(client, "/admin/equipment")
     resp = client.post("/reanalyze_all", data={"csrf_token": token})
     assert resp.status_code == 302
 
