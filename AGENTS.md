@@ -1,6 +1,8 @@
 # Guide Agents.md du projet – pour OpenAI Codex
 
-Ce fichier `Agents.md` fournit des directives claires pour OpenAI Codex et autres agents automatisés travaillant avec ce dépôt. Il définit la structure, les conventions de codage, les tâches planifiées et les bonnes pratiques d’intégration continue pour le projet `trackteur-analyse`.
+Ce fichier `Agents.md` fournit des directives claires pour OpenAI Codex et autres agents automatisés travaillant avec ce dépôt. 
+
+Il définit la structure, les conventions de codage, les tâches planifiées et les bonnes pratiques d’intégration continue pour le projet `trackteur-analyse`.
 
 ---
 
