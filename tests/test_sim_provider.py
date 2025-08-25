@@ -114,6 +114,7 @@ def test_associate_sim_creates_record(make_app, monkeypatch):
         db.session.commit()
         pid = prov.id
         eqid = eq.id
+
     class Resp:
         status_code = 200
         text = "{}"

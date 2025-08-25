@@ -1,6 +1,12 @@
 import os
 import warnings
 
+import pytest
+from sqlalchemy.exc import LegacyAPIWarning  # type: ignore
+
+from app import create_app
+from models import db, User, Config, Equipment
+
 # Silence joblib serial-mode warning emitted in this environment as early as possible
 warnings.filterwarnings(
     "ignore",
@@ -9,21 +15,19 @@ warnings.filterwarnings(
 )
 
 # Silence SQLAlchemy LegacyAPIWarning about Query.get
-from sqlalchemy.exc import LegacyAPIWarning  # type: ignore
 warnings.filterwarnings(
     "ignore",
     message=r".*Query.get\(\) method is considered legacy.*",
     category=LegacyAPIWarning,
 )
-import pytest
-from app import create_app
-from models import db, User, Config, Equipment
 
 
 @pytest.fixture
 def make_app():
     original = os.environ.get("SKIP_INITIAL_ANALYSIS")
     os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
+    orig_update = os.environ.get("CHECK_UPDATES")
+    os.environ["CHECK_UPDATES"] = "0"
 
     def _make_app():
         app = create_app(start_scheduler=False, run_initial_analysis=False)
@@ -48,8 +52,10 @@ def make_app():
             os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
         else:
             os.environ["SKIP_INITIAL_ANALYSIS"] = original
-
-
+        if orig_update is None:
+            os.environ.pop("CHECK_UPDATES", None)
+        else:
+            os.environ["CHECK_UPDATES"] = orig_update
 
 
 @pytest.fixture

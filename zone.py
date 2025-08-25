@@ -15,14 +15,14 @@ from shapely.geometry import (
 from shapely.ops import transform as shp_transform
 import pyproj
 import alphashape
-# Ensure joblib uses a writable temp folder to avoid warnings in CI
-os.environ.setdefault("JOBLIB_TEMP_FOLDER", "/tmp")
 from sklearn.cluster import DBSCAN
 import folium
 from geopandas import GeoDataFrame
-
 from typing import Dict, List, Optional, Tuple
 from models import db, Equipment, Position, DailyZone, Config, Track
+
+# Ensure joblib uses a writable temp folder to avoid warnings in CI
+os.environ.setdefault("JOBLIB_TEMP_FOLDER", "/tmp")
 
 # Ignorer avertissements GEOS
 warnings.filterwarnings("ignore", "GEOS messages", UserWarning)

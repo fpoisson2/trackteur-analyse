@@ -9,7 +9,6 @@ if ROOT_DIR not in sys.path:
 os.environ.setdefault("TRACCAR_AUTH_TOKEN", "dummy")
 os.environ.setdefault("TRACCAR_BASE_URL", "http://example.com")
 
-import pytest  # noqa: E402
 from models import db, Equipment, Position  # noqa: E402
 from tests.utils import login  # noqa: E402
 import zone  # noqa: E402
@@ -35,7 +34,7 @@ def test_export_csv_osmand(make_app):
     assert resp.status_code == 200
     assert resp.mimetype.startswith("text/csv")
     text = resp.data.decode()
-    lines = [l for l in text.strip().splitlines() if l]
+    lines = [line for line in text.strip().splitlines() if line]
     # header + 2 rows
     assert lines[0].split(',') == ["latitude", "longitude", "timestamp", "battery_level"]
     assert len(lines) == 3
@@ -75,7 +74,7 @@ def test_export_csv_traccar(make_app, monkeypatch):
     resp = client.get(f"/equipment/{eqid}/export.csv?start={today}&end={today}")
     assert resp.status_code == 200
     text = resp.data.decode()
-    lines = [l for l in text.strip().splitlines() if l]
+    lines = [line for line in text.strip().splitlines() if line]
     assert lines[0].split(',') == ["latitude", "longitude", "timestamp", "battery_level"]
     # header + 2 rows
     assert len(lines) == 3

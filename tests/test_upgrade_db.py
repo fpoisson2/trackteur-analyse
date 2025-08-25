@@ -1,6 +1,6 @@
 import os
 import sys
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
