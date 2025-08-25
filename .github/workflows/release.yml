@@ -22,7 +22,7 @@ jobs:
         run: |
           git fetch --tags --force --prune
 
-      - name: Calculate version (CALVER: YYYY.MM.PATCH)
+      - name: Calculate version (CALVER YYYY.MM.PATCH)
         id: calver
         shell: bash
         run: |
