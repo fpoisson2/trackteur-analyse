@@ -15,14 +15,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0          # on veut tout l'historique
+          fetch-depth: 0
           persist-credentials: true
 
       - name: Fetch all tags
         run: |
           git fetch --tags --force --prune
 
-      - name: Calculate version (CALVER YYYY.MM.PATCH)
+      - name: "Calculate version (CALVER: YYYY.MM.PATCH)"
         id: calver
         shell: bash
         run: |
@@ -44,12 +44,12 @@ jobs:
       - name: Update __version__.py
         run: |
           cat > __version__.py <<'EOF'
-"""Application version information.
+          """Application version information.
 
-This file is automatically updated by the release workflow.
-"""
-__version__ = "${{ steps.calver.outputs.version }}"
-EOF
+          This file is automatically updated by the release workflow.
+          """
+          __version__ = "${{ steps.calver.outputs.version }}"
+          EOF
 
       - name: Commit version file (no-op safe)
         env:
@@ -60,14 +60,12 @@ EOF
         run: |
           git add __version__.py
           git commit -m "chore: bump version to ${{ steps.calver.outputs.version }}" || echo "No changes to commit"
-          # Si rien à commit, la commande précédente renvoie non-zéro, d'où l'OR echo
           git push || echo "Nothing to push"
 
       # On ne crée le tag et la release QUE sur main
       - name: Create tag
         if: github.ref == 'refs/heads/main'
         run: |
-          # Si le tag existe déjà (course condition), on ne refait rien
           if git rev-parse -q --verify "refs/tags/${{ steps.calver.outputs.version }}" >/dev/null; then
             echo "Tag already exists, skipping tag creation."
           else
