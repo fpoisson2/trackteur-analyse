@@ -8,9 +8,45 @@ from typing import List, Tuple
 
 import requests  # type: ignore[import-untyped]
 
-REPO_RELEASES_API_URL = (
-    "https://api.github.com/repos/trackteur/trackteur-analyse/releases"
+# Default repository used when the Git remote cannot be determined. This
+# points to the official fork that publishes releases.
+DEFAULT_REPO_RELEASES_API_URL = (
+    "https://api.github.com/repos/fpoisson2/trackteur-analyse/releases"
 )
+
+
+def _get_repo_releases_api_url() -> str:
+    """Return the GitHub releases API URL for the current repository.
+
+    The function inspects the configured ``remote.origin.url`` to build the
+    proper API endpoint. If the remote cannot be read or does not match the
+    expected GitHub format, it falls back to ``DEFAULT_REPO_RELEASES_API_URL``.
+    """
+
+    try:
+        origin_url = subprocess.check_output(
+            ["git", "config", "--get", "remote.origin.url"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except (subprocess.CalledProcessError, OSError):
+        return DEFAULT_REPO_RELEASES_API_URL
+
+    if origin_url.endswith(".git"):
+        origin_url = origin_url[:-4]
+
+    if "github.com" not in origin_url:
+        return DEFAULT_REPO_RELEASES_API_URL
+
+    try:
+        if origin_url.startswith("git@"):
+            path = origin_url.split(":", 1)[1]
+        else:
+            path = origin_url.split("github.com/", 1)[1]
+    except IndexError:
+        return DEFAULT_REPO_RELEASES_API_URL
+
+    return f"https://api.github.com/repos/{path}/releases"
 
 
 def _parse_version(version: str) -> Tuple[int, int, int]:
@@ -26,7 +62,14 @@ def _parse_version(version: str) -> Tuple[int, int, int]:
 
 
 def get_current_version() -> str:
-    """Return the latest Git tag for the current repository."""
+    """Return the latest Git tag or commit hash for the repository.
+
+    If the repository metadata cannot be retrieved (for example when running
+    from a release archive without the ``.git`` directory), the function falls
+    back to reading the ``__version__`` module.  When that file is missing as
+    well, ``"0.0.0"`` is returned.
+    """
+
     try:
         return (
             subprocess.check_output(
@@ -37,17 +80,35 @@ def get_current_version() -> str:
             .strip()
         )
     except (subprocess.CalledProcessError, OSError):
-        return "0.0.0"
+        try:
+            return (
+                subprocess.check_output(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+        except (subprocess.CalledProcessError, OSError):
+            try:
+                from __version__ import __version__
+
+                return __version__
+            except Exception:
+                return "0.0.0"
 
 
 def get_latest_version(branch: str = "main") -> str:
     """Return the latest release tag from GitHub for a given branch."""
+
+    url = _get_repo_releases_api_url()
     try:
-        resp = requests.get(REPO_RELEASES_API_URL, timeout=10)
+        resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         for release in data:
-            if release.get("target_commitish") == branch:
+            target = release.get("target_commitish", "")
+            if target.lower() == branch.lower():
                 return release.get("tag_name", "")
         return ""
     except (requests.RequestException, ValueError):
@@ -86,6 +147,6 @@ def get_available_branches() -> List[str]:
             for line in output.splitlines()
             if line.strip().startswith("origin/") and "->" not in line
         ]
-        return branches or ["main", "Dev"]
+        return branches or ["main", "dev"]
     except (subprocess.CalledProcessError, OSError):
-        return ["main", "Dev"]
+        return ["main", "dev"]

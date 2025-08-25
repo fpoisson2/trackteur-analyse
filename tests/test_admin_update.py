@@ -16,7 +16,7 @@ def test_admin_update_get(make_app, monkeypatch):
         app_module, "get_latest_version", lambda branch: "2025.08.1"
     )
     monkeypatch.setattr(
-        app_module, "get_available_branches", lambda: ["main", "Dev"]
+        app_module, "get_available_branches", lambda: ["main", "dev"]
     )
     resp = client.get("/admin/update")
     assert resp.status_code == 200
@@ -41,7 +41,7 @@ def test_admin_update_post(make_app, monkeypatch):
 
     monkeypatch.setattr(app_module, "get_latest_version", fake_latest)
     monkeypatch.setattr(
-        app_module, "get_available_branches", lambda: ["main", "Dev"]
+        app_module, "get_available_branches", lambda: ["main", "dev"]
     )
     called = {}
 
