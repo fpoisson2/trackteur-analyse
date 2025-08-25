@@ -28,6 +28,7 @@ class Config(db.Model):  # type: ignore[name-defined]
     min_surface_ha = db.Column(db.Float, default=0.1)
     alpha = db.Column(db.Float, default=0.02)
     analysis_hour = db.Column(db.Integer, default=2)
+    beta_updates = db.Column(db.Boolean, default=False)
 
 
 class Equipment(db.Model):  # type: ignore[name-defined]

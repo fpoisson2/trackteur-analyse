@@ -56,6 +56,7 @@ from update import (
     get_current_version,
     get_latest_version,
     get_available_versions,
+    get_release_notes_url,
     is_update_available,
     perform_update,
 )
@@ -241,6 +242,13 @@ def create_app(
                         text(
                             "ALTER TABLE config ADD COLUMN analysis_hour "
                             "INTEGER DEFAULT 2"
+                        )
+                    )
+                if "beta_updates" not in config_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE config ADD COLUMN beta_updates "
+                            "BOOLEAN DEFAULT 0"
                         )
                     )
         if "daily_zone" in tables:
@@ -793,24 +801,41 @@ def create_app(
         """Vérifier et appliquer les mises à jour de l'application."""
         if not current_user.is_admin:
             return redirect(url_for('index'))
-        versions = get_available_versions()
+        cfg = Config.query.first()
+        include_pre = bool(cfg.beta_updates) if cfg else False
+        versions = get_available_versions(include_prerelease=include_pre)
         form = UpdateForm()
         form.version.choices = [(v, v) for v in versions]
+        if cfg and request.method != 'POST':
+            form.include_prerelease.data = cfg.beta_updates
         if not form.version.data and versions:
             form.version.data = versions[0]
         version = form.version.data
         current_version = get_current_version()
-        latest_version = get_latest_version()
+        latest_version = get_latest_version(include_prerelease=include_pre)
+        release_notes_url = (
+            get_release_notes_url(latest_version) if latest_version else None
+        )
         message = None
         error = None
 
         if request.method == 'POST' and form.validate_on_submit():
+            if cfg:
+                cfg.beta_updates = form.include_prerelease.data
+                db.session.commit()
             version = form.version.data
             if is_update_available(current_version, version):
                 try:
                     perform_update(version)
                     current_version = get_current_version()
-                    latest_version = get_latest_version()
+                    latest_version = get_latest_version(
+                        include_prerelease=form.include_prerelease.data
+                    )
+                    release_notes_url = (
+                        get_release_notes_url(latest_version)
+                        if latest_version
+                        else None
+                    )
                     message = (
                         f"Mise à jour vers la version {current_version} effectuée."
                     )
@@ -823,6 +848,7 @@ def create_app(
             'admin_update.html',
             current_version=current_version,
             latest_version=latest_version,
+            release_notes_url=release_notes_url,
             message=message,
             error=error,
             form=form,
@@ -2302,6 +2328,24 @@ def create_app(
 
     if run_initial_analysis and not os.environ.get("SKIP_INITIAL_ANALYSIS"):
         initial_analysis()
+
+    @app.context_processor
+    def inject_update_info():
+        if os.environ.get("CHECK_UPDATES", "1") == "0":
+            return {"update_info": {"update_available": False}}
+        cfg = Config.query.first()
+        include_pre = bool(cfg.beta_updates) if cfg else False
+        current = get_current_version()
+        latest = get_latest_version(include_prerelease=include_pre)
+        if latest and is_update_available(current, latest):
+            return {
+                "update_info": {
+                    "update_available": True,
+                    "latest_version": latest,
+                    "release_notes_url": get_release_notes_url(latest),
+                }
+            }
+        return {"update_info": {"update_available": False}}
 
     @app.after_request
     def set_security_headers(resp):

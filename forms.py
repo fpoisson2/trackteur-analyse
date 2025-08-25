@@ -8,6 +8,7 @@ from wtforms import (
     FloatField,
     HiddenField,
     SelectField,
+    BooleanField,
 )
 from wtforms.validators import (
     DataRequired,
@@ -137,3 +138,4 @@ class UpdateForm(FlaskForm):
     """Formulaire permettant de choisir la version à mettre à jour."""
 
     version = SelectField("Version", choices=[], validators=[DataRequired()])
+    include_prerelease = BooleanField("Mode bêta testeur")
