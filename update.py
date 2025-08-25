@@ -8,9 +8,45 @@ from typing import List, Tuple
 
 import requests  # type: ignore[import-untyped]
 
-REPO_RELEASES_API_URL = (
-    "https://api.github.com/repos/trackteur/trackteur-analyse/releases"
+# Default repository used when the Git remote cannot be determined. This
+# points to the official fork that publishes releases.
+DEFAULT_REPO_RELEASES_API_URL = (
+    "https://api.github.com/repos/fpoisson2/trackteur-analyse/releases"
 )
+
+
+def _get_repo_releases_api_url() -> str:
+    """Return the GitHub releases API URL for the current repository.
+
+    The function inspects the configured ``remote.origin.url`` to build the
+    proper API endpoint. If the remote cannot be read or does not match the
+    expected GitHub format, it falls back to ``DEFAULT_REPO_RELEASES_API_URL``.
+    """
+
+    try:
+        origin_url = subprocess.check_output(
+            ["git", "config", "--get", "remote.origin.url"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except (subprocess.CalledProcessError, OSError):
+        return DEFAULT_REPO_RELEASES_API_URL
+
+    if origin_url.endswith(".git"):
+        origin_url = origin_url[:-4]
+
+    if "github.com" not in origin_url:
+        return DEFAULT_REPO_RELEASES_API_URL
+
+    try:
+        if origin_url.startswith("git@"):
+            path = origin_url.split(":", 1)[1]
+        else:
+            path = origin_url.split("github.com/", 1)[1]
+    except IndexError:
+        return DEFAULT_REPO_RELEASES_API_URL
+
+    return f"https://api.github.com/repos/{path}/releases"
 
 
 def _parse_version(version: str) -> Tuple[int, int, int]:
@@ -52,8 +88,10 @@ def get_current_version() -> str:
 
 def get_latest_version(branch: str = "main") -> str:
     """Return the latest release tag from GitHub for a given branch."""
+
+    url = _get_repo_releases_api_url()
     try:
-        resp = requests.get(REPO_RELEASES_API_URL, timeout=10)
+        resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         for release in data:
