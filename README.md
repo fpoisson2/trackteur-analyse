@@ -96,7 +96,9 @@ Pour exécuter l'application comme un service systemd :
    sudo systemctl daemon-reload
    sudo systemctl enable --now trackteur-analyse.service
    ```
-Accédez à [http://localhost:5000](http://localhost:5000). La page d'accueil liste les équipements, leur dernière position et les surfaces calculées. Vous pouvez lancer une analyse manuelle ou consulter le détail d'un équipement (zones par jour et carte interactive). Une analyse automatique a lieu chaque nuit à 2 h.
+Accédez à [http://localhost:5000](http://localhost:5000). 
+
+La page d'accueil liste les équipements, leur dernière position et les surfaces calculées. Vous pouvez lancer une analyse manuelle ou consulter le détail d'un équipement (zones par jour et carte interactive). Une analyse automatique a lieu chaque nuit à 2 h.
 
 ## OsmAnd
 
