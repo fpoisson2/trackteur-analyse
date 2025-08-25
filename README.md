@@ -4,7 +4,9 @@
 
 > Analyse et visualisation des zones de travail depuis un serveur [Traccar](https://www.traccar.org/)
 
-Trackteur Analyse interroge l'API Traccar, agrège les positions par jour et calcule les surfaces travaillées. Les résultats sont présentés dans une interface Web conviviale.
+Trackteur Analyse interroge l'API Traccar, agrège les positions par jour et calcule les surfaces travaillées. 
+
+Les résultats sont présentés dans une interface Web conviviale.
 
 ## Table des matières
 1. [Fonctionnalités](#fonctionnalités)
