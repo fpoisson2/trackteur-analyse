@@ -36,7 +36,6 @@ Il définit la structure, les conventions de codage, les tâches planifiées et 
 
 - Utiliser **Flask-Login** pour la gestion des utilisateurs
 - Ajouter les nouvelles routes via des Blueprints dans `/routes` (préféré) ou `app.py` si exceptionnel
-- 
 - Réutiliser les layouts Bootstrap existants dans les templates HTML
 - L'initialisation de la base s'effectue via `@app.before_first_request`
 - Restreindre les routes d'administration (`/admin`, `/users`, `/initdb`)
