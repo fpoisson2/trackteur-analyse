@@ -6,6 +6,10 @@ on:
     paths-ignore:
       - "__version__.py"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -26,29 +30,59 @@ jobs:
         id: calver
         shell: bash
         run: |
-          YEAR=$(date +%Y)
-          MONTH=$(date +%m | sed 's/^0//')
-          BASE="$YEAR.$MONTH"
+          set -euo pipefail
 
-          LAST_STABLE=$(git tag --list "${BASE}.*" | grep -E "^${BASE}\\.[0-9]+$" | sed -E "s#^${BASE}\.##" | sort -n | tail -n 1)
-          if [ -z "$LAST_STABLE" ]; then
-            LAST_STABLE=0
-          fi
+          # Date en UTC pour la reproductibilité
+          YEAR=$(date -u +%Y)
+          MONTH_PAD=$(date -u +%m)        # 01..12
+          MONTH_NOPAD=$((10#$MONTH_PAD))  # 1..12 (retire le zéro)
+
+          # Deux formes possibles de base pour matcher l'historique (08 et 8)
+          BASE_NOPAD="$YEAR.$MONTH_NOPAD"
+          BASE_PAD="$YEAR.$MONTH_PAD"
+
+          # Liste des tags disponibles
+          TAGS="$(git tag --list)"
+
+          # Dernier STABLE du mois courant (accepte 2025.8.N et 2025.08.N)
+          LAST_STABLE=$(
+            printf "%s\n" "$TAGS" \
+            | grep -E "^(${BASE_NOPAD}|${BASE_PAD})\.[0-9]+$" || true
+          )
+          LAST_STABLE=$(
+            printf "%s\n" "$LAST_STABLE" \
+            | sed -E "s#^(${BASE_NOPAD}|${BASE_PAD})\.##" \
+            | sort -n | tail -n 1
+          )
+          if [ -z "${LAST_STABLE:-}" ]; then LAST_STABLE=0; fi
           NEXT=$((LAST_STABLE + 1))
 
-          if [ "$GITHUB_REF" = "refs/heads/dev" ]; then
-            BETA_COUNT=$(git tag --list "${BASE}.${NEXT}b*" | wc -l)
-            BETA=$((BETA_COUNT + 1))
-            VERSION="${BASE}.${NEXT}b${BETA}"
+          # Nom simple de la branche (dev / main)
+          REF_NAME="${GITHUB_REF_NAME:-$(echo "${GITHUB_REF:-}" | awk -F/ '{print $NF}')}"
+          
+          if [ "$REF_NAME" = "dev" ]; then
+            # Cherche les betas existants pour NEXT et prend le plus grand N de bN
+            LAST_BETA=$(
+              printf "%s\n" "$TAGS" \
+              | grep -E "^(${BASE_NOPAD}|${BASE_PAD})\.${NEXT}b[0-9]+$" || true
+            )
+            LAST_BETA=$(
+              printf "%s\n" "$LAST_BETA" \
+              | sed -E "s#^(${BASE_NOPAD}|${BASE_PAD})\.${NEXT}b##" \
+              | sort -n | tail -n 1
+            )
+            if [ -z "${LAST_BETA:-}" ]; then LAST_BETA=0; fi
+            VERSION="${BASE_NOPAD}.${NEXT}b$((LAST_BETA + 1))"
           else
-            VERSION="${BASE}.${NEXT}"
+            VERSION="${BASE_NOPAD}.${NEXT}"
           fi
 
+          echo "Computed VERSION=$VERSION"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Update __version__.py
         run: |
-          cat > __version__.py <<'EOF'
+          cat > __version__.py <<EOF
           """Application version information.
 
           This file is automatically updated by the release workflow.
@@ -82,6 +116,6 @@ jobs:
           tag_name: ${{ steps.calver.outputs.version }}
           name: ${{ steps.calver.outputs.version }}
           draft: false
-          prerelease: ${{ github.ref == 'refs/heads/dev' }}
+          prerelease: ${{ contains(steps.calver.outputs.version, 'b') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
