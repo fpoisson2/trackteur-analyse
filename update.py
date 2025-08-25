@@ -26,7 +26,7 @@ def _parse_version(version: str) -> Tuple[int, int, int]:
 
 
 def get_current_version() -> str:
-    """Return the latest Git tag for the current repository."""
+    """Return the latest Git tag or commit hash for the repository."""
     try:
         return (
             subprocess.check_output(
@@ -37,7 +37,17 @@ def get_current_version() -> str:
             .strip()
         )
     except (subprocess.CalledProcessError, OSError):
-        return "0.0.0"
+        try:
+            return (
+                subprocess.check_output(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+        except (subprocess.CalledProcessError, OSError):
+            return "0.0.0"
 
 
 def get_latest_version(branch: str = "main") -> str:
@@ -47,7 +57,8 @@ def get_latest_version(branch: str = "main") -> str:
         resp.raise_for_status()
         data = resp.json()
         for release in data:
-            if release.get("target_commitish") == branch:
+            target = release.get("target_commitish", "")
+            if target.lower() == branch.lower():
                 return release.get("tag_name", "")
         return ""
     except (requests.RequestException, ValueError):
@@ -86,6 +97,6 @@ def get_available_branches() -> List[str]:
             for line in output.splitlines()
             if line.strip().startswith("origin/") and "->" not in line
         ]
-        return branches or ["main", "Dev"]
+        return branches or ["main", "dev"]
     except (subprocess.CalledProcessError, OSError):
-        return ["main", "Dev"]
+        return ["main", "dev"]
