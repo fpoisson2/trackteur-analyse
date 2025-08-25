@@ -144,13 +144,33 @@ def perform_update(version: str) -> None:
     )
 
 
-def get_available_versions() -> List[str]:
-    """Return a list of release tags available for updates."""
+def get_available_versions(include_prerelease: bool = False) -> List[str]:
+    """Return a list of release tags available for updates.
+
+    When ``include_prerelease`` is ``False`` (default), beta releases are
+    filtered out.
+    """
     url = _get_repo_releases_api_url()
     try:
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        return [release.get("tag_name", "") for release in data if release.get("tag_name")]
+        versions: List[str] = []
+        for release in data:
+            if release.get("prerelease") and not include_prerelease:
+                continue
+            tag = release.get("tag_name", "")
+            if tag:
+                versions.append(tag)
+        return versions
     except (requests.RequestException, ValueError):
         return []
+
+
+def get_release_notes_url(tag: str) -> str:
+    """Return the GitHub release notes URL for ``tag``."""
+    api_url = _get_repo_releases_api_url()
+    base = api_url.replace("api.github.com/repos", "github.com").rstrip("/")
+    if base.endswith("/releases"):
+        base = base[:-9]
+    return f"{base}/releases/tag/{tag}"

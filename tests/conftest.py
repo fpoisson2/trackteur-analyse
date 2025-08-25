@@ -24,6 +24,8 @@ from models import db, User, Config, Equipment
 def make_app():
     original = os.environ.get("SKIP_INITIAL_ANALYSIS")
     os.environ["SKIP_INITIAL_ANALYSIS"] = "1"
+    orig_update = os.environ.get("CHECK_UPDATES")
+    os.environ["CHECK_UPDATES"] = "0"
 
     def _make_app():
         app = create_app(start_scheduler=False, run_initial_analysis=False)
@@ -48,6 +50,10 @@ def make_app():
             os.environ.pop("SKIP_INITIAL_ANALYSIS", None)
         else:
             os.environ["SKIP_INITIAL_ANALYSIS"] = original
+        if orig_update is None:
+            os.environ.pop("CHECK_UPDATES", None)
+        else:
+            os.environ["CHECK_UPDATES"] = orig_update
 
 
 
