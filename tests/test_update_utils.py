@@ -5,6 +5,7 @@ import subprocess
 from update import (
     _get_repo_releases_api_url,
     DEFAULT_REPO_RELEASES_API_URL,
+    is_update_available,
 )
 
 
@@ -29,3 +30,11 @@ def test_get_repo_releases_api_url_fallback(monkeypatch):
 
     monkeypatch.setattr(subprocess, "check_output", fake_check_output)
     assert _get_repo_releases_api_url() == DEFAULT_REPO_RELEASES_API_URL
+
+
+def test_is_update_available_beta():
+    """Beta versions should compare lower than their stable counterparts."""
+
+    assert is_update_available("2025.8.1b1", "2025.8.1")
+    assert is_update_available("2025.8.1b1", "2025.8.1b2")
+    assert not is_update_available("2025.8.1", "2025.8.1b1")
