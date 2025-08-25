@@ -49,16 +49,22 @@ def _get_repo_releases_api_url() -> str:
     return f"https://api.github.com/repos/{path}/releases"
 
 
-def _parse_version(version: str) -> Tuple[int, int, int]:
-    """Parse a year.month.patch version string into a tuple of integers.
+def _parse_version(version: str) -> Tuple[int, int, int, int, int]:
+    """Parse ``year.month.patch`` or beta versions like ``2025.8.1b2``.
 
-    Returns (0, 0, 0) if the format is unexpected.
+    The returned tuple is ``(year, month, patch, stable_flag, beta_number)``
+    where ``stable_flag`` is ``1`` for stable releases and ``0`` for betas.
+    Beta numbers start at ``1``.  Unknown formats return zeros so that any
+    valid version is considered greater.
     """
     try:
-        year_str, month_str, patch_str = version.split(".")
-        return int(year_str), int(month_str), int(patch_str)
+        main, _, beta = version.partition("b")
+        year_str, month_str, patch_str = main.split(".")
+        if beta:
+            return int(year_str), int(month_str), int(patch_str), 0, int(beta)
+        return int(year_str), int(month_str), int(patch_str), 1, 0
     except (ValueError, AttributeError):
-        return (0, 0, 0)
+        return (0, 0, 0, 0, 0)
 
 
 def get_current_version() -> str:
@@ -98,8 +104,12 @@ def get_current_version() -> str:
                 return "0.0.0"
 
 
-def get_latest_version(branch: str = "main") -> str:
-    """Return the latest release tag from GitHub for a given branch."""
+def get_latest_version(include_prerelease: bool = False) -> str:
+    """Return the latest release tag from GitHub.
+
+    When ``include_prerelease`` is ``False`` (default), beta releases are
+    ignored.
+    """
 
     url = _get_repo_releases_api_url()
     try:
@@ -107,9 +117,9 @@ def get_latest_version(branch: str = "main") -> str:
         resp.raise_for_status()
         data = resp.json()
         for release in data:
-            target = release.get("target_commitish", "")
-            if target.lower() == branch.lower():
-                return release.get("tag_name", "")
+            if release.get("prerelease") and not include_prerelease:
+                continue
+            return release.get("tag_name", "")
         return ""
     except (requests.RequestException, ValueError):
         return ""
@@ -120,33 +130,27 @@ def is_update_available(current: str, latest: str) -> bool:
     return _parse_version(latest) > _parse_version(current)
 
 
-def perform_update(branch: str = "main") -> None:
-    """Fetch and apply the latest code and dependencies from ``branch``.
+def perform_update(version: str) -> None:
+    """Fetch and apply the code and dependencies for ``version``.
 
-    This function checks out the requested branch, pulls the latest commits and
-    reinstalls dependencies. It may raise ``subprocess.CalledProcessError`` if
-    any command fails.
+    The repository is checked out at the requested tag and dependencies are
+    reinstalled.  ``subprocess.CalledProcessError`` may be raised if any step
+    fails.
     """
     subprocess.check_call(["git", "fetch", "--tags"])
-    subprocess.check_call(["git", "fetch", "origin", branch])
-    subprocess.check_call(["git", "checkout", branch])
-    subprocess.check_call(["git", "pull", "--ff-only", "origin", branch])
+    subprocess.check_call(["git", "checkout", version])
     subprocess.check_call(
         [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
     )
 
 
-def get_available_branches() -> List[str]:
-    """Return a list of remote branches available for updates."""
+def get_available_versions() -> List[str]:
+    """Return a list of release tags available for updates."""
+    url = _get_repo_releases_api_url()
     try:
-        output = subprocess.check_output(
-            ["git", "branch", "-r"], stderr=subprocess.DEVNULL, text=True
-        )
-        branches = [
-            line.strip().split("/", 1)[1]
-            for line in output.splitlines()
-            if line.strip().startswith("origin/") and "->" not in line
-        ]
-        return branches or ["main", "dev"]
-    except (subprocess.CalledProcessError, OSError):
-        return ["main", "dev"]
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return [release.get("tag_name", "") for release in data if release.get("tag_name")]
+    except (requests.RequestException, ValueError):
+        return []

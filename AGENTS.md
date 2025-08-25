@@ -63,7 +63,7 @@ Les agents peuvent être exécutés automatiquement ou manuellement :
 | `rapport_par_tracteur`     | futur            | script manuel  |
 | `verificateur_inactivite`  | futur            | planifié       |
 | `release_gh_action`        | à chaque merge de `dev` vers `main` | GitHub Actions |
-| `admin_update`             | sur demande      | interface admin (branche choisie) |
+| `admin_update`             | sur demande      | interface admin (version choisie) |
 
 Les versions suivent le format `année.mois.version`.
 Le développement se fait sur la branche `dev` avant fusion dans `main`.

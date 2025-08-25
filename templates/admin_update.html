@@ -58,10 +58,10 @@
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-3">
-        {{ form.branch.label(class="form-label") }}
-        {{ form.branch(class="form-select") }}
+        {{ form.version.label(class="form-label") }}
+        {{ form.version(class="form-select") }}
       </div>
-      <button type="submit" class="btn btn-primary" {% if not latest_version or current_version == latest_version %}disabled{% endif %}>
+      <button type="submit" class="btn btn-primary" {% if form.version.data == current_version %}disabled{% endif %}>
         Mettre à jour
       </button>
     </form>

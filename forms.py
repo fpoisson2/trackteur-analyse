@@ -134,6 +134,6 @@ class SimAssociationForm(FlaskForm):
 
 
 class UpdateForm(FlaskForm):
-    """Formulaire permettant de choisir la branche à mettre à jour."""
+    """Formulaire permettant de choisir la version à mettre à jour."""
 
-    branch = SelectField("Branche", choices=[], validators=[DataRequired()])
+    version = SelectField("Version", choices=[], validators=[DataRequired()])

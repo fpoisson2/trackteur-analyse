@@ -55,9 +55,9 @@ import zone
 from update import (
     get_current_version,
     get_latest_version,
+    get_available_versions,
     is_update_available,
     perform_update,
-    get_available_branches,
 )
 
 from datetime import datetime, date, timedelta, timezone
@@ -793,25 +793,24 @@ def create_app(
         """Vérifier et appliquer les mises à jour de l'application."""
         if not current_user.is_admin:
             return redirect(url_for('index'))
-        branches = get_available_branches()
+        versions = get_available_versions()
         form = UpdateForm()
-        form.branch.choices = [(b, b) for b in branches]
-        if not form.branch.data:
-            form.branch.data = branches[0]
-        branch = form.branch.data
+        form.version.choices = [(v, v) for v in versions]
+        if not form.version.data and versions:
+            form.version.data = versions[0]
+        version = form.version.data
         current_version = get_current_version()
-        latest_version = get_latest_version(branch)
+        latest_version = get_latest_version()
         message = None
         error = None
 
         if request.method == 'POST' and form.validate_on_submit():
-            branch = form.branch.data
-            latest_version = get_latest_version(branch)
-            if latest_version and is_update_available(current_version, latest_version):
+            version = form.version.data
+            if is_update_available(current_version, version):
                 try:
-                    perform_update(branch)
+                    perform_update(version)
                     current_version = get_current_version()
-                    latest_version = get_latest_version(branch)
+                    latest_version = get_latest_version()
                     message = (
                         f"Mise à jour vers la version {current_version} effectuée."
                     )
